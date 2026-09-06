@@ -1,4 +1,4 @@
-package handlers
+package services_test
 
 import (
 	"path/filepath"
@@ -7,9 +7,10 @@ import (
 	"windshift/internal/database"
 	"windshift/internal/models"
 	"windshift/internal/repository"
+	"windshift/internal/services"
 )
 
-func TestActionHandlerResolvesCapabilitiesByType(t *testing.T) {
+func TestActionDefinitionServiceResolvesCapabilitiesByType(t *testing.T) {
 	db, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "v1-actions.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteDB: %v", err)
@@ -30,12 +31,12 @@ func TestActionHandlerResolvesCapabilitiesByType(t *testing.T) {
 	if _, err := repo.CreateCapabilityWithWorkspaces(capability, nil); err != nil {
 		t.Fatalf("CreateCapabilityWithWorkspaces: %v", err)
 	}
-	handler := &ActionHandler{repo: repo}
+	service := services.NewActionDefinitionService(repo, nil)
 
-	if !handler.HasCapabilityOfType(123, capability.ID, models.CapabilityDockerEnvironment) {
+	if !service.HasCapabilityOfType(123, capability.ID, models.CapabilityDockerEnvironment) {
 		t.Fatal("matching capability type was rejected")
 	}
-	if handler.HasCapabilityOfType(123, capability.ID, models.CapabilityHTTPClient) {
+	if service.HasCapabilityOfType(123, capability.ID, models.CapabilityHTTPClient) {
 		t.Fatal("docker capability was accepted as an HTTP capability")
 	}
 }

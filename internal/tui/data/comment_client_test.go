@@ -5,42 +5,30 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestClientGetCommentsFollowsAllPages(t *testing.T) {
 	requestedPages := make([]string, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/api/v1/items/840/comments" {
+		if r.URL.Path != "/rest/api/v2/items/840/comments" {
 			http.NotFound(w, r)
 			return
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Fatalf("Authorization = %q, want bearer token", got)
 		}
-		if got := r.URL.Query().Get("expand"); got != "author" {
-			t.Fatalf("expand = %q, want author", got)
-		}
-		if got := r.URL.Query().Get("limit"); got != "100" {
-			t.Fatalf("limit = %q, want 100", got)
+		if got := r.URL.Query().Get("page_size"); got != "100" {
+			t.Fatalf("page_size = %q, want 100", got)
 		}
 
-		page := r.URL.Query().Get("page")
+		page := r.URL.Query().Get("cursor")
 		requestedPages = append(requestedPages, page)
-		response := v1CommentsPage{
-			Pagination: v1PaginationMeta{Page: 1, Limit: 100, Total: 3, TotalPages: 2},
-		}
+		var response any
 		switch page {
-		case "1":
-			response.Data = []v1CommentResponse{
-				{ID: 3, ItemID: 840, Content: "newest", CreatedAt: time.Unix(3, 0).UTC()},
-				{ID: 2, ItemID: 840, Content: "middle", CreatedAt: time.Unix(2, 0).UTC()},
-			}
-		case "2":
-			response.Pagination.Page = 2
-			response.Data = []v1CommentResponse{
-				{ID: 1, ItemID: 840, Content: "oldest", CreatedAt: time.Unix(1, 0).UTC()},
-			}
+		case "":
+			response = map[string]any{"data": map[string]any{"comments": []map[string]any{{"id": 3, "item_id": 840, "content": "newest"}, {"id": 2, "item_id": 840, "content": "middle"}}, "has_more": true, "next_cursor": "older"}}
+		case "older":
+			response = map[string]any{"data": map[string]any{"comments": []map[string]any{{"id": 1, "item_id": 840, "content": "oldest"}}, "has_more": false}}
 		default:
 			t.Fatalf("unexpected page %q", page)
 		}
@@ -63,8 +51,8 @@ func TestClientGetCommentsFollowsAllPages(t *testing.T) {
 		t.Fatalf("comments = %+v, want IDs 3, 2, 1", comments)
 	}
 	if len(requestedPages) != 2 ||
-		requestedPages[0] != "1" ||
-		requestedPages[1] != "2" {
-		t.Fatalf("requested pages = %v, want [1 2]", requestedPages)
+		requestedPages[0] != "" ||
+		requestedPages[1] != "older" {
+		t.Fatalf("requested cursors = %v, want initial then older", requestedPages)
 	}
 }

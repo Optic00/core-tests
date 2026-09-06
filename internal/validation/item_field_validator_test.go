@@ -260,7 +260,7 @@ func TestItemFieldValidator(t *testing.T) {
 			Title:       "Test Item",
 		}
 
-		err := validator.ValidateCreateRequest(item)
+		err := validator.ValidateCreateRequest(item, testData.UserID)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -272,7 +272,7 @@ func TestItemFieldValidator(t *testing.T) {
 			Title:       "",
 		}
 
-		err := validator.ValidateCreateRequest(item)
+		err := validator.ValidateCreateRequest(item, testData.UserID)
 		if err == nil {
 			t.Error("Expected validation error for missing title")
 		}
@@ -284,7 +284,7 @@ func TestItemFieldValidator(t *testing.T) {
 			Title:       "Test Item",
 		}
 
-		err := validator.ValidateCreateRequest(item)
+		err := validator.ValidateCreateRequest(item, testData.UserID)
 		if err == nil {
 			t.Error("Expected validation error for invalid workspace")
 		}

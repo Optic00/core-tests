@@ -145,7 +145,7 @@ func TestItemWorkspaceMovePreviewsAndCommitsExactPolicy(t *testing.T) {
 	destinationTotalBefore := workspaceTotal(destinationWorkspaceID)
 
 	service := NewItemWorkspaceMoveService(db)
-	preview, err := service.Preview(itemID, ItemWorkspaceMoveInput{DestinationWorkspaceID: destinationWorkspaceID})
+	preview, err := service.Preview(itemID, seed.UserID, ItemWorkspaceMoveInput{DestinationWorkspaceID: destinationWorkspaceID})
 	if err != nil {
 		t.Fatalf("preview move: %v", err)
 	}

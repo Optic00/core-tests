@@ -87,7 +87,7 @@ func TestDefaultAgentScopesExcludesDestructiveScopes(t *testing.T) {
 	for _, unwanted := range []string{
 		auth.ScopeItemsDelete, auth.ScopeWorkspacesDelete, auth.ScopeTimeDelete,
 		auth.ScopeAssetsDelete, auth.ScopeMilestonesDelete, auth.ScopeIterationsDelete,
-		auth.ScopeProjectsDelete,
+		"projects:delete", // Retired scopes must not reappear in the default grant.
 	} {
 		if slices.Contains(auth.DefaultAgentScopes, unwanted) {
 			t.Errorf("DefaultAgentScopes must not grant %q by default", unwanted)

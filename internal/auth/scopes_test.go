@@ -66,7 +66,7 @@ func TestValidateAgentScopes_RejectsItemsDelete(t *testing.T) {
 }
 
 func TestValidateAgentScopes_RejectsPlanningWrites(t *testing.T) {
-	for _, s := range []string{ScopeMilestonesWrite, ScopeIterationsWrite, ScopeProjectsWrite} {
+	for _, s := range []string{ScopeMilestonesWrite, ScopeIterationsWrite, "projects:write"} {
 		if err := ValidateAgentScopes([]string{s}); err == nil {
 			t.Errorf("planning :write scope %q must be rejected for agent tokens", s)
 		}
