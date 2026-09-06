@@ -66,7 +66,7 @@ func setupMentionTestEnv(t *testing.T, db database.Database) mentionTestEnv {
 		WorkspaceID: workspaceID,
 		Title:       "Test Item",
 		Description: "Item description",
-		IsTask:      true,
+		IsTask:      false,
 		StatusID:    &statusID,
 	})
 	if err != nil {

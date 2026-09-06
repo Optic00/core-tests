@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,38 +15,23 @@ import (
 	"windshift/internal/database"
 	"windshift/internal/models"
 	"windshift/internal/repository"
+	"windshift/internal/testutils"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 func newPushTestDB(t *testing.T) database.Database {
 	t.Helper()
-	db, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "push.db"))
-	if err != nil {
-		t.Fatalf("new SQLite database: %v", err)
+	// Push authorization reads current user state. Use the production schema
+	// instead of a partial users table that can silently suppress delivery.
+	tdb := testutils.CreateTestDB(t, true)
+	db := tdb.DB
+	if tdb.Engine == "sqlite" {
+		t.Cleanup(func() { _ = tdb.Close() })
 	}
-	statements := []string{
-		`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
-		`CREATE TABLE push_subscriptions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			endpoint TEXT NOT NULL UNIQUE,
-			auth_key TEXT NOT NULL,
-			p256dh_key TEXT NOT NULL,
-			user_agent TEXT NOT NULL DEFAULT '',
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_used_at DATETIME,
-			revoked_at DATETIME
-		)`,
-		`INSERT INTO users (id) VALUES (1), (2), (3)`,
+	if _, err := db.ExecWrite(`INSERT INTO users (id,email,username,first_name,last_name,is_active) VALUES (2,'push2@example.test','push2','Push','Two',true),(3,'push3@example.test','push3','Push','Three',true)`); err != nil {
+		t.Fatalf("seed push users: %v", err)
 	}
-	for _, statement := range statements {
-		if _, err := db.ExecWrite(statement); err != nil {
-			_ = db.Close()
-			t.Fatalf("initialize push database: %v", err)
-		}
-	}
-	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 

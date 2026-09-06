@@ -88,7 +88,7 @@ func setupHierarchyTestEnv(t *testing.T, db database.Database) hierarchyTestEnv 
 			Description: description,
 			StatusID:    statusRef,
 			ItemTypeID:  itemType,
-			IsTask:      true,
+			IsTask:      false,
 			ParentID:    parentID,
 			CreatorID:   &creator,
 		})
@@ -504,7 +504,7 @@ func TestHierarchyService_GetEffectiveProject(t *testing.T) {
 			WorkspaceID: env.WorkspaceID,
 			Title:       "Item With Project",
 			Description: "Description",
-			IsTask:      true,
+			IsTask:      false,
 			StatusID:    &env.StatusID,
 			ProjectID:   &projectID,
 		})
@@ -541,7 +541,7 @@ func TestHierarchyService_GetEffectiveProject(t *testing.T) {
 			WorkspaceID: env.WorkspaceID,
 			Title:       "Parent With Project",
 			Description: "Description",
-			IsTask:      true,
+			IsTask:      false,
 			StatusID:    &env.StatusID,
 			ProjectID:   &projectID,
 		})
@@ -555,7 +555,7 @@ func TestHierarchyService_GetEffectiveProject(t *testing.T) {
 			WorkspaceID: env.WorkspaceID,
 			Title:       "Child Item",
 			Description: "Description",
-			IsTask:      true,
+			IsTask:      false,
 			StatusID:    &env.StatusID,
 			ParentID:    &parentID,
 		})

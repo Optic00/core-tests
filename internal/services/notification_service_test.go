@@ -60,7 +60,8 @@ func TestUnreadEmailBatchesReauthorizeWorkspaceNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatalf("email batches before revocation: %v", err)
 	}
-	assertNotificationTitles(t, before["notification-recipient@example.com"], "system notice", "allowed workspace")
+	// Email batches are oldest-first, with the ID breaking equal timestamps.
+	assertNotificationTitles(t, before["notification-recipient@example.com"], "allowed workspace", "system notice")
 
 	if _, err := roles.RevokeFromUser(userID, allowedWorkspaceID, viewerRoleID); err != nil {
 		t.Fatalf("revoke workspace role: %v", err)
@@ -108,7 +109,7 @@ func TestUnreadEmailBatchesReauthorizeGroupDerivedWorkspaceNotifications(t *test
 	if err != nil {
 		t.Fatalf("email batches before group revocation: %v", err)
 	}
-	assertNotificationTitles(t, before["notification-group-recipient@example.com"], "system notice", "group workspace")
+	assertNotificationTitles(t, before["notification-group-recipient@example.com"], "group workspace", "system notice")
 
 	if _, err := env.db.Exec("DELETE FROM group_members WHERE group_id = ? AND user_id = ?", groupID, userID); err != nil {
 		t.Fatalf("remove group membership: %v", err)
