@@ -10,11 +10,13 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	v2 "windshift/internal/restapi/v2"
 )
 
 // RegisteredRoute is a (method, path) pair harvested from the source by
-// walking the routes/ package's AST. Path always includes the surface
-// prefix ("/api" or "/rest/api/v1") so the matrix tests and
+// walking legacy registration ASTs and the canonical v2 inventory. Path
+// includes the mounted surface prefix so the matrix tests and
 // drift-guards can compare directly against incoming request paths.
 type RegisteredRoute struct {
 	Method string
@@ -22,12 +24,14 @@ type RegisteredRoute struct {
 }
 
 // EnumerateRegisteredRoutes returns every HTTP route registered by the
-// running server, parsed from the source tree. It walks two surfaces:
+// running server, from legacy registration source and canonical v2 metadata:
 //
 //  1. internal/restapi/v1/router.go     — calls to HandleWithMiddleware
 //     (string-literal first arg)        — prefix /rest/api/v1
 //  2. internal/routes/*.go              — calls to .HandleH / .Handle on
 //     the `api` route group              — prefix /api
+//  3. internal/restapi/v2.Inventory()   — /api/v2 and /rest/api/v2,
+//     according to each operation's Exposure.
 //
 // Direct mux.Handle("METHOD /path", ...) registrations in server.go (the
 // logbook/LLM proxies) are intentionally excluded — they bypass the
@@ -45,6 +49,18 @@ func EnumerateRegisteredRoutes(t *testing.T) []RegisteredRoute {
 	var all []RegisteredRoute
 	all = append(all, parseV1Router(t, filepath.Join(coreRoot, "internal", "restapi", "v1", "router.go"))...)
 	all = append(all, parseRoutesPackage(t, filepath.Join(coreRoot, "internal", "routes"))...)
+	for _, route := range v2.Inventory() {
+		switch route.Exposure {
+		case v2.ExposureBoth:
+			all = append(all, RegisteredRoute{route.Method, "/api/v2" + route.Path}, RegisteredRoute{route.Method, "/rest/api/v2" + route.Path})
+		case v2.ExposureSession:
+			all = append(all, RegisteredRoute{route.Method, "/api/v2" + route.Path})
+		case v2.ExposureBearer:
+			all = append(all, RegisteredRoute{route.Method, "/rest/api/v2" + route.Path})
+		default:
+			t.Fatalf("unrecognized v2 exposure %q for %s %s", route.Exposure, route.Method, route.Path)
+		}
+	}
 
 	// Stable order — both for deterministic subtest names and for diff
 	// readability when the route table grows.
