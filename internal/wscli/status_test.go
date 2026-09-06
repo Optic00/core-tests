@@ -28,18 +28,18 @@ func TestStatusListScopesTwoWorkspaces(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/rest/api/v1/workspaces":
+		case "/rest/api/v2/workspaces":
 			_ = json.NewEncoder(w).Encode(PaginatedResponse[Workspace]{Data: workspaces})
-		case "/rest/api/v1/workspaces/11":
-			_ = json.NewEncoder(w).Encode(workspaces[0])
-		case "/rest/api/v1/workspaces/22":
-			_ = json.NewEncoder(w).Encode(workspaces[1])
-		case "/rest/api/v1/workspaces/11/statuses":
-			_ = json.NewEncoder(w).Encode(workspaceStatuses[11])
-		case "/rest/api/v1/workspaces/22/statuses":
-			_ = json.NewEncoder(w).Encode(workspaceStatuses[22])
-		case "/rest/api/v1/statuses":
-			_ = json.NewEncoder(w).Encode(systemStatuses)
+		case "/rest/api/v2/workspaces/11":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": workspaces[0]})
+		case "/rest/api/v2/workspaces/22":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": workspaces[1]})
+		case "/rest/api/v2/workspaces/11/statuses":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": workspaceStatuses[11]})
+		case "/rest/api/v2/workspaces/22/statuses":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": workspaceStatuses[22]})
+		case "/rest/api/v2/statuses":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": systemStatuses})
 		default:
 			http.NotFound(w, r)
 		}

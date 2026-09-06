@@ -91,7 +91,7 @@ func TestRewriteImageRefs(t *testing.T) {
 
 // uploadAndRewrite drives the full flow against a stub server that
 // records each multipart upload, asserts entity discrimination, and
-// returns the legacy {success,message,attachment} envelope. The summary
+// returns the canonical v2 data envelope. The summary
 // line reports the upload/skip counts the user will see.
 func TestUploadAndRewrite_FullFlow(t *testing.T) {
 	baseDir := t.TempDir()
@@ -109,12 +109,8 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
-		// entity_type/entity_id come in via the URL query because the
-		// v1 wrapper appends them — but our test client posts directly
-		// against the server stub, so we read them from the request's
-		// form values after parsing the multipart. The CLI doesn't set
-		// them itself; only the v1 wrapper does. In this isolation
-		// test we just assert the multipart parts the CLI sends.
+		// The canonical route identifies the page. Assert the multipart
+		// parts sent by the CLI independently of transport internals.
 		mediaType, params, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if !strings.HasPrefix(mediaType, "multipart/") {
 			t.Errorf("content-type: want multipart/*, got %q", mediaType)
@@ -140,9 +136,7 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 		_ = gotEntityType // CLI does not set this — see comment above
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"message": "ok",
-			"attachment": Attachment{
+			"data": Attachment{
 				ID:               nextID,
 				Filename:         "stored.png",
 				OriginalFilename: gotFilename,
@@ -169,7 +163,7 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 		t.Errorf("remote ref must remain untouched: %q", rewritten)
 	}
 
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7/attachments" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7/attachments" {
 		t.Errorf("upload path: %q", gotPath)
 	}
 	if gotAuth != "Bearer ws_test_token" {
@@ -247,15 +241,13 @@ func TestTranslatePagePermissionError(t *testing.T) {
 }
 
 // UploadPageAttachment reports a useful error when the server emits a
-// legacy {success:false,message:"..."} envelope (the cookie-auth
-// handler's validation path).
-func TestClient_UploadPageAttachment_LegacyErrorEnvelope(t *testing.T) {
+// canonical v2 error envelope for rejected file extensions.
+func TestClient_UploadPageAttachment_V2ErrorEnvelope(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": false,
-			"message": "File extension .svg is not allowed",
+			"error": map[string]any{"code": "invalid_request", "message": "File extension .svg is not allowed"},
 		})
 	})
 	_, err := c.UploadPageAttachment(1, 2, "img.svg", strings.NewReader("<svg/>"))

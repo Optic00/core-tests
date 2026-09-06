@@ -87,7 +87,7 @@ func TestGenerateWindshiftMDCorrectness(t *testing.T) {
 
 func TestWriteWindshiftMDFailsWhenTransitionsAreUnavailable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/api/v1/workflows/7/transitions" {
+		if r.URL.Path != "/rest/api/v2/workflows/7/transitions" {
 			t.Errorf("unexpected request path: %s", r.URL.Path)
 		}
 		http.Error(w, "transitions unavailable", http.StatusServiceUnavailable)

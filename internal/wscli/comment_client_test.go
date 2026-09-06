@@ -9,25 +9,22 @@ import (
 func TestClient_GetCommentsFollowsAllPages(t *testing.T) {
 	requestedPages := make([]string, 0, 2)
 	client, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/api/v1/items/840/comments" {
+		if r.URL.Path != "/rest/api/v2/items/840/comments" {
 			http.NotFound(w, r)
 			return
 		}
 		requestedPages = append(requestedPages, r.URL.RawQuery)
-		page := r.URL.Query().Get("page")
-		response := PaginatedResponse[Comment]{
-			Pagination: PaginationMeta{Page: 1, Limit: 100, Total: 3, TotalPages: 2},
-		}
-		switch page {
-		case "1":
-			response.Data = []Comment{{ID: 3}, {ID: 2}}
-		case "2":
-			response.Pagination.Page = 2
-			response.Data = []Comment{{ID: 1}}
+		cursor := r.URL.Query().Get("cursor")
+		var response map[string]any
+		switch cursor {
+		case "":
+			response = map[string]any{"comments": []Comment{{ID: 3}, {ID: 2}}, "has_more": true, "next_cursor": "older"}
+		case "older":
+			response = map[string]any{"comments": []Comment{{ID: 1}}, "has_more": false}
 		default:
-			t.Fatalf("unexpected page %q", page)
+			t.Errorf("unexpected cursor %q", cursor)
 		}
-		_ = json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": response})
 	})
 
 	comments, err := client.GetComments(840)
@@ -41,8 +38,8 @@ func TestClient_GetCommentsFollowsAllPages(t *testing.T) {
 		t.Fatalf("comments = %+v, want IDs 3, 2, 1", comments)
 	}
 	if len(requestedPages) != 2 ||
-		requestedPages[0] != "page=1&limit=100" ||
-		requestedPages[1] != "page=2&limit=100" {
+		requestedPages[0] != "page_size=100" ||
+		requestedPages[1] != "page_size=100&cursor=older" {
 		t.Fatalf("requested pages = %v", requestedPages)
 	}
 }

@@ -27,7 +27,7 @@ func newTestPageClient(t *testing.T, handler http.HandlerFunc) (*Client, *httpte
 	return c, srv
 }
 
-// readJSONBody is a small helper for asserting POST/PUT bodies.
+// readJSONBody is a small helper for asserting JSON mutation bodies.
 func readJSONBody(t *testing.T, r *http.Request, dst interface{}) {
 	t.Helper()
 	body, err := io.ReadAll(r.Body)
@@ -50,7 +50,7 @@ func TestClient_ListPages_PathAndAuth(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		gotContentType = r.Header.Get("Content-Type")
 		gotAccept = r.Header.Get("Accept")
-		_ = json.NewEncoder(w).Encode(PageListResponse{Items: []Page{
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []Page{
 			{ID: 1, Title: "First", WorkspaceID: 42},
 			{ID: 2, Title: "Second", WorkspaceID: 42},
 		}})
@@ -63,8 +63,8 @@ func TestClient_ListPages_PathAndAuth(t *testing.T) {
 	if gotMethod != http.MethodGet {
 		t.Errorf("method: want GET, got %s", gotMethod)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages" {
-		t.Errorf("path: want /rest/api/v1/workspaces/42/pages, got %s", gotPath)
+	if gotPath != "/rest/api/v2/workspaces/42/pages" {
+		t.Errorf("path: want /rest/api/v2/workspaces/42/pages, got %s", gotPath)
 	}
 	if gotAuth != "Bearer ws_test_token" {
 		t.Errorf("auth: want Bearer ws_test_token, got %s", gotAuth)
@@ -85,7 +85,7 @@ func TestClient_GetPage_Path(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotMethod = r.Method
-		_ = json.NewEncoder(w).Encode(Page{ID: 7, Title: "Onboarding", WorkspaceID: 42})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7, Title: "Onboarding", WorkspaceID: 42}})
 	})
 
 	page, err := c.GetPage(42, 7)
@@ -95,7 +95,7 @@ func TestClient_GetPage_Path(t *testing.T) {
 	if gotMethod != http.MethodGet {
 		t.Errorf("method: want GET, got %s", gotMethod)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7" {
 		t.Errorf("path: got %s", gotPath)
 	}
 	if page.Title != "Onboarding" {
@@ -111,7 +111,7 @@ func TestClient_CreatePage_Body(t *testing.T) {
 		gotPath = r.URL.Path
 		readJSONBody(t, r, &gotBody)
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(Page{ID: 99, Title: gotBody.Title})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 99, Title: gotBody.Title}})
 	})
 
 	parentID := 5
@@ -122,7 +122,7 @@ func TestClient_CreatePage_Body(t *testing.T) {
 	if gotMethod != http.MethodPost {
 		t.Errorf("method: want POST, got %s", gotMethod)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages" {
 		t.Errorf("path: got %s", gotPath)
 	}
 	if gotBody.Title != "New" || gotBody.Content != "body" {
@@ -143,7 +143,7 @@ func TestClient_UpdatePage_Body(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		readJSONBody(t, r, &gotBody)
-		_ = json.NewEncoder(w).Encode(Page{ID: 7})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7}})
 	})
 
 	title := "Edited"
@@ -152,10 +152,10 @@ func TestClient_UpdatePage_Body(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdatePage: %v", err)
 	}
-	if gotMethod != http.MethodPut {
-		t.Errorf("method: want PUT, got %s", gotMethod)
+	if gotMethod != http.MethodPatch {
+		t.Errorf("method: want PATCH, got %s", gotMethod)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7" {
 		t.Errorf("path: got %s", gotPath)
 	}
 	if gotBody.Title == nil || *gotBody.Title != "Edited" {
@@ -172,13 +172,13 @@ func TestClient_MovePage_RootViaNullParent(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		readJSONBody(t, r, &gotBody)
-		_ = json.NewEncoder(w).Encode(Page{ID: 7, ParentID: nil})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7, ParentID: nil}})
 	})
 
 	if _, err := c.MovePage(42, 7, nil, nil, nil); err != nil {
 		t.Fatalf("MovePage(root): %v", err)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7/move" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7/move" {
 		t.Errorf("path: got %s", gotPath)
 	}
 	if gotBody.ParentID != nil {
@@ -190,7 +190,7 @@ func TestClient_MovePage_NonRoot(t *testing.T) {
 	var gotBody PageMoveRequest
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		readJSONBody(t, r, &gotBody)
-		_ = json.NewEncoder(w).Encode(Page{ID: 7})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7}})
 	})
 
 	parent := 11
@@ -206,7 +206,7 @@ func TestClient_MovePage_CrossWorkspace(t *testing.T) {
 	var gotBody PageMoveRequest
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		readJSONBody(t, r, &gotBody)
-		_ = json.NewEncoder(w).Encode(Page{ID: 7, WorkspaceID: 77})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7, WorkspaceID: 77}})
 	})
 
 	destination := 77
@@ -232,7 +232,7 @@ func TestClient_ArchivePage_Path(t *testing.T) {
 	if gotMethod != http.MethodDelete {
 		t.Errorf("method: want DELETE, got %s", gotMethod)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7" {
 		t.Errorf("path: got %s", gotPath)
 	}
 }
@@ -241,8 +241,9 @@ func TestClient_GetPageHistory_Path(t *testing.T) {
 	var gotPath string
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(PageHistoryResponse{
-			Items: []PageRevision{{ID: 1, RevisionNumber: 1}, {ID: 2, RevisionNumber: 2}},
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data":       []PageRevision{{ID: 1, RevisionNumber: 1}, {ID: 2, RevisionNumber: 2}},
+			"pagination": PaginationMeta{Page: 1, PageSize: 50, TotalItems: 2, TotalPages: 1},
 		})
 	})
 
@@ -250,7 +251,7 @@ func TestClient_GetPageHistory_Path(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPageHistory: %v", err)
 	}
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7/history" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7/history" {
 		t.Errorf("path: got %s", gotPath)
 	}
 	if len(revs) != 2 {
@@ -272,7 +273,7 @@ func TestClient_ErrorResponseMapping(t *testing.T) {
 		{
 			name:        "JSON error → APIError",
 			status:      http.StatusForbidden,
-			body:        `{"code":"INSUFFICIENT_PERMISSION","message":"missing pages:write"}`,
+			body:        `{"error":{"code":"INSUFFICIENT_PERMISSION","message":"missing pages:write"}}`,
 			wantAPIErr:  true,
 			wantContain: "missing pages:write",
 		},
@@ -310,7 +311,7 @@ func TestClient_MovePage_SerializesSiblings(t *testing.T) {
 	var gotBody PageMoveRequest
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		readJSONBody(t, r, &gotBody)
-		_ = json.NewEncoder(w).Encode(Page{ID: 42})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 42}})
 	})
 
 	parent := 7
@@ -349,7 +350,7 @@ func TestClient_MovePage_OmitsEmptySiblings(t *testing.T) {
 	var rawBody []byte
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
 		rawBody, _ = io.ReadAll(r.Body)
-		_ = json.NewEncoder(w).Encode(Page{ID: 42})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 42}})
 	})
 	parent := 7
 	if _, err := c.MovePage(99, 42, &parent, nil, nil); err != nil {

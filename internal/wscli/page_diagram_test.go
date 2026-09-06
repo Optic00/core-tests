@@ -17,11 +17,11 @@ func TestClientPageDiagramOperations(t *testing.T) {
 			if r.Method != http.MethodGet {
 				t.Errorf("method: want GET, got %s", r.Method)
 			}
-			if r.URL.Path != "/rest/api/v1/workspaces/42/pages/7/diagrams" {
+			if r.URL.Path != "/rest/api/v2/workspaces/42/pages/7/diagrams" {
 				t.Errorf("path: got %s", r.URL.Path)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items": []PageDiagram{{PageID: 7, AttachmentID: 91, Name: "Flow", Kind: "mermaid"}},
+				"data": []PageDiagram{{PageID: 7, AttachmentID: 91, Name: "Flow", Kind: "mermaid"}},
 			})
 		})
 
@@ -39,10 +39,10 @@ func TestClientPageDiagramOperations(t *testing.T) {
 			if r.Method != http.MethodGet {
 				t.Errorf("method: want GET, got %s", r.Method)
 			}
-			if r.URL.Path != "/rest/api/v1/workspaces/42/pages/7/diagrams/91" {
+			if r.URL.Path != "/rest/api/v2/workspaces/42/pages/7/diagrams/91" {
 				t.Errorf("path: got %s", r.URL.Path)
 			}
-			_ = json.NewEncoder(w).Encode(PageDiagram{PageID: 7, AttachmentID: 91, Name: "Flow"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": PageDiagram{PageID: 7, AttachmentID: 91, Name: "Flow"}})
 		})
 
 		got, err := client.GetPageDiagram(42, 7, 91)
@@ -60,12 +60,12 @@ func TestClientPageDiagramOperations(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("method: want POST, got %s", r.Method)
 			}
-			if r.URL.Path != "/rest/api/v1/workspaces/42/pages/7/diagrams" {
+			if r.URL.Path != "/rest/api/v2/workspaces/42/pages/7/diagrams" {
 				t.Errorf("path: got %s", r.URL.Path)
 			}
 			readJSONBody(t, r, &body)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(PageDiagram{PageID: 7, AttachmentID: 92})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": PageDiagram{PageID: 7, AttachmentID: 92}})
 		})
 
 		hash := "content-hash-1"
@@ -95,14 +95,14 @@ func TestClientPageDiagramOperations(t *testing.T) {
 	t.Run("update sends replacement scene and expected hash", func(t *testing.T) {
 		var body PageDiagramUpdateRequest
 		client, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPut {
-				t.Errorf("method: want PUT, got %s", r.Method)
+			if r.Method != http.MethodPatch {
+				t.Errorf("method: want PATCH, got %s", r.Method)
 			}
-			if r.URL.Path != "/rest/api/v1/workspaces/42/pages/7/diagrams/91" {
+			if r.URL.Path != "/rest/api/v2/workspaces/42/pages/7/diagrams/91" {
 				t.Errorf("path: got %s", r.URL.Path)
 			}
 			readJSONBody(t, r, &body)
-			_ = json.NewEncoder(w).Encode(PageDiagram{PageID: 7, AttachmentID: 93})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": PageDiagram{PageID: 7, AttachmentID: 93}})
 		})
 
 		hash := "content-hash-2"
@@ -146,7 +146,7 @@ func TestPageDiagramCommandsCoverAllOperations(t *testing.T) {
 			name:   "create mermaid at explicit placement",
 			args:   []string{"page", "diagram", "create", "7", "--name", "Flow", "--mermaid", "graph TD; A-->B", "--placement", "start", "--expected-content-hash", "hash-1"},
 			method: http.MethodPost,
-			path:   "/rest/api/v1/workspaces/42/pages/7/diagrams",
+			path:   "/rest/api/v2/workspaces/42/pages/7/diagrams",
 			status: http.StatusCreated,
 			response: PageDiagram{
 				PageID: 7, AttachmentID: 91, Name: "Flow", Kind: "mermaid", ContentHash: "hash-2",
@@ -168,16 +168,16 @@ func TestPageDiagramCommandsCoverAllOperations(t *testing.T) {
 			name:       "list table output",
 			args:       []string{"page", "diagram", "list", "7", "-o", "table"},
 			method:     http.MethodGet,
-			path:       "/rest/api/v1/workspaces/42/pages/7/diagrams",
+			path:       "/rest/api/v2/workspaces/42/pages/7/diagrams",
 			status:     http.StatusOK,
-			response:   map[string]any{"items": []PageDiagram{{PageID: 7, AttachmentID: 91, Name: "Flow", Kind: "mermaid", ContentHash: "hash-2"}}},
+			response:   []PageDiagram{{PageID: 7, AttachmentID: 91, Name: "Flow", Kind: "mermaid", ContentHash: "hash-2"}},
 			wantOutput: []string{"ATTACHMENT", "PAGE", "KIND", "CONTENT HASH", "91", "7", "mermaid", "hash-2"},
 		},
 		{
 			name:       "get",
 			args:       []string{"page", "diagram", "get", "7", "91"},
 			method:     http.MethodGet,
-			path:       "/rest/api/v1/workspaces/42/pages/7/diagrams/91",
+			path:       "/rest/api/v2/workspaces/42/pages/7/diagrams/91",
 			status:     http.StatusOK,
 			response:   PageDiagram{PageID: 7, AttachmentID: 91, Name: "Flow", Kind: "mermaid", ContentHash: "hash-2"},
 			wantOutput: []string{`"attachment_id": 91`, `"name": "Flow"`},
@@ -185,8 +185,8 @@ func TestPageDiagramCommandsCoverAllOperations(t *testing.T) {
 		{
 			name:   "update inline Excalidraw",
 			args:   []string{"page", "diagram", "update", "7", "91", "--excalidraw", scene, "--expected-content-hash", "hash-2"},
-			method: http.MethodPut,
-			path:   "/rest/api/v1/workspaces/42/pages/7/diagrams/91",
+			method: http.MethodPatch,
+			path:   "/rest/api/v2/workspaces/42/pages/7/diagrams/91",
 			status: http.StatusOK,
 			response: PageDiagram{
 				PageID: 7, AttachmentID: 92, Name: "Flow", Kind: "excalidraw", ContentHash: "hash-3",
@@ -224,7 +224,7 @@ func TestPageDiagramCommandsCoverAllOperations(t *testing.T) {
 					tc.assertBody(t, body)
 				}
 				w.WriteHeader(tc.status)
-				_ = json.NewEncoder(w).Encode(tc.response)
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": tc.response})
 			}))
 			t.Cleanup(server.Close)
 
@@ -260,7 +260,7 @@ func TestPageDiagramCommandFromFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		readJSONBody(t, r, &gotBody)
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(PageDiagram{PageID: 7, AttachmentID: 91})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": PageDiagram{PageID: 7, AttachmentID: 91}})
 	}))
 	t.Cleanup(server.Close)
 
@@ -281,12 +281,12 @@ func TestPageDiagramErrorsAreActionable(t *testing.T) {
 		err  error
 		want string
 	}{
-		{name: "invalid scene", err: &APIError{Status: 400, Code: "VALIDATION_FAILED", ErrorMessage: "invalid Excalidraw scene"}, want: "invalid diagram payload"},
-		{name: "payload too large", err: &APIError{Status: 413, Code: "VALIDATION_FAILED", ErrorMessage: "diagram payload is too large"}, want: "invalid diagram payload"},
-		{name: "stale page", err: &APIError{Status: 409, Code: "VALIDATION_FAILED", ErrorMessage: "page content changed"}, want: "stale Page content"},
-		{name: "missing diagram", err: &APIError{Status: 404, Code: "NOT_FOUND", ErrorMessage: "not found"}, want: "diagram attachment 91 on Page 7 was not found"},
-		{name: "missing page access", err: &APIError{Status: 404, Code: "NOT_FOUND", ErrorMessage: "not found"}, want: "Page 7 was not found, or you lack page access"},
-		{name: "scope denied", err: &APIError{Status: 403, Code: "INSUFFICIENT_SCOPE", ErrorMessage: "missing pages:write"}, want: "token lacks the required pages API scope"},
+		{name: "invalid scene", err: &APIError{Status: 400, Code: "VALIDATION_FAILED", Message: "invalid Excalidraw scene"}, want: "invalid diagram payload"},
+		{name: "payload too large", err: &APIError{Status: 413, Code: "VALIDATION_FAILED", Message: "diagram payload is too large"}, want: "invalid diagram payload"},
+		{name: "stale page", err: &APIError{Status: 409, Code: "VALIDATION_FAILED", Message: "page content changed"}, want: "stale Page content"},
+		{name: "missing diagram", err: &APIError{Status: 404, Code: "NOT_FOUND", Message: "not found"}, want: "diagram attachment 91 on Page 7 was not found"},
+		{name: "missing page access", err: &APIError{Status: 404, Code: "NOT_FOUND", Message: "not found"}, want: "Page 7 was not found, or you lack page access"},
+		{name: "scope denied", err: &APIError{Status: 403, Code: "INSUFFICIENT_SCOPE", Message: "missing pages:write"}, want: "token lacks the required pages API scope"},
 	}
 
 	for _, tc := range tests {

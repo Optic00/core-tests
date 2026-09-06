@@ -104,14 +104,14 @@ func TestResolvePageInput_H1RegexSkipsLowerHeadings(t *testing.T) {
 // be able to intentionally blank a page body. Before the fix, the command
 // detected "was --content set?" by checking pageEditContent != "", so an
 // explicit empty string short-circuited as "no content supplied" and the
-// PUT body never carried Content=&"".
+// PATCH body never carried Content=&"".
 func TestPageEditCommand_EmptyContentClearsBody(t *testing.T) {
 	var gotBody PageUpdateRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/rest/api/v1/workspaces/42/pages/7"):
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/rest/api/v2/workspaces/42/pages/7"):
 			_ = json.NewDecoder(r.Body).Decode(&gotBody)
-			_ = json.NewEncoder(w).Encode(Page{ID: 7, Title: "Onboarding"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7, Title: "Onboarding"}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -129,10 +129,10 @@ func TestPageEditCommand_EmptyContentClearsBody(t *testing.T) {
 		t.Fatalf("Run exited with code %d; stderr=%s", code, errBuf.String())
 	}
 	if gotBody.Content == nil {
-		t.Fatalf("PUT body did not include Content; got %+v", gotBody)
+		t.Fatalf("PATCH body did not include Content; got %+v", gotBody)
 	}
 	if *gotBody.Content != "" {
-		t.Errorf("PUT body Content: want \"\", got %q", *gotBody.Content)
+		t.Errorf("PATCH body Content: want \"\", got %q", *gotBody.Content)
 	}
 }
 
@@ -140,11 +140,11 @@ func TestPageMoveCommand_ResolvesDestinationWorkspace(t *testing.T) {
 	var gotBody PageMoveRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/rest/api/v1/workspaces":
+		case r.Method == http.MethodGet && r.URL.Path == "/rest/api/v2/workspaces":
 			_ = json.NewEncoder(w).Encode(PaginatedResponse[Workspace]{Data: []Workspace{{ID: 77, Key: "DEST"}}})
-		case r.Method == http.MethodPost && r.URL.Path == "/rest/api/v1/workspaces/42/pages/7/move":
+		case r.Method == http.MethodPost && r.URL.Path == "/rest/api/v2/workspaces/42/pages/7/move":
 			_ = json.NewDecoder(r.Body).Decode(&gotBody)
-			_ = json.NewEncoder(w).Encode(Page{ID: 7, WorkspaceID: 77, Path: "/7/"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": Page{ID: 7, WorkspaceID: 77, Path: "/7/"}})
 		default:
 			http.NotFound(w, r)
 		}
