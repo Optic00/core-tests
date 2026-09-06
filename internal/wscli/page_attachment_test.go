@@ -126,6 +126,9 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read part: %v", err)
 			}
+			if part.FormName() == "entity_type" {
+				t.Error("unexpected legacy entity_type multipart field")
+			}
 			if part.FormName() != "file" {
 				continue
 			}
