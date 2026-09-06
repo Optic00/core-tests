@@ -96,7 +96,7 @@ func TestTaskStatusNameResolutionAndUnknownStatus(t *testing.T) {
 			if r.URL.Query().Get("status_id_not") != "3" {
 				t.Errorf("status query=%s", r.URL.RawQuery)
 			}
-			fmt.Fprint(w, `{"data":[],"pagination":{"total_pages":1}}`)
+			fmt.Fprint(w, `{"data":[],"pagination":{"page":1,"page_size":50,"total_items":0,"total_pages":0}}`)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -113,20 +113,18 @@ func TestTaskStatusNameResolutionAndUnknownStatus(t *testing.T) {
 	}
 }
 
-func TestTaskEditResolvesParentKeyAndCanClearIt(t *testing.T) {
-	var parents []int
+func TestTaskEditResolvesParentKeyAndSendsNullToClearIt(t *testing.T) {
+	var parents []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/rest/api/v2/workspaces/CTX/items/9":
 			fmt.Fprint(w, `{"data":{"id":99,"workspace_id":42}}`)
 		case r.Method == "PATCH" && r.URL.Path == "/rest/api/v2/items/42":
-			var body struct {
-				ParentID int `json:"parent_id"`
-			}
+			var body map[string]json.RawMessage
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
 			}
-			parents = append(parents, body.ParentID)
+			parents = append(parents, string(body["parent_id"]))
 			fmt.Fprint(w, `{"data":{"id":42,"workspace_id":42}}`)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -140,7 +138,7 @@ func TestTaskEditResolvesParentKeyAndCanClearIt(t *testing.T) {
 			t.Fatal(errOut)
 		}
 	}
-	if fmt.Sprint(parents) != "[99 0]" {
+	if fmt.Sprint(parents) != "[99 null]" {
 		t.Fatalf("parents=%v", parents)
 	}
 }
@@ -174,6 +172,20 @@ func TestTaskListAllHandlesEmptyAndRejectsBrokenPagination(t *testing.T) {
 				t.Fatalf("empty result=%s", out)
 			}
 		})
+	}
+}
+
+func TestTaskListRejectsWrongSinglePage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "3" {
+			t.Errorf("page=%s", r.URL.RawQuery)
+		}
+		fmt.Fprint(w, `{"data":[{"id":1}],"pagination":{"page":1,"page_size":1,"total_items":3,"total_pages":3}}`)
+	}))
+	t.Cleanup(server.Close)
+	code, out, errOut := runTaskUsability(t, server, "task", "ls", "--page", "3", "--limit", "1")
+	if code == 0 || out != "" || !strings.Contains(errOut, "invalid pagination") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, out, errOut)
 	}
 }
 

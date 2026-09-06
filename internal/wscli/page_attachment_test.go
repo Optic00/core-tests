@@ -133,7 +133,9 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 			gotFileBytes, _ = io.ReadAll(part)
 		}
 		gotEntityType = r.URL.Query().Get("entity_type")
-		_ = gotEntityType // CLI does not set this — see comment above
+		if gotEntityType != "" {
+			t.Errorf("unexpected legacy entity_type query: %q", gotEntityType)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": Attachment{

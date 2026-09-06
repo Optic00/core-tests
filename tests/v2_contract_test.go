@@ -1,9 +1,15 @@
 package tests
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"windshift/internal/wscli"
 )
 
 type v2FixtureRecord struct {
@@ -80,6 +86,47 @@ func TestV2WorkspaceItemLifecycleAndAuthenticationBoundaries(t *testing.T) {
 	if afterRejection != stored {
 		t.Fatalf("rejected patch partially changed item: before=%+v after=%+v", stored, afterRejection)
 	}
+	// Exercise CLI wire semantics against real validation and persistence, not
+	// only a permissive stub: omission preserves the parent; null clears it.
+	type parentRecord struct {
+		ParentID *int `json:"parent_id"`
+	}
+	type itemType struct {
+		ID             int `json:"id"`
+		HierarchyLevel int `json:"hierarchy_level"`
+	}
+	types := DecodeV2Document[[]itemType](t, MakeV2SessionRequest(t, server, http.MethodGet, "/item-types", nil), http.StatusOK)
+	childTypeID := 0
+	for _, typ := range types {
+		if typ.HierarchyLevel == 1 {
+			childTypeID = typ.ID
+			break
+		}
+	}
+	if childTypeID == 0 {
+		t.Fatal("production defaults missing a level-one child type")
+	}
+	child := DecodeV2Document[v2FixtureRecord](t, MakeV2BearerRequest(t, server, http.MethodPost, "/items", map[string]any{"workspace_id": workspace.ID, "title": "CLI child", "item_type_id": childTypeID, "parent_id": second[0].ID}), http.StatusCreated)
+	childPath := fmt.Sprintf("/items/%d", child.ID)
+	config := filepath.Join(t.TempDir(), "ws.toml")
+	if err := os.WriteFile(config, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, clear := range []bool{false, true} {
+		args := []string{"--config", config, "task", "edit", fmt.Sprint(child.ID), "--title", "CLI changed"}
+		if clear {
+			args = append(args, "--parent", "0")
+		}
+		var out, errOut bytes.Buffer
+		code := wscli.Run(context.Background(), args, nil, &out, &errOut, map[string]string{"WS_URL": server.BaseURL, "WS_TOKEN": server.BearerToken, "WS_WORKSPACE": ""})
+		if code != 0 {
+			t.Fatalf("CLI clear=%t: %s", clear, &errOut)
+		}
+		got := DecodeV2Document[parentRecord](t, MakeV2SessionRequest(t, server, http.MethodGet, childPath, nil), http.StatusOK)
+		if clear && got.ParentID != nil || !clear && (got.ParentID == nil || *got.ParentID != second[0].ID) {
+			t.Fatalf("clear=%t: persisted parent=%v", clear, got.ParentID)
+		}
+	}
 	for _, tc := range []struct{ name, mount, token, cookie string }{
 		{"anonymous session", "/api/v2", "", ""},
 		{"anonymous bearer", "/rest/api/v2", "", ""},
@@ -90,6 +137,29 @@ func TestV2WorkspaceItemLifecycleAndAuthenticationBoundaries(t *testing.T) {
 			response := makeRequest(t, http.MethodGet, server.BaseURL+tc.mount+path, tc.token, nil, map[string]string{"Cookie": tc.cookie})
 			defer response.Body.Close()
 			AssertStatusCode(t, response, http.StatusUnauthorized)
+		})
+	}
+}
+
+// Independent wire checks complement the inventory-copy unit test. Current
+// inventory has Both and Session exposure; there is no Bearer-only route yet.
+func TestV2ActualMountExposure(t *testing.T) {
+	server, _ := StartTestServer(t, GetDBType())
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{"/api/v2/items", http.StatusUnauthorized},
+		{"/rest/api/v2/items", http.StatusUnauthorized},
+		{"/api/v2/admin/groups", http.StatusUnauthorized},
+		{"/rest/api/v2/admin/groups", http.StatusNotFound},
+		{"/api/v2/nonexistent-exposure-probe", http.StatusNotFound},
+		{"/rest/api/v2/nonexistent-exposure-probe", http.StatusNotFound},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			response := makeRequest(t, http.MethodGet, server.BaseURL+tc.path, "", nil, nil)
+			defer response.Body.Close()
+			AssertStatusCode(t, response, tc.want)
 		})
 	}
 }
