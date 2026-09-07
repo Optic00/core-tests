@@ -147,6 +147,11 @@ func extractPgDBName(dsn string) string {
 // This uses an in-process server for faster, more reliable tests.
 func StartTestServer(t *testing.T, dbType string) (ts *TestServer, cleanup func()) {
 	t.Helper()
+	return startTestServer(t, dbType, nil)
+}
+
+func startTestServer(t *testing.T, dbType string, configure func(*server.Config)) (ts *TestServer, cleanup func()) {
+	t.Helper()
 
 	// Generate unique database name
 	timestamp := time.Now().UnixNano()
@@ -217,6 +222,10 @@ func StartTestServer(t *testing.T, dbType string) (ts *TestServer, cleanup func(
 		cfg.DB.SQLitePath = dbPath
 	case "postgres":
 		cfg.DB.PostgresConn = dbPath
+	}
+
+	if configure != nil {
+		configure(&cfg)
 	}
 
 	// Create the in-process server
