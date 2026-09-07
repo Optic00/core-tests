@@ -1,7 +1,5 @@
-// v1_assets_test exercises the bearer-token v1 asset surface:
-// CRUD on assets, read-only set/type browse, and the assets:* token-scope
-// gates. Set / type fixtures are seeded over the cookie-auth admin
-// surface (v1 doesn't expose mutations for those in this slice).
+// Retained bearer-v1 asset contracts remain covered while these routes are live.
+// Shared asset setup uses session v2; tests below continue to exercise v1.
 package tests
 
 import (
@@ -13,45 +11,6 @@ import (
 	"testing"
 )
 
-// adminAssetToken mints a token with the full assets:* scope set as the
-// boot-strapped admin user. The default-test bearer minted by
-// CreateBearerToken uses the legacy "admin" scope which no longer auto-
-// expands to assets:* (per asset-api-v1-security-review-2026-06-03
-// finding 1 — assets are opt-in only). Granular and legacy scopes
-// can't be combined on one token because expandLegacyScopes returns
-// the moment it sees a legacy string, so this helper mints with
-// granular scopes only.
-func adminAssetToken(t *testing.T, ts *TestServer) string {
-	t.Helper()
-	return createTokenWithScopesAsUser(t, ts, "admin", "testpass123", []string{
-		"assets:read", "assets:write", "assets:delete",
-	})
-}
-
-// seedAssetSetAndType creates a fresh asset set + asset type via the
-// session-v2 admin surface. Returns (setID, assetTypeID), also used by CLI tests.
-func seedAssetSetAndType(t *testing.T, ts *TestServer, suffix string) (setID, assetTypeID int) {
-	t.Helper()
-	setBody := map[string]interface{}{
-		"name":        "Asset v1 test " + suffix,
-		"description": "fixture for v1 asset tests",
-	}
-	setID = DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/asset-sets", setBody), http.StatusCreated).ID
-
-	typeBody := map[string]interface{}{
-		"name":        "Laptop",
-		"description": "fixture asset type",
-		"icon":        "Laptop",
-		"color":       "#1f6feb",
-	}
-	assetTypeID = DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, fmt.Sprintf("/asset-sets/%d/types", setID), typeBody), http.StatusCreated).ID
-	return setID, assetTypeID
-}
-
-// TestV1Assets_HappyPath_AdminToken walks the full create → get → list →
-// update → delete cycle against the v1 surface with an admin-minted bearer
-// token. Doubles as a positive control for the slice-1..7 wiring — if this
-// breaks, the route / handler / DTO pipeline is misaligned.
 func TestV1Assets_HappyPath_AdminToken(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -173,9 +132,6 @@ func TestV1Assets_HappyPath_AdminToken(t *testing.T) {
 	})
 }
 
-// TestV1Assets_TokenScopeEnforcement walks each route with a token that
-// is missing the required scope and asserts the bearer-auth middleware
-// refuses the call before the handler runs.
 func TestV1Assets_TokenScopeEnforcement(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -317,10 +273,6 @@ func TestV1Assets_TokenScopeEnforcement(t *testing.T) {
 	})
 }
 
-// TestV1Assets_CreatorEmailHidden asserts the response from GET /assets/{id}
-// (and the create response) does NOT carry creator.email under assets:read.
-// Per asset-api-v1-security-review-2026-06-03 finding 2 — user emails
-// gate on users:read, not assets:read.
 func TestV1Assets_CreatorEmailHidden(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -347,9 +299,6 @@ func TestV1Assets_CreatorEmailHidden(t *testing.T) {
 	assertCreatorEmailAbsent(t, got)
 }
 
-// TestV1Assets_UnknownCustomFieldKeyRejected covers finding 4: keys not
-// declared on the asset type must be rejected as a 400 validation error
-// rather than silently stored.
 func TestV1Assets_UnknownCustomFieldKeyRejected(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -376,10 +325,6 @@ func TestV1Assets_UnknownCustomFieldKeyRejected(t *testing.T) {
 	}
 }
 
-// TestV1Assets_MutationsEmitAudit covers finding 3: v1 create / update /
-// delete must produce audit rows. Read the audit log via the admin
-// surface after the operations and check action_type rows are present
-// for the same asset id.
 func TestV1Assets_MutationsEmitAudit(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -433,11 +378,6 @@ func TestV1Assets_MutationsEmitAudit(t *testing.T) {
 	}
 }
 
-// TestV1Assets_XSSSanitized covers asset-api-v1-security-review-followup
-// 'V1 asset create/update bypasses legacy XSS sanitization': the cookie
-// surface used to strip HTML on title / description, the v1 surface
-// stored them verbatim. After the AssetService consolidation, both
-// surfaces share the same input policy.
 func TestV1Assets_XSSSanitized(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -479,11 +419,6 @@ func TestV1Assets_XSSSanitized(t *testing.T) {
 	}
 }
 
-// TestV1Assets_BearerAuditAttribution covers asset-api-v1-security-review-
-// followup 'Bearer-token asset audit rows lack token attribution'. Audit
-// row details on a v1-driven create must carry api_token_id +
-// api_token_prefix + auth_method=bearer so a compromised-token
-// investigation can attribute it.
 func TestV1Assets_BearerAuditAttribution(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -536,9 +471,6 @@ func TestV1Assets_BearerAuditAttribution(t *testing.T) {
 	}
 }
 
-// TestV1Assets_CustomFieldRequiredEnforcedOnCreate covers asset-api-v1-
-// security-review-followup 'Custom-field schema validation remains
-// incomplete' — required fields must be enforced on Create.
 func TestV1Assets_CustomFieldRequiredEnforcedOnCreate(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -569,7 +501,6 @@ func TestV1Assets_CustomFieldRequiredEnforcedOnCreate(t *testing.T) {
 	AssertStatusCode(t, resp2, http.StatusCreated)
 }
 
-// TestV1Assets_CustomFieldTypeMismatchRejected covers schema type checks.
 func TestV1Assets_CustomFieldTypeMismatchRejected(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	_ = CreateBearerToken(t, ts)
@@ -591,113 +522,4 @@ func TestV1Assets_CustomFieldTypeMismatchRejected(t *testing.T) {
 	if !strings.Contains(string(body), "VALIDATION_FAILED") {
 		t.Fatalf("expected VALIDATION_FAILED on number-field type mismatch, got %s", string(body))
 	}
-}
-
-// addRequiredFieldToType creates a custom field of the given type and
-// attaches it as required to the asset type. Returns the custom field id.
-// Cookie-auth admin path — v1 doesn't expose mutations on the type config.
-func addRequiredFieldToType(t *testing.T, ts *TestServer, assetTypeID int, name, fieldType string) int {
-	t.Helper()
-	customFieldID := CreateTestCustomField(t, ts, name, fieldType, "")
-	body := map[string]interface{}{
-		"fields": []map[string]interface{}{{
-			"custom_field_id": customFieldID,
-			"is_required":     true,
-			"display_order":   0,
-		}},
-	}
-	resp := MakeAuthRequest(t, ts, http.MethodPut,
-		fmt.Sprintf("/asset-types/%d/fields", assetTypeID), body)
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("attach field to type: %d - %s", resp.StatusCode, string(b))
-	}
-	return customFieldID
-}
-
-// assertCreatorEmailAbsent enforces finding 2: asset responses never
-// contain a creator.email field, regardless of whether the caller has
-// users:read or not. Email gates on users:read separately.
-func assertCreatorEmailAbsent(t *testing.T, asset map[string]interface{}) {
-	t.Helper()
-	creator, ok := asset["creator"].(map[string]interface{})
-	if !ok {
-		// No creator block at all is also fine — only fail when one
-		// exists AND it carries email.
-		return
-	}
-	if email, present := creator["email"]; present && email != "" {
-		t.Fatalf("creator.email must be omitted on assets:read; got %q", email)
-	}
-}
-
-// getAssetRoleID returns the role id for one of the bootstrapped role
-// names (Viewer / Editor / Administrator). t.Fatal on missing.
-func getAssetRoleID(t *testing.T, ts *TestServer, name string) int {
-	t.Helper()
-	resp := MakeAuthRequest(t, ts, http.MethodGet, "/asset-roles", nil)
-	defer resp.Body.Close()
-	AssertStatusCode(t, resp, http.StatusOK)
-	var roles []map[string]interface{}
-	DecodeJSON(t, resp, &roles)
-	for _, r := range roles {
-		if rn, _ := r["name"].(string); rn == name {
-			return int(r["id"].(float64))
-		}
-	}
-	t.Fatalf("asset role %q not found", name)
-	return 0
-}
-
-// assignAssetSetRole grants a user a role on an asset set via the
-// cookie-auth admin surface.
-func assignAssetSetRole(t *testing.T, ts *TestServer, setID, userID, roleID int) {
-	t.Helper()
-	body := map[string]interface{}{
-		"user_id": userID,
-		"role_id": roleID,
-	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, fmt.Sprintf("/asset-sets/%d/roles", setID), body)
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("assign asset-set role: %d - %s", resp.StatusCode, string(body))
-	}
-}
-
-// createTokenWithDefaultScopes mints a token via the same code path
-// `ws init` uses: no explicit `permissions` field on the request, so the
-// server applies DefaultAgentScopes.
-func createTokenWithDefaultScopes(t *testing.T, ts *TestServer, username, password string) string {
-	t.Helper()
-	loginResp := makeRequest(t, http.MethodPost, ts.APIBase+"/auth/login", "",
-		map[string]string{"email_or_username": username, "password": password}, nil)
-	if loginResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(loginResp.Body)
-		t.Fatalf("login failed: %d - %s", loginResp.StatusCode, string(body))
-	}
-	var sessionCookie string
-	for _, c := range loginResp.Cookies() {
-		if c.Name == "session" || c.Name == "windshift_session" {
-			sessionCookie = c.String()
-			break
-		}
-	}
-	loginResp.Body.Close()
-	tokenResp := makeRequest(t, http.MethodPost, ts.APIBase+"/api-tokens", "",
-		map[string]interface{}{"name": "default-mint-" + username},
-		map[string]string{"Cookie": sessionCookie},
-	)
-	defer tokenResp.Body.Close()
-	var out struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(tokenResp.Body).Decode(&out); err != nil {
-		t.Fatalf("decode token: %v", err)
-	}
-	if out.Token == "" {
-		t.Fatalf("empty token in default-mint response")
-	}
-	return out.Token
 }

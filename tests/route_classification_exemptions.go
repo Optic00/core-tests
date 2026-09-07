@@ -34,6 +34,21 @@ type RouteClassificationExemption struct {
 // add to this list only when the route genuinely doesn't fit any policy
 // class.
 var RouteClassificationExemptions = []RouteClassificationExemption{
+	// Pre-register these exemptions for future v2-prefix enforcement; current
+	// EnforcedPrefixes remain legacy-scoped. Asset-set roles are independent of
+	// workspace roles. Dedicated v2 tests
+	// cover outsider/Viewer/Editor/Administrator on both mounts, token scopes
+	// separately, and persisted outcomes after each denied mutation.
+	{Method: "GET", Path: "/api/v2/asset-sets/{id}/assets", Reason: "asset-set role policy; TestV2Assets_SetPermissionsAreIndependentOfTokenScopes"},
+	{Method: "POST", Path: "/api/v2/asset-sets/{id}/assets", Reason: "asset-set create policy; TestV2Assets_SetPermissionsAreIndependentOfTokenScopes"},
+	{Method: "GET", Path: "/api/v2/assets/{id}", Reason: "asset-set view policy; TestV2Assets_SetPermissionsAreIndependentOfTokenScopes"},
+	{Method: "PATCH", Path: "/api/v2/assets/{id}", Reason: "asset-set edit policy; TestV2Assets_SetPermissionsAreIndependentOfTokenScopes"},
+	{Method: "DELETE", Path: "/api/v2/assets/{id}", Reason: "asset-set delete policy; TestV2Assets_SetPermissionsAreIndependentOfTokenScopes"},
+	{Method: "GET", Path: "/rest/api/v2/asset-sets/{id}/assets", Reason: "asset-set role policy plus token scopes; dedicated TestV2Assets permission tests"},
+	{Method: "POST", Path: "/rest/api/v2/asset-sets/{id}/assets", Reason: "asset-set create policy plus token scopes; dedicated TestV2Assets permission tests"},
+	{Method: "GET", Path: "/rest/api/v2/assets/{id}", Reason: "asset-set view policy plus token scopes; dedicated TestV2Assets permission tests"},
+	{Method: "PATCH", Path: "/rest/api/v2/assets/{id}", Reason: "asset-set edit policy plus token scopes; dedicated TestV2Assets permission tests"},
+	{Method: "DELETE", Path: "/rest/api/v2/assets/{id}", Reason: "asset-set delete policy plus token scopes; dedicated TestV2Assets permission tests"},
 	// Multi-workspace filtered list endpoints. These do not return 404 on
 	// permission denial — they return 200 with a result list filtered by
 	// the caller's workspace memberships. The matrix's exact-status model
