@@ -57,7 +57,7 @@ test('linked test cases stay invisible without test.view and reappear after perm
   const workspace = await createWorkspaceViaAPI(request, generateWorkspace(stamp));
   const item = await createItemViaAPI(request, workspace.id, { title: `Visible item ${stamp}` });
 
-  const testCaseResponse = await request.post(`/api/workspaces/${workspace.id}/test-cases`, {
+  const testCaseResponse = await request.post(`/api/v2/workspaces/${workspace.id}/test-cases`, {
     headers: SEC_FETCH,
     data: {
       title: `${token} ${secondSearchTerm}`,
@@ -67,7 +67,7 @@ test('linked test cases stay invisible without test.view and reappear after perm
     },
   });
   expect(testCaseResponse.status(), await testCaseResponse.text()).toBe(201);
-  const testCase = (await testCaseResponse.json()) as { id: number };
+  const testCase = (await testCaseResponse.json()).data as { id: number };
 
   const linkTypes = await listLinkTypesViaAPI(request);
   const testsLinkType = linkTypes.find((linkType) => linkType.name === 'Tests');
@@ -134,7 +134,7 @@ test('linked test cases stay invisible without test.view and reappear after perm
       const url = new URL(response.url());
       return (
         response.request().method() === 'GET' &&
-        url.pathname === '/api/links/search' &&
+        url.pathname === '/api/v2/links/search' &&
         url.searchParams.get('q') === token
       );
     });
@@ -146,7 +146,7 @@ test('linked test cases stay invisible without test.view and reappear after perm
       const url = new URL(response.url());
       return (
         response.request().method() === 'GET' &&
-        url.pathname === '/api/links/search' &&
+        url.pathname === '/api/v2/links/search' &&
         url.searchParams.get('q') === secondSearchTerm
       );
     });

@@ -33,7 +33,7 @@ export async function createWorkspaceViaAPI(
     time_project_id?: number;
   }
 ) {
-  const response = await request.post(`${BASE_URL}/api/workspaces`, {
+  const response = await request.post(`${BASE_URL}/api/v2/workspaces`, {
     headers: defaultHeaders,
     data,
   });
@@ -41,19 +41,20 @@ export async function createWorkspaceViaAPI(
     response.ok(),
     `create workspace failed (${response.status()}): ${await response.text()}`
   ).toBeTruthy();
-  return response.json();
+  return (await response.json()).data;
 }
 
 /**
  * List item types via the API (global catalog). Returns the raw array.
  */
 export async function listItemTypesViaAPI(request: APIRequestContext) {
-  const response = await request.get(`${BASE_URL}/api/item-types`, {
+  const response = await request.get(`${BASE_URL}/api/v2/item-types`, {
     headers: defaultHeaders,
   });
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
-  return Array.isArray(body) ? body : (body.data ?? body.items ?? []);
+  expect(Array.isArray(body.data)).toBeTruthy();
+  return body.data;
 }
 
 /**
@@ -96,12 +97,27 @@ export async function createItemViaAPI(
     custom_field_values?: Record<string, unknown>;
   }
 ) {
-  const response = await request.post(`${BASE_URL}/api/items`, {
+  const { status, priority, custom_field_values, ...fields } = data;
+  const payload: Record<string, unknown> = { ...fields, workspace_id: workspaceId };
+  if (custom_field_values !== undefined) payload.custom_fields = custom_field_values;
+  for (const [name, value, path] of [
+    ['status_id', status, `/workspaces/${workspaceId}/statuses`],
+    ['priority_id', priority, '/priorities'],
+  ] as const) {
+    if (value === undefined) continue;
+    const catalog = await request.get(`${BASE_URL}/api/v2${path}`, { headers: defaultHeaders });
+    expect(catalog.ok(), await catalog.text()).toBeTruthy();
+    const entries = (await catalog.json()).data as Array<{ id: number; name: string }>;
+    const matches = entries.filter((entry) => entry.name.toLowerCase() === value.toLowerCase());
+    expect(matches, `expected one exact ${name} match for ${value}`).toHaveLength(1);
+    payload[name] = matches[0].id;
+  }
+  const response = await request.post(`${BASE_URL}/api/v2/items`, {
     headers: defaultHeaders,
-    data: { ...data, workspace_id: workspaceId },
+    data: payload,
   });
-  expect(response.ok()).toBeTruthy();
-  return response.json();
+  expect(response.status(), await response.text()).toBe(201);
+  return (await response.json()).data;
 }
 
 /**
@@ -320,12 +336,13 @@ export async function createTimeProjectViaAPI(
  * Duplicates (6), Child Of (7).
  */
 export async function listLinkTypesViaAPI(request: APIRequestContext) {
-  const response = await request.get(`${BASE_URL}/api/link-types`, {
+  const response = await request.get(`${BASE_URL}/api/v2/link-types`, {
     headers: defaultHeaders,
   });
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
-  return (body.data ?? body) as Array<{
+  expect(Array.isArray(body.data)).toBeTruthy();
+  return body.data as Array<{
     id: number;
     name: string;
     active?: boolean;
@@ -347,12 +364,12 @@ export async function createLinkViaAPI(
     target_id: number;
   }
 ) {
-  const response = await request.post(`${BASE_URL}/api/links`, {
+  const response = await request.post(`${BASE_URL}/api/v2/links`, {
     headers: defaultHeaders,
     data,
   });
   expect(response.ok()).toBeTruthy();
-  return response.json();
+  return (await response.json()).data;
 }
 
 /**

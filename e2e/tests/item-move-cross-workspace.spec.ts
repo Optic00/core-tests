@@ -30,7 +30,7 @@ test('moves a work item to another workspace from its detail view', async ({ pag
   const previewResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith(`/api/items/${item.id}/move-workspace/preview`)
+      new URL(response.url()).pathname.endsWith(`/api/v2/items/${item.id}/move-workspace/preview`)
   );
   await page.getByTestId(`item-move-workspace-option-${destination.id}`).click();
   expect((await previewResponse).ok()).toBeTruthy();
@@ -44,12 +44,12 @@ test('moves a work item to another workspace from its detail view', async ({ pag
   const moveResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith(`/api/items/${item.id}/move-workspace`)
+      new URL(response.url()).pathname.endsWith(`/api/v2/items/${item.id}/move-workspace`)
   );
   await page.getByTestId('item-move-workspace-confirm').click();
   const response = await moveResponse;
   expect(response.ok()).toBeTruthy();
-  const result = await response.json();
+  const result = (await response.json()).data;
   expect(result.old_key).toBe(oldKey);
   expect(result.new_key).toMatch(new RegExp(`^${destination.key}-\\d+$`));
 
