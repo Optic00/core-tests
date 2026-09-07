@@ -94,6 +94,13 @@ var MatrixRoutes = []MatrixRoute{
 	// per-actor fixture refresh; see comment below).
 
 	// workspace.item.view — routes gated on canViewItem / PermissionItemView.
+	// V2 diagram policy intent only: the representatives above remain legacy.
+	// Dedicated TestV2ItemDiagrams cases exercise both mounts; bearer scopes are
+	// checked separately by TestV2Diagrams_GranularBearerScopes.
+	{Method: "GET", Path: "/api/v2/items/{item_id}/diagrams", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/api/v2/item-diagrams/{diagram_id}", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/rest/api/v2/items/{item_id}/diagrams", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/rest/api/v2/item-diagrams/{diagram_id}", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/available-status-transitions", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/detail-summary", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/history", Class: "workspace.item.view"},
@@ -128,6 +135,10 @@ var MatrixRoutes = []MatrixRoute{
 	// consume the fixture (which would break subsequent actor iterations)
 	// stay in exemptions with a structural reason until the per-actor
 	// fixture refresh shape lands.
+	{Method: "POST", Path: "/api/v2/items/{item_id}/diagrams", Class: "workspace.item.edit"},
+	{Method: "PATCH", Path: "/api/v2/item-diagrams/{diagram_id}", Class: "workspace.item.edit"},
+	{Method: "POST", Path: "/rest/api/v2/items/{item_id}/diagrams", Class: "workspace.item.edit"},
+	{Method: "PATCH", Path: "/rest/api/v2/item-diagrams/{diagram_id}", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/reparent-children", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/copy", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/transition", Class: "workspace.item.edit"},

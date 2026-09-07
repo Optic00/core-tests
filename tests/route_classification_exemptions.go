@@ -34,6 +34,20 @@ type RouteClassificationExemption struct {
 // add to this list only when the route genuinely doesn't fit any policy
 // class.
 var RouteClassificationExemptions = []RouteClassificationExemption{
+	// V2 pre-registration only; EnforcedPrefixes still target legacy mounts.
+	// Page-level ACLs and immutable attachment replacement do not fit the
+	// workspace-only representative fixture. Dedicated TestV2PageDiagrams
+	// checks run on both mounts, with token scopes covered separately.
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams", Reason: "per-page view ACL; TestV2PageDiagrams"},
+	{Method: "POST", Path: "/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams", Reason: "per-page edit ACL and attachment creation; TestV2PageDiagrams"},
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams/{attachment_id}", Reason: "per-page view ACL plus attachment ownership; TestV2PageDiagrams"},
+	{Method: "PATCH", Path: "/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams/{attachment_id}", Reason: "per-page edit ACL and immutable attachment replacement; TestV2PageDiagrams"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams", Reason: "per-page view ACL plus token scope; TestV2PageDiagrams"},
+	{Method: "POST", Path: "/rest/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams", Reason: "per-page edit ACL and attachment creation plus token scope; TestV2PageDiagrams"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams/{attachment_id}", Reason: "per-page view ACL plus attachment ownership and token scope; TestV2PageDiagrams"},
+	{Method: "PATCH", Path: "/rest/api/v2/workspaces/{workspace_id}/pages/{page_id}/diagrams/{attachment_id}", Reason: "per-page edit ACL and immutable attachment replacement plus token scope; TestV2PageDiagrams"},
+	{Method: "DELETE", Path: "/api/v2/item-diagrams/{diagram_id}", Reason: "workspace.item.edit consumes diagram fixture; TestV2ItemDiagrams_CRUDAndWorkspacePermissions"},
+	{Method: "DELETE", Path: "/rest/api/v2/item-diagrams/{diagram_id}", Reason: "workspace.item.edit consumes diagram fixture plus items:write; TestV2ItemDiagrams_CRUDAndWorkspacePermissions"},
 	// Pre-register these exemptions for future v2-prefix enforcement; current
 	// EnforcedPrefixes remain legacy-scoped. Asset-set roles are independent of
 	// workspace roles. Dedicated v2 tests
