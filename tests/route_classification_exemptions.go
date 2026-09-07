@@ -34,6 +34,31 @@ type RouteClassificationExemption struct {
 // add to this list only when the route genuinely doesn't fit any policy
 // class.
 var RouteClassificationExemptions = []RouteClassificationExemption{
+	// V2 label/link pre-registration. Prefix enforcement remains legacy-scoped.
+	// Tests below check persisted effects and independent endpoint permissions;
+	// these declarations do not imply a complete permission-matrix migration.
+	{Method: "PATCH", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "CanAdminWorkspace with 404 masking, unlike legacy workspace.admin 403; TestV2Labels_CatalogMutationPermissions"},
+	{Method: "PATCH", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "CanAdminWorkspace with 404 masking plus token scope, unlike legacy workspace.admin 403; TestV2Labels_CatalogMutationPermissions"},
+	{Method: "DELETE", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "workspace.admin deletes global label and consumes assignments; TestV2Labels_CatalogMutationPermissions"},
+	{Method: "DELETE", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "workspace.admin deletes global label and consumes assignments, plus token scope; TestV2Labels_CatalogMutationPermissions"},
+	{Method: "DELETE", Path: "/api/v2/items/{item_id}/labels/{label_id}", Reason: "workspace.item.edit consumes assignment fixture; TestV2Labels_ItemAssignmentsAndPermissions"},
+	{Method: "DELETE", Path: "/rest/api/v2/items/{item_id}/labels/{label_id}", Reason: "workspace.item.edit consumes assignment fixture, plus token scope; TestV2Labels_ItemAssignmentsAndPermissions"},
+	{Method: "GET", Path: "/api/v2/items/{item_id}/links", Reason: "source visibility plus filtered endpoints; TestV2ItemLinks_SourceEditAndTargetView"},
+	{Method: "GET", Path: "/rest/api/v2/items/{item_id}/links", Reason: "source visibility plus filtered endpoints and items:read; TestV2ItemLinks_SourceEditAndTargetView"},
+	{Method: "POST", Path: "/api/v2/links", Reason: "cross-entity source-edit/target-view policy; item cases in TestV2ItemLinks"},
+	{Method: "POST", Path: "/rest/api/v2/links", Reason: "cross-entity source-edit/target-view policy plus links:write; item cases in TestV2ItemLinks"},
+	{Method: "DELETE", Path: "/api/v2/links/{link_id}", Reason: "cross-entity source permission and destructive fixture; item cases in TestV2ItemLinks"},
+	{Method: "DELETE", Path: "/rest/api/v2/links/{link_id}", Reason: "cross-entity source permission and destructive fixture plus links:write; item cases in TestV2ItemLinks"},
+	{Method: "GET", Path: "/api/v2/link-types", Reason: "global authenticated catalog, not workspace-scoped; TestV2LinkTypes"},
+	{Method: "GET", Path: "/api/v2/link-types/{link_type_id}", Reason: "global authenticated catalog, not workspace-scoped; TestV2LinkTypes"},
+	{Method: "POST", Path: "/api/v2/link-types", Reason: "system administrator catalog policy; TestV2LinkTypes_SystemAndAdminBoundaries"},
+	{Method: "PATCH", Path: "/api/v2/link-types/{link_type_id}", Reason: "system administrator plus immutable system-type policy; TestV2LinkTypes_SystemAndAdminBoundaries"},
+	{Method: "DELETE", Path: "/api/v2/link-types/{link_type_id}", Reason: "system administrator, system-type protection and in-use reference guard; TestV2LinkTypes"},
+	{Method: "GET", Path: "/rest/api/v2/link-types", Reason: "global authenticated catalog plus links:read; TestV2LinkTypes"},
+	{Method: "GET", Path: "/rest/api/v2/link-types/{link_type_id}", Reason: "global authenticated catalog plus links:read; TestV2LinkTypes"},
+	{Method: "POST", Path: "/rest/api/v2/link-types", Reason: "system administrator catalog policy plus links:write; TestV2LinkTypes_SystemAndAdminBoundaries"},
+	{Method: "PATCH", Path: "/rest/api/v2/link-types/{link_type_id}", Reason: "system administrator plus immutable system-type policy and links:write; TestV2LinkTypes_SystemAndAdminBoundaries"},
+	{Method: "DELETE", Path: "/rest/api/v2/link-types/{link_type_id}", Reason: "system administrator, system-type protection and reference guard plus links:write; TestV2LinkTypes"},
 	// V2 pre-registration only; EnforcedPrefixes still target legacy mounts.
 	// Page-level ACLs and immutable attachment replacement do not fit the
 	// workspace-only representative fixture. Dedicated TestV2PageDiagrams

@@ -171,6 +171,22 @@ var MatrixRoutes = []MatrixRoute{
 	{Method: "GET", Path: "/api/attachments/{attachmentId}/download", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/attachments/{attachmentId}/thumbnail", Class: "workspace.item.view"},
 
+	// V2 label policy intent. The catalog is global, but each catalog route
+	// authorizes its workspace context. Dedicated TestV2Labels cases exercise
+	// these routes; this does not migrate the legacy matrix representatives.
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Class: "workspace.item.view"},
+	{Method: "POST", Path: "/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.edit"},
+	{Method: "GET", Path: "/api/v2/items/{item_id}/labels", Class: "workspace.item.view"},
+	{Method: "PUT", Path: "/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
+	{Method: "POST", Path: "/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Class: "workspace.item.view"},
+	{Method: "POST", Path: "/rest/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.edit"},
+	{Method: "GET", Path: "/rest/api/v2/items/{item_id}/labels", Class: "workspace.item.view"},
+	{Method: "PUT", Path: "/rest/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
+	{Method: "POST", Path: "/rest/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
+
 	// --- /api/links — gate on the parent item's view/edit perm ---
 	// Create/delete require item.edit on the source/target item.
 	// Search returns linkable items filtered by view perm (multi-workspace
