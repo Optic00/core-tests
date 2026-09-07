@@ -71,6 +71,61 @@ func TestTaskListPaginationWarningDoesNotPolluteCSV(t *testing.T) {
 	}
 }
 
+func TestTaskListAllValidatesFinalUniqueItemCount(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		lastIDs     []int
+		total       int
+		wantSuccess bool
+	}{
+		{"complete", []int{3}, 3, true},
+		{"empty final page", nil, 3, false},
+		{"duplicate final page", []int{2}, 3, false},
+		{"partial final page", []int{3}, 4, false},
+		{"more than advertised", []int{3}, 2, false},
+		{"overlap but complete", []int{2, 3}, 3, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if requests > 2 {
+					http.Error(w, "unexpected page", 500)
+					return
+				}
+				ids := []int{1, 2}
+				if requests == 2 {
+					ids = tc.lastIDs
+				}
+				items := make([]wscli.Item, 0, len(ids))
+				for _, id := range ids {
+					items = append(items, wscli.Item{ID: id})
+				}
+				if err := json.NewEncoder(w).Encode(wscli.PaginatedResponse[wscli.Item]{Data: items, Pagination: wscli.PaginationMeta{Page: requests, PageSize: 2, TotalItems: tc.total, TotalPages: 2}}); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			code, out, errOut := runTaskUsability(t, server, "task", "ls", "--all", "--limit", "2")
+			if requests != 2 || (code == 0) != tc.wantSuccess {
+				t.Fatalf("requests=%d code=%d stdout=%q stderr=%q", requests, code, out, errOut)
+			}
+			if !tc.wantSuccess && (out != "" || !strings.Contains(errOut, "incomplete pagination")) {
+				t.Fatalf("stdout=%q stderr=%q", out, errOut)
+			}
+			if tc.wantSuccess {
+				var result wscli.PaginatedResponse[wscli.Item]
+				if err := json.Unmarshal([]byte(out), &result); err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Data) != 3 || result.Data[0].ID != 1 || result.Data[1].ID != 2 || result.Data[2].ID != 3 || result.Pagination.TotalItems != 3 {
+					t.Fatalf("result=%s", out)
+				}
+			}
+		})
+	}
+}
+
 func TestTaskListRejectsInvalidPaginationBeforeFetchingItems(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request %s", r.URL)
