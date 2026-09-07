@@ -7,22 +7,23 @@ import { pages } from './pages.js';
  * assert what got sent. Catching a path or verb mismatch here surfaces a
  * server-vs-client wiring drift before it lands in production.
  *
- * Routes mirror `internal/handlers/router.go` and `frontend/src/lib/api/core.js`
- * (which prefixes `/api`).
+ * Page routes mirror the v2 adapter and use real frontend transport decoding.
+ * Knowledge search remains on its explicitly supported legacy route.
  */
 
 describe('pages API client', () => {
   let fetchSpy;
 
   beforeEach(() => {
-    fetchSpy = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          Date: new Date().toUTCString(),
-        },
-      })
+    fetchSpy = vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ data: { id: 7, title: 'Page result' } }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            Date: new Date().toUTCString(),
+          },
+        })
     );
     vi.stubGlobal('fetch', fetchSpy);
   });
@@ -31,31 +32,52 @@ describe('pages API client', () => {
     vi.unstubAllGlobals();
   });
 
-  const lastCall = () => fetchSpy.mock.calls[0];
+  const lastCall = () => {
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    return fetchSpy.mock.calls[0];
+  };
 
-  test('getTree → GET /api/workspaces/:id/pages/tree', async () => {
-    await pages.getTree(42);
+  function respond(body, status = 200) {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(status === 204 ? null : JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+  }
+
+  test('getAll → GET the flat v2 page metadata list', async () => {
+    const metadata = [
+      { id: 7, title: 'Root', parent_id: null },
+      { id: 8, title: 'Child', parent_id: 7 },
+    ];
+    respond({ data: metadata });
+    expect(await pages.getAll(42)).toEqual(metadata);
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/tree');
+    expect(url).toBe('/api/v2/workspaces/42/pages');
     expect(init.method).toBeUndefined(); // fetchAPI defaults to GET
     expect(init.credentials).toBe('same-origin');
   });
 
-  test('getPage → GET /api/workspaces/:id/pages/:pageId', async () => {
-    await pages.getPage(42, 7);
+  test('getPage → GET /api/v2/workspaces/:id/pages/:pageId', async () => {
+    expect(await pages.getPage(42, 7)).toEqual({ id: 7, title: 'Page result' });
     const [url] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7');
   });
 
   test('createPage → POST with body, optional parentId and isHome', async () => {
-    await pages.createPage(42, {
-      title: 'New',
-      content: 'body',
-      parentId: 5,
-      isHome: true,
-    });
+    const created = { id: 9, title: 'New', content: 'body', parent_id: 5, is_home: true };
+    respond({ data: created }, 201);
+    expect(
+      await pages.createPage(42, {
+        title: 'New',
+        content: 'body',
+        parentId: 5,
+        isHome: true,
+      })
+    ).toEqual(created);
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages');
+    expect(url).toBe('/api/v2/workspaces/42/pages');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({
       title: 'New',
@@ -76,11 +98,12 @@ describe('pages API client', () => {
     expect(body.metadata).toEqual({});
   });
 
-  test('updatePage → PUT with title and content only', async () => {
+  test('updatePage → PATCH with title and content only', async () => {
     await pages.updatePage(42, 7, { title: 'Edited', content: 'rewritten' });
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7');
-    expect(init.method).toBe('PUT');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7');
+    expect(init.method).toBe('PATCH');
+    expect(init.headers['Content-Type']).toBe('application/merge-patch+json');
     expect(JSON.parse(init.body)).toEqual({
       title: 'Edited',
       content: 'rewritten',
@@ -101,17 +124,18 @@ describe('pages API client', () => {
     });
   });
 
-  test('archivePage → DELETE /api/workspaces/:id/pages/:pageId', async () => {
-    await pages.archivePage(42, 7);
+  test('archivePage → DELETE /api/v2/workspaces/:id/pages/:pageId', async () => {
+    respond(null, 204);
+    expect(await pages.archivePage(42, 7)).toBeUndefined();
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7');
     expect(init.method).toBe('DELETE');
   });
 
-  test('movePage → POST /api/workspaces/:id/pages/:pageId/move with parent_id', async () => {
+  test('movePage → POST /api/v2/workspaces/:id/pages/:pageId/move with parent_id', async () => {
     await pages.movePage(42, 7, 11);
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/move');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/move');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({
       parent_id: 11,
@@ -151,28 +175,33 @@ describe('pages API client', () => {
     });
   });
 
-  test('getHistory → GET with default limit/offset query string', async () => {
-    await pages.getHistory(42, 7);
+  test('getHistory → GET with default v2 page/page_size query string', async () => {
+    const revisions = [{ id: 31, page_id: 7, revision_type: 'update' }];
+    respond({
+      data: revisions,
+      pagination: { page: 1, page_size: 50, total_items: 1, total_pages: 1 },
+    });
+    expect(await pages.getHistory(42, 7)).toEqual(revisions);
     const [url] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/history?limit=50&offset=0');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/history?page=1&page_size=50');
   });
 
   test('getHistory honors custom pagination', async () => {
     await pages.getHistory(42, 7, { limit: 10, offset: 20 });
     const [url] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/history?limit=10&offset=20');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/history?page=3&page_size=10');
   });
 
-  test('getRevision → GET /api/workspaces/:id/pages/:pageId/history/:revId', async () => {
+  test('getRevision → GET /api/v2/workspaces/:id/pages/:pageId/history/:revId', async () => {
     await pages.getRevision(42, 7, 99);
     const [url] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/history/99');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/history/99');
   });
 
-  test('restoreRevision → POST /api/workspaces/:id/pages/:pageId/history/:revId/restore', async () => {
+  test('restoreRevision → POST /api/v2/workspaces/:id/pages/:pageId/history/:revId/restore', async () => {
     await pages.restoreRevision(42, 7, 99);
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/history/99/restore');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/history/99/restore');
     expect(init.method).toBe('POST');
   });
 
@@ -185,7 +214,7 @@ describe('pages API client', () => {
       expectedContentHash: 'hash-1',
     });
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/diagrams');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/diagrams');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({
       name: 'Flow',
@@ -195,7 +224,7 @@ describe('pages API client', () => {
     });
   });
 
-  test('updateDiagram → PUT with replacement name, scene, and content hash', async () => {
+  test('updateDiagram → PATCH with replacement name, scene, and content hash', async () => {
     const scene = {
       elements: [{ id: 'one', type: 'rectangle' }],
       appState: {},
@@ -207,8 +236,9 @@ describe('pages API client', () => {
       expectedContentHash: 'hash-2',
     });
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/diagrams/91');
-    expect(init.method).toBe('PUT');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/diagrams/91');
+    expect(init.method).toBe('PATCH');
+    expect(init.headers['Content-Type']).toBe('application/merge-patch+json');
     expect(JSON.parse(init.body)).toEqual({
       name: 'Updated flow',
       excalidraw: scene,
@@ -216,20 +246,20 @@ describe('pages API client', () => {
     });
   });
 
-  test('getPermissions → GET /api/workspaces/:id/pages/:pageId/permissions', async () => {
+  test('getPermissions → GET /api/v2/workspaces/:id/pages/:pageId/permissions', async () => {
     await pages.getPermissions(42, 7);
     const [url] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/permissions');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/permissions');
   });
 
-  test('grantPermission → POST /api/workspaces/:id/pages/:pageId/permissions with snake_cased body', async () => {
+  test('grantPermission → POST /api/v2/workspaces/:id/pages/:pageId/permissions with snake_cased body', async () => {
     await pages.grantPermission(42, 7, {
       principalType: 'user',
       principalId: 8,
       permissionLevel: 'edit',
     });
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/permissions');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/permissions');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({
       principal_type: 'user',
@@ -238,23 +268,27 @@ describe('pages API client', () => {
     });
   });
 
-  test('revokePermission → DELETE /api/workspaces/:id/pages/:pageId/permissions/:permId', async () => {
-    await pages.revokePermission(42, 7, 99);
+  test('revokePermission → DELETE /api/v2/workspaces/:id/pages/:pageId/permissions/:permId', async () => {
+    respond(null, 204);
+    expect(await pages.revokePermission(42, 7, 99)).toBeUndefined();
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/permissions/99');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/permissions/99');
     expect(init.method).toBe('DELETE');
   });
 
-  test('setInheritance → PATCH /api/workspaces/:id/pages/:pageId/inheritance with inherit_permissions body', async () => {
+  test('setInheritance → PATCH /api/v2/workspaces/:id/pages/:pageId/inheritance with inherit_permissions body', async () => {
     await pages.setInheritance(42, 7, false);
     const [url, init] = lastCall();
-    expect(url).toBe('/api/workspaces/42/pages/7/inheritance');
+    expect(url).toBe('/api/v2/workspaces/42/pages/7/inheritance');
     expect(init.method).toBe('PATCH');
+    expect(init.headers['Content-Type']).toBe('application/merge-patch+json');
     expect(JSON.parse(init.body)).toEqual({ inherit_permissions: false });
   });
 
   test('searchKnowledge → GET /api/workspaces/:id/knowledge/search with q and limit', async () => {
-    await pages.searchKnowledge(42, 'onboarding', { limit: 10 });
+    const matches = { results: [{ id: 7, title: 'Onboarding' }] };
+    respond(matches);
+    expect(await pages.searchKnowledge(42, 'onboarding', { limit: 10 })).toEqual(matches);
     const [url] = lastCall();
     expect(url).toBe('/api/workspaces/42/knowledge/search?q=onboarding&limit=10');
   });
@@ -263,5 +297,28 @@ describe('pages API client', () => {
     await pages.searchKnowledge(42, 'onboarding');
     const [url] = lastCall();
     expect(url).toBe('/api/workspaces/42/knowledge/search?q=onboarding&limit=25');
+  });
+
+  test('updatePage keeps omitted fields absent while forwarding an explicit empty value', async () => {
+    await pages.updatePage(42, 7, { content: '' });
+    const [, init] = lastCall();
+    expect(JSON.parse(init.body)).toEqual({ content: '' });
+    expect(init.headers['Content-Type']).toBe('application/merge-patch+json');
+  });
+
+  test('propagates a structured v2 conflict instead of returning data', async () => {
+    respond(
+      { error: { code: 'conflict', message: 'Page has changed' }, request_id: 'synthetic-request' },
+      409
+    );
+    await expect(
+      pages.updatePage(42, 7, { content: 'New', expectedContentHash: 'old' })
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'conflict',
+      message: 'Page has changed',
+      requestId: 'synthetic-request',
+    });
+    expect(fetchSpy).toHaveBeenCalledOnce();
   });
 });
