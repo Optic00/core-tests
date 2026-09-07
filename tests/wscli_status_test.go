@@ -3,77 +3,62 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"testing"
 
-	"windshift/internal/database"
 	"windshift/internal/wscli"
 )
-
-func insertWSCLIStatusID(t *testing.T, db database.Database, query string, args ...any) int {
-	t.Helper()
-	var id int
-	if err := db.QueryRow(query+" RETURNING id", args...).Scan(&id); err != nil {
-		t.Fatalf("insert CLI status fixture: %v\nquery: %s", err, query)
-	}
-	return id
-}
 
 func TestWSCLI_StatusListUsesWorkspaceWorkflows(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	CreateBearerToken(t, ts)
 	world := SeedWorld(t, ts)
-	db := ts.DB()
-
-	var categoryID int
-	if err := db.QueryRow(`SELECT category_id FROM statuses WHERE id = ?`, world.Statuses.InProgress).Scan(&categoryID); err != nil {
-		t.Fatalf("load in-progress category: %v", err)
-	}
+	status := DecodeV2Document[struct {
+		Category struct {
+			ID int `json:"id"`
+		} `json:"category"`
+	}](t, MakeV2SessionRequest(t, ts, http.MethodGet, fmt.Sprintf("/statuses/%d", world.Statuses.InProgress), nil), http.StatusOK)
 	reviewName := fmt.Sprintf("Alpha Review %d", world.Alpha.ID)
-	reviewID := insertWSCLIStatusID(t, db,
-		`INSERT INTO statuses (name, category_id) VALUES (?, ?)`, reviewName, categoryID)
+	reviewID := DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/statuses", map[string]any{
+		"name": reviewName, "category_id": status.Category.ID,
+	}), http.StatusCreated).ID
 
-	alphaWorkflow := insertWSCLIStatusID(t, db,
-		`INSERT INTO workflows (name) VALUES (?)`, fmt.Sprintf("Alpha CLI Workflow %d", world.Alpha.ID))
-	betaWorkflow := insertWSCLIStatusID(t, db,
-		`INSERT INTO workflows (name) VALUES (?)`, fmt.Sprintf("Beta CLI Workflow %d", world.Beta.ID))
-	for _, transition := range []struct {
-		workflowID int
-		fromID     any
-		toID       int
-	}{
-		{alphaWorkflow, nil, world.Statuses.Open},
-		{alphaWorkflow, world.Statuses.Open, reviewID},
-		{betaWorkflow, nil, world.Statuses.Open},
-		{betaWorkflow, world.Statuses.Open, world.Statuses.Done},
-	} {
-		if _, err := db.Exec(`
-			INSERT INTO workflow_transitions (workflow_id, from_status_id, to_status_id)
-			VALUES (?, ?, ?)
-		`, transition.workflowID, transition.fromID, transition.toID); err != nil {
-			t.Fatalf("insert workflow transition: %v", err)
+	// Detach the two fixture workspaces through the retained configuration API.
+	// Their replacement workflows and item-type assignments also use real APIs.
+	defaultID := GetDefaultConfigurationSet(t, ts)
+	defaultResponse := MakeAuthRequest(t, ts, http.MethodGet, fmt.Sprintf("/configuration-sets/%d", defaultID), nil)
+	AssertStatusCode(t, defaultResponse, http.StatusOK)
+	var defaultConfig struct {
+		WorkspaceIDs []int `json:"workspace_ids"`
+	}
+	DecodeJSON(t, defaultResponse, &defaultConfig)
+	defaultResponse.Body.Close()
+	remaining := make([]int, 0, len(defaultConfig.WorkspaceIDs))
+	for _, id := range defaultConfig.WorkspaceIDs {
+		if id != world.Alpha.ID && id != world.Beta.ID {
+			remaining = append(remaining, id)
 		}
 	}
-
-	alphaConfig := insertWSCLIStatusID(t, db,
-		`INSERT INTO configuration_sets (name, workflow_id) VALUES (?, ?)`,
-		fmt.Sprintf("Alpha CLI Config %d", world.Alpha.ID), alphaWorkflow)
-	betaConfig := insertWSCLIStatusID(t, db,
-		`INSERT INTO configuration_sets (name, workflow_id) VALUES (?, ?)`,
-		fmt.Sprintf("Beta CLI Config %d", world.Beta.ID), betaWorkflow)
-	if _, err := db.Exec(`DELETE FROM workspace_configuration_sets WHERE workspace_id IN (?, ?)`, world.Alpha.ID, world.Beta.ID); err != nil {
-		t.Fatalf("clear workspace configuration assignments: %v", err)
-	}
-	for _, assignment := range []struct{ workspaceID, configID int }{
-		{world.Alpha.ID, alphaConfig},
-		{world.Beta.ID, betaConfig},
+	update := MakeAuthRequest(t, ts, http.MethodPut, fmt.Sprintf("/configuration-sets/%d", defaultID), map[string]any{"workspace_ids": remaining})
+	AssertStatusCode(t, update, http.StatusOK)
+	update.Body.Close()
+	for _, assignment := range []struct{ workspaceID, targetStatus int }{
+		{world.Alpha.ID, reviewID}, {world.Beta.ID, world.Statuses.Done},
 	} {
-		if _, err := db.Exec(`
-			INSERT INTO workspace_configuration_sets (workspace_id, configuration_set_id)
-			VALUES (?, ?)
-		`, assignment.workspaceID, assignment.configID); err != nil {
-			t.Fatalf("assign workspace configuration: %v", err)
+		name := fmt.Sprintf("CLI workflow %d", assignment.workspaceID)
+		workflowID := DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/workflows", map[string]any{"name": name}), http.StatusCreated).ID
+		transitions := []map[string]any{
+			{"from_status_id": nil, "to_status_id": world.Statuses.Open},
+			{"from_status_id": world.Statuses.Open, "to_status_id": assignment.targetStatus},
 		}
+		DecodeV2Document[[]v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPut, fmt.Sprintf("/workflows/%d/transitions", workflowID), map[string]any{"transitions": transitions}), http.StatusOK)
+		response := MakeAuthRequest(t, ts, http.MethodPost, "/configuration-sets", map[string]any{
+			"name": name, "workflow_id": workflowID, "workspace_ids": []int{assignment.workspaceID},
+			"item_type_configs": []map[string]any{{"item_type_id": world.defaultType}},
+		})
+		AssertStatusCode(t, response, http.StatusCreated)
+		response.Body.Close()
 	}
 
 	list := func(t *testing.T, workspaceKey string) wscli.StatusListResult {
@@ -126,14 +111,12 @@ func TestWSCLI_StatusListUsesWorkspaceWorkflows(t *testing.T) {
 	itemOut, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var moved struct {
-		Status struct {
-			ID int `json:"id"`
-		} `json:"status"`
+		StatusID int `json:"status_id"`
 	}
 	if err := json.Unmarshal(itemOut, &moved); err != nil {
 		t.Fatalf("decode moved item: %v\nraw=%s", err, string(itemOut))
 	}
-	if moved.Status.ID != reviewID {
-		t.Fatalf("item status = %d, want listed Review status %d", moved.Status.ID, reviewID)
+	if moved.StatusID != reviewID {
+		t.Fatalf("item status = %d, want listed Review status %d", moved.StatusID, reviewID)
 	}
 }

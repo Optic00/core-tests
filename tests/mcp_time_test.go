@@ -3,15 +3,15 @@
 package tests
 
 import (
+	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 )
 
 // createTimeProjectFixture creates a customer + time project via
-// /api/time/projects and returns the project ID. The MCP time tools rely on
+// retained customer setup and session-v2 time projects. The MCP time tools rely on
 // at least one project being visible to the caller, and the
 // /time/projects POST handler requires a customer reference.
 func createTimeProjectFixture(t *testing.T, ts *TestServer, name string) int {
@@ -35,15 +35,8 @@ func createTimeProjectFixture(t *testing.T, ts *TestServer, name string) int {
 		"status":      "Active",
 		"customer_id": customerID,
 	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/time/projects", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create time project: %d - %s", resp.StatusCode, string(raw))
-	}
-	var out map[string]interface{}
-	DecodeJSON(t, resp, &out)
-	return ExtractIDFromResponse(t, out)
+	out := DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/time/projects", body), http.StatusCreated)
+	return out.ID
 }
 
 func TestMCP_ListTimeProjects(t *testing.T) {
@@ -119,7 +112,38 @@ func TestMCP_LogTime_AndList(t *testing.T) {
 	if len(listed.Worklogs) != 1 || listed.Worklogs[0].DurationMinutes != 90 {
 		t.Fatalf("list_worklogs after log_time: %+v", listed.Worklogs)
 	}
-	_ = strconv.Itoa // satisfy unused import elimination if refactor changes shape
+}
+
+// V2 returns Unix timestamps, unlike the MCP tool's local-time presentation.
+// Check both the creation response and a fresh read so the conversion is not
+// merely an unpersisted response decoration.
+func assertV2ZurichWorklog(t *testing.T, ts *TestServer, response *http.Response) {
+	t.Helper()
+	type worklog struct {
+		ID              int   `json:"id"`
+		Date            int64 `json:"date"`
+		StartTime       int64 `json:"start_time"`
+		EndTime         int64 `json:"end_time"`
+		DurationMinutes int   `json:"duration_minutes"`
+	}
+	created := DecodeV2Document[worklog](t, response, http.StatusCreated)
+	if created.ID <= 0 {
+		t.Fatalf("created worklog has invalid ID: %+v", created)
+	}
+	want := worklog{
+		ID:              created.ID,
+		Date:            time.Date(2026, time.July, 14, 0, 0, 0, 0, time.UTC).Unix(),
+		StartTime:       time.Date(2026, time.July, 14, 7, 0, 0, 0, time.UTC).Unix(),
+		EndTime:         time.Date(2026, time.July, 14, 8, 0, 0, 0, time.UTC).Unix(),
+		DurationMinutes: 60,
+	}
+	if created != want {
+		t.Fatalf("REST civil-time interpretation = %+v, want %+v", created, want)
+	}
+	persisted := DecodeV2Document[worklog](t, MakeV2BearerRequest(t, ts, http.MethodGet, fmt.Sprintf("/time/worklogs/%d", created.ID), nil), http.StatusOK)
+	if persisted != want {
+		t.Fatalf("persisted REST worklog = %+v, want %+v", persisted, want)
+	}
 }
 
 func TestRESTAndMCPWorklogsUseExplicitCivilTimezoneWithoutPreOffset(t *testing.T) {
@@ -127,7 +151,7 @@ func TestRESTAndMCPWorklogsUseExplicitCivilTimezoneWithoutPreOffset(t *testing.T
 	CreateBearerToken(t, ts)
 	pid := createTimeProjectFixture(t, ts, "Timezone Worklogs")
 
-	restResponse := MakeBearerRequest(t, ts, http.MethodPost, "/rest/api/v1/time/worklogs", map[string]interface{}{
+	restResponse := MakeV2BearerRequest(t, ts, http.MethodPost, "/time/worklogs", map[string]interface{}{
 		"project_id":  pid,
 		"description": "REST Zurich wall clock",
 		"date":        "2026-07-14",
@@ -135,13 +159,7 @@ func TestRESTAndMCPWorklogsUseExplicitCivilTimezoneWithoutPreOffset(t *testing.T
 		"end_time":    "10:00",
 		"timezone":    "Europe/Zurich",
 	})
-	defer restResponse.Body.Close()
-	AssertStatusCode(t, restResponse, http.StatusCreated)
-	var restOut map[string]interface{}
-	DecodeJSON(t, restResponse, &restOut)
-	if restOut["timezone"] != "Europe/Zurich" || restOut["start_time_local"] != "09:00" || restOut["start_at"] != "2026-07-14T07:00:00Z" {
-		t.Fatalf("REST interpretation = %+v", restOut)
-	}
+	assertV2ZurichWorklog(t, ts, restResponse)
 
 	session := dialMCP(t, ts)
 	var mcpOut struct {
@@ -190,24 +208,18 @@ func TestRESTAndMCPWorklogsResolveTokenUserTimezoneWhenRequestOmitsIt(t *testing
 	CreateBearerToken(t, ts)
 	pid := createTimeProjectFixture(t, ts, "Stored Timezone Worklogs")
 
-	update := MakeAuthRequest(t, ts, http.MethodPut, "/users/1/regional-settings", map[string]interface{}{
+	update := MakeAuthRequest(t, ts, http.MethodPut, fmt.Sprintf("/users/%d/regional-settings", lookupAdminUser(t, ts).ID), map[string]interface{}{
 		"timezone": "Europe/Zurich",
 		"language": "en",
 	})
 	defer update.Body.Close()
 	AssertStatusCode(t, update, http.StatusOK)
 
-	restResponse := MakeBearerRequest(t, ts, http.MethodPost, "/rest/api/v1/time/worklogs", map[string]interface{}{
+	restResponse := MakeV2BearerRequest(t, ts, http.MethodPost, "/time/worklogs", map[string]interface{}{
 		"project_id": pid, "description": "REST stored timezone", "date": "2026-07-14",
 		"start_time": "09:00", "end_time": "10:00",
 	})
-	defer restResponse.Body.Close()
-	AssertStatusCode(t, restResponse, http.StatusCreated)
-	var restOut map[string]interface{}
-	DecodeJSON(t, restResponse, &restOut)
-	if restOut["timezone"] != "Europe/Zurich" || restOut["start_at"] != "2026-07-14T07:00:00Z" {
-		t.Fatalf("REST stored-timezone interpretation = %+v", restOut)
-	}
+	assertV2ZurichWorklog(t, ts, restResponse)
 
 	session := dialMCP(t, ts)
 	var mcpOut struct {

@@ -29,23 +29,14 @@ func adminAssetToken(t *testing.T, ts *TestServer) string {
 }
 
 // seedAssetSetAndType creates a fresh asset set + asset type via the
-// cookie-auth admin surface. Returns (setID, assetTypeID). Use this from
-// any v1 asset test that needs writable scaffolding.
+// session-v2 admin surface. Returns (setID, assetTypeID), also used by CLI tests.
 func seedAssetSetAndType(t *testing.T, ts *TestServer, suffix string) (setID, assetTypeID int) {
 	t.Helper()
 	setBody := map[string]interface{}{
 		"name":        "Asset v1 test " + suffix,
 		"description": "fixture for v1 asset tests",
 	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/asset-sets", setBody)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("seed: create asset set: %d - %s", resp.StatusCode, string(body))
-	}
-	var setOut map[string]interface{}
-	DecodeJSON(t, resp, &setOut)
-	setID = ExtractIDFromResponse(t, setOut)
+	setID = DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/asset-sets", setBody), http.StatusCreated).ID
 
 	typeBody := map[string]interface{}{
 		"name":        "Laptop",
@@ -53,15 +44,7 @@ func seedAssetSetAndType(t *testing.T, ts *TestServer, suffix string) (setID, as
 		"icon":        "Laptop",
 		"color":       "#1f6feb",
 	}
-	resp = MakeAuthRequest(t, ts, http.MethodPost, fmt.Sprintf("/asset-sets/%d/types", setID), typeBody)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("seed: create asset type: %d - %s", resp.StatusCode, string(body))
-	}
-	var typeOut map[string]interface{}
-	DecodeJSON(t, resp, &typeOut)
-	assetTypeID = ExtractIDFromResponse(t, typeOut)
+	assetTypeID = DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, fmt.Sprintf("/asset-sets/%d/types", setID), typeBody), http.StatusCreated).ID
 	return setID, assetTypeID
 }
 

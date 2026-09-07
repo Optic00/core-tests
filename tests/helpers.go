@@ -595,13 +595,7 @@ func CreateTestWorkspace(t *testing.T, testServer *TestServer, name, key string)
 		key = shortKey("TEST")
 	}
 
-	// Stays on /api/workspaces (cookie-auth) for now — the /api handler runs
-	// extra setup (default config-set association, default statuses, etc.)
-	// that the v1 POST /rest/api/v1/workspaces does not. Migrating this helper
-	// to v1 would require either (a) adding the same setup to v1's create
-	// path or (b) doing the auxiliary setup explicitly in the test helper.
-	// Both are deferred — the test suite is fully functional via cookie-auth
-	// and v1 has dedicated coverage in api_token_scope_test.go.
+	// V2 uses the production workspace service, including default configuration.
 	workspaceData := map[string]interface{}{
 		"name":        name,
 		"key":         key,
@@ -609,18 +603,14 @@ func CreateTestWorkspace(t *testing.T, testServer *TestServer, name, key string)
 		"active":      true,
 	}
 
-	resp := MakeAuthRequest(t, testServer, http.MethodPost, "/workspaces", workspaceData)
-	defer resp.Body.Close()
-
-	AssertStatusCode(t, resp, http.StatusCreated)
-
-	var result map[string]interface{}
-	DecodeJSON(t, resp, &result)
-
-	workspaceID = ExtractIDFromResponse(t, result)
-	workspaceKey, _ = result["key"].(string)
-
-	return workspaceID, workspaceKey
+	result := DecodeV2Document[struct {
+		ID  int    `json:"id"`
+		Key string `json:"key"`
+	}](t, MakeV2SessionRequest(t, testServer, http.MethodPost, "/workspaces", workspaceData), http.StatusCreated)
+	if result.ID <= 0 || result.Key == "" {
+		t.Fatalf("created workspace = %+v, expected a key and positive ID", result)
+	}
+	return result.ID, result.Key
 }
 
 // CreateTestCustomField creates a custom field and returns its ID
@@ -1419,27 +1409,20 @@ func TriggerEmailProcessing(t *testing.T, testServer *TestServer, channelID int)
 	}
 }
 
+const fixtureItemPageSize = 100
+
 // GetItemsByWorkspace returns items in a workspace
 func GetItemsByWorkspace(t *testing.T, testServer *TestServer, workspaceID int) []map[string]interface{} {
 	t.Helper()
-
-	endpoint := fmt.Sprintf("/items?workspace_id=%d", workspaceID)
-	resp := MakeAuthRequest(t, testServer, http.MethodGet, endpoint, nil)
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("Failed to get items: %d - %s", resp.StatusCode, string(body))
+	var result []map[string]interface{}
+	for page := 1; ; page++ {
+		endpoint := fmt.Sprintf("/items?workspace_id=%d&page=%d&page_size=%d", workspaceID, page, fixtureItemPageSize)
+		items, pagination := DecodeV2Page[map[string]interface{}](t, MakeV2SessionRequest(t, testServer, http.MethodGet, endpoint, nil))
+		result = append(result, items...)
+		if page >= pagination.TotalPages {
+			return result
+		}
 	}
-
-	var result struct {
-		Items []map[string]interface{} `json:"items"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to parse items response: %v", err)
-	}
-
-	return result.Items
 }
 
 // AssociateWorkspaceWithConfigSet associates a workspace with a configuration set

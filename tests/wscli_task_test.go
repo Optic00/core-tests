@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -427,10 +429,8 @@ func TestWSCLI_Task_Edit(t *testing.T) {
 	out, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var got struct {
-		Title    string `json:"title"`
-		Assignee struct {
-			ID int `json:"id"`
-		} `json:"assignee"`
+		Title      string `json:"title"`
+		AssigneeID int    `json:"assignee_id"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
@@ -438,8 +438,8 @@ func TestWSCLI_Task_Edit(t *testing.T) {
 	if got.Title != "renamed via edit" {
 		t.Fatalf("title not updated, got %q", got.Title)
 	}
-	if got.Assignee.ID != w.Users.Alice.ID {
-		t.Fatalf("assignee not updated, got %d want %d", got.Assignee.ID, w.Users.Alice.ID)
+	if got.AssigneeID != w.Users.Alice.ID {
+		t.Fatalf("assignee not updated, got %d want %d", got.AssigneeID, w.Users.Alice.ID)
 	}
 }
 
@@ -460,15 +460,13 @@ func TestWSCLI_Task_Move(t *testing.T) {
 	out, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var got struct {
-		Status struct {
-			ID int `json:"id"`
-		} `json:"status"`
+		StatusID int `json:"status_id"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
 	}
-	if got.Status.ID != w.Statuses.InProgress {
-		t.Fatalf("status not transitioned: got %d want %d", got.Status.ID, w.Statuses.InProgress)
+	if got.StatusID != w.Statuses.InProgress {
+		t.Fatalf("status not transitioned: got %d want %d", got.StatusID, w.Statuses.InProgress)
 	}
 }
 
@@ -654,25 +652,27 @@ func TestWSCLI_Task_Edit_TypeByName(t *testing.T) {
 	out, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var current struct {
-		ItemType struct {
-			ID int `json:"id"`
-		} `json:"item_type"`
+		ItemTypeID int `json:"item_type_id"`
 	}
 	if err := json.Unmarshal(out, &current); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
 	}
-	configSetID := GetDefaultConfigurationSet(t, ts)
+	types := DecodeV2Document[[]struct {
+		ID             int    `json:"id"`
+		Name           string `json:"name"`
+		HierarchyLevel int    `json:"hierarchy_level"`
+	}](t, MakeV2SessionRequest(t, ts, http.MethodGet, fmt.Sprintf("/workspaces/%d/item-types", w.Alpha.ID), nil), http.StatusOK)
 	var wantName string
 	var wantID int
-	for name, id := range GetItemTypes(t, ts, configSetID) {
-		// A parentless item cannot be changed to the generic Sub-task type.
-		if id != current.ItemType.ID && name != "Sub-task" {
-			wantName, wantID = name, id
+	for _, itemType := range types {
+		// Choose a parentless-compatible type from the workspace catalog.
+		if itemType.ID != current.ItemTypeID && itemType.HierarchyLevel >= 0 {
+			wantName, wantID = itemType.Name, itemType.ID
 			break
 		}
 	}
 	if wantID == 0 {
-		t.Skip("seed has only one item type; cannot exercise change-type")
+		t.Fatal("production defaults lack a second parentless-compatible item type")
 	}
 
 	_, stderr, code = runWS(t, ts, "task", "edit", strconv.Itoa(target.ID), "--type", wantName, "-o", "json")
@@ -681,16 +681,14 @@ func TestWSCLI_Task_Edit_TypeByName(t *testing.T) {
 	out, stderr, code = runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var got struct {
-		ItemType struct {
-			ID   int    `json:"id"`
-			Name string `json:"name"`
-		} `json:"item_type"`
+		ItemTypeID   int    `json:"item_type_id"`
+		ItemTypeName string `json:"item_type_name"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
 	}
-	if got.ItemType.ID != wantID {
-		t.Fatalf("item type not changed: got %d (%s) want %d (%s)", got.ItemType.ID, got.ItemType.Name, wantID, wantName)
+	if got.ItemTypeID != wantID || got.ItemTypeName != wantName {
+		t.Fatalf("item type not changed: got %d (%s) want %d (%s)", got.ItemTypeID, got.ItemTypeName, wantID, wantName)
 	}
 
 	// Unknown names fail with the available catalog in the message.

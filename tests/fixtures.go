@@ -3,8 +3,8 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -99,9 +99,9 @@ type ItemFx struct {
 }
 
 // SeedWorld creates the fixture world against testServer. It mints two
-// workspaces, statuses (5 per workspace), milestones, iterations, labels,
-// users, and ~14 items spread across the dimensions. Authentication uses the
-// admin bearer token CreateBearerToken put on the testServer.
+// workspaces, their three default statuses, milestones, iterations, labels,
+// users, and 13 items spread across the dimensions. Domain fixtures use v2;
+// account bootstrap and authentication use their retained session routes.
 func SeedWorld(t *testing.T, ts *TestServer) *World {
 	t.Helper()
 	w := &World{}
@@ -116,9 +116,19 @@ func SeedWorld(t *testing.T, ts *TestServer) *World {
 
 	// Use a regular type explicitly. Map iteration is nondeterministic and can
 	// otherwise select the generic Sub-task type, which requires a parent.
-	configSetID := GetDefaultConfigurationSet(t, ts)
-	itemTypes := GetItemTypes(t, ts, configSetID)
-	w.defaultType = RequireItemTypeID(t, itemTypes, "Task")
+	itemTypes := DecodeV2Document[[]struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}](t, MakeV2SessionRequest(t, ts, http.MethodGet, fmt.Sprintf("/workspaces/%d/item-types", w.Alpha.ID), nil), http.StatusOK)
+	for _, itemType := range itemTypes {
+		if itemType.Name == "Task" {
+			w.defaultType = itemType.ID
+			break
+		}
+	}
+	if w.defaultType == 0 {
+		t.Fatal("Alpha workspace is missing the regular Task item type")
+	}
 
 	// 3. Milestones (in Alpha) ----------------------------------------------
 	w.Milestones.Q1 = createMilestoneFx(t, ts, w.Alpha.ID, "Q1 Plan", "in-progress")
@@ -187,8 +197,9 @@ func SeedWorld(t *testing.T, ts *TestServer) *World {
 		{"beta only item two", w.Beta.ID, 0, "", 0, 0, aliceID, nil},
 	}
 
+	workspaceKeys := map[int]string{w.Alpha.ID: w.Alpha.Key, w.Beta.ID: w.Beta.Key}
 	for _, s := range seeds {
-		fx := createItemFx(t, ts, s.WorkspaceID, s.Title, s.StatusID, s.MilestoneID, s.IterationID, s.AssigneeID, w.defaultType)
+		fx := createItemFx(t, ts, s.WorkspaceID, workspaceKeys[s.WorkspaceID], s.Title, s.StatusID, s.MilestoneID, s.IterationID, s.AssigneeID, w.defaultType)
 		fx.StatusName = s.StatusName
 		if len(s.LabelIDs) > 0 {
 			setItemLabels(t, ts, fx.ID, s.LabelIDs)
@@ -314,18 +325,10 @@ func createMilestoneFx(t *testing.T, ts *TestServer, workspaceID int, name, stat
 		"description": "fixture milestone",
 		"status":      status,
 	}
-	resp := MakeBearerRequest(t, ts, http.MethodPost,
-		fmt.Sprintf("/rest/api/v1/workspaces/%d/milestones", workspaceID), body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create milestone %q: %d - %s", name, resp.StatusCode, string(raw))
-	}
-	var out struct {
+	out := DecodeV2Document[struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
-	}
-	DecodeJSON(t, resp, &out)
+	}](t, MakeV2BearerRequest(t, ts, http.MethodPost, fmt.Sprintf("/workspaces/%d/milestones", workspaceID), body), http.StatusCreated)
 	return MilestoneFx{ID: out.ID, Name: out.Name}
 }
 
@@ -342,44 +345,28 @@ func createIterationFx(t *testing.T, ts *TestServer, workspaceID int, name, stat
 		"start_date": now.AddDate(0, 0, -7).Format("2006-01-02"),
 		"end_date":   now.AddDate(0, 0, 7).Format("2006-01-02"),
 	}
-	resp := MakeBearerRequest(t, ts, http.MethodPost,
-		fmt.Sprintf("/rest/api/v1/workspaces/%d/iterations", workspaceID), body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create iteration %q: %d - %s", name, resp.StatusCode, string(raw))
-	}
-	var out struct {
+	out := DecodeV2Document[struct {
 		ID     int    `json:"id"`
 		Name   string `json:"name"`
 		Status string `json:"status"`
-	}
-	DecodeJSON(t, resp, &out)
+	}](t, MakeV2BearerRequest(t, ts, http.MethodPost, fmt.Sprintf("/workspaces/%d/iterations", workspaceID), body), http.StatusCreated)
 	return IterationFx{ID: out.ID, Name: out.Name, Status: out.Status}
 }
 
 func createLabelFx(t *testing.T, ts *TestServer, workspaceID int, name, color string) LabelFx {
 	t.Helper()
 	body := map[string]interface{}{
-		"name":         name,
-		"color":        color,
-		"workspace_id": workspaceID,
+		"name":  name,
+		"color": color,
 	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/labels", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create label %q: %d - %s", name, resp.StatusCode, string(raw))
-	}
-	var out struct {
+	out := DecodeV2Document[struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
-	}
-	DecodeJSON(t, resp, &out)
+	}](t, MakeV2SessionRequest(t, ts, http.MethodPost, fmt.Sprintf("/workspaces/%d/labels", workspaceID), body), http.StatusCreated)
 	return LabelFx{ID: out.ID, Name: out.Name}
 }
 
-func createItemFx(t *testing.T, ts *TestServer, workspaceID int, title string, statusID, milestoneID, iterationID, assigneeID, itemTypeID int) ItemFx {
+func createItemFx(t *testing.T, ts *TestServer, workspaceID int, workspaceKey, title string, statusID, milestoneID, iterationID, assigneeID, itemTypeID int) ItemFx {
 	t.Helper()
 	body := map[string]interface{}{
 		"title":        title,
@@ -401,37 +388,23 @@ func createItemFx(t *testing.T, ts *TestServer, workspaceID int, title string, s
 	if assigneeID > 0 {
 		body["assignee_id"] = assigneeID
 	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/items", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create item %q: %d - %s", title, resp.StatusCode, string(raw))
-	}
-	var out struct {
+	out := DecodeV2Document[struct {
 		ID                  int  `json:"id"`
 		WorkspaceItemNumber int  `json:"workspace_item_number"`
 		StatusID            *int `json:"status_id"`
+	}](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/items", body), http.StatusCreated)
+	if out.StatusID == nil || *out.StatusID <= 0 || (statusID > 0 && *out.StatusID != statusID) {
+		t.Fatalf("created item status = %v, expected assigned status (requested %d)", out.StatusID, statusID)
 	}
-	DecodeJSON(t, resp, &out)
-	statusFinal := 0
-	if out.StatusID != nil {
-		statusFinal = *out.StatusID
-	} else if statusID > 0 {
-		statusFinal = statusID
-	}
-	wsKey := ""
-	for _, candidate := range listWorkspaceKeys(t, ts) {
-		if candidate.ID == workspaceID {
-			wsKey = candidate.Key
-			break
-		}
+	if out.ID <= 0 || out.WorkspaceItemNumber <= 0 || workspaceKey == "" {
+		t.Fatalf("invalid created item or workspace key: item=%+v key=%q", out, workspaceKey)
 	}
 	return ItemFx{
 		ID:          out.ID,
-		Key:         fmt.Sprintf("%s-%d", wsKey, out.WorkspaceItemNumber),
+		Key:         fmt.Sprintf("%s-%d", workspaceKey, out.WorkspaceItemNumber),
 		WorkspaceID: workspaceID,
 		Title:       title,
-		StatusID:    statusFinal,
+		StatusID:    *out.StatusID,
 		MilestoneID: milestoneID,
 		IterationID: iterationID,
 		AssigneeID:  assigneeID,
@@ -441,61 +414,27 @@ func createItemFx(t *testing.T, ts *TestServer, workspaceID int, title string, s
 func setItemLabels(t *testing.T, ts *TestServer, itemID int, labelIDs []int) {
 	t.Helper()
 	body := map[string]interface{}{"label_ids": labelIDs}
-	resp := MakeAuthRequest(t, ts, http.MethodPut, fmt.Sprintf("/items/%d/labels", itemID), body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("set item %d labels: %d - %s", itemID, resp.StatusCode, string(raw))
+	labels := DecodeV2Document[[]struct {
+		ID int `json:"id"`
+	}](t, MakeV2SessionRequest(t, ts, http.MethodPut, fmt.Sprintf("/items/%d/labels", itemID), body), http.StatusOK)
+	got := make([]int, 0, len(labels))
+	for _, label := range labels {
+		got = append(got, label.ID)
 	}
-}
-
-type wsKeyPair struct {
-	ID  int
-	Key string
-}
-
-func listWorkspaceKeys(t *testing.T, ts *TestServer) []wsKeyPair {
-	t.Helper()
-	resp := MakeAuthRequest(t, ts, http.MethodGet, "/workspaces", nil)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("list workspaces: %d", resp.StatusCode)
+	want := append([]int(nil), labelIDs...)
+	sort.Ints(got)
+	sort.Ints(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("item %d labels = %v, want %v", itemID, got, want)
 	}
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	var arr []map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &arr); err != nil {
-		// Workspaces endpoint may return paginated struct. Fall back to that.
-		var paged struct {
-			Workspaces []map[string]interface{} `json:"workspaces"`
-		}
-		if jerr := json.Unmarshal(bodyBytes, &paged); jerr != nil {
-			t.Fatalf("decode workspaces: %v", err)
-		}
-		arr = paged.Workspaces
-	}
-	out := make([]wsKeyPair, 0, len(arr))
-	for _, m := range arr {
-		idF, _ := m["id"].(float64)
-		k, _ := m["key"].(string)
-		out = append(out, wsKeyPair{ID: int(idF), Key: k})
-	}
-	return out
 }
 
 func lookupDefaultStatuses(t *testing.T, ts *TestServer, workspaceID int) StatusSetFx {
 	t.Helper()
-	resp := MakeBearerRequest(t, ts, http.MethodGet,
-		fmt.Sprintf("/rest/api/v1/workspaces/%d/statuses", workspaceID), nil)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("list workspace statuses: %d - %s", resp.StatusCode, string(raw))
-	}
-	var arr []struct {
+	arr := DecodeV2Document[[]struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
-	}
-	DecodeJSON(t, resp, &arr)
+	}](t, MakeV2BearerRequest(t, ts, http.MethodGet, fmt.Sprintf("/workspaces/%d/statuses", workspaceID), nil), http.StatusOK)
 	out := StatusSetFx{}
 	for _, s := range arr {
 		switch s.Name {
