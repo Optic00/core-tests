@@ -1,11 +1,6 @@
-// wscli_test_test exercises `ws test ...` end-to-end against an isolated
-// test server, hitting the v1 surface introduced by WI-68 (the WI-78
-// test-half repoint).
-//
-// Setup uses the admin cookie session against /api/* to seed a test
-// case + test set + test run, then drives the lifecycle through the
-// in-process CLI bound to the bearer token. A regression that bounces
-// `ws test` back to /api/* will 401 here.
+// Exercise the CLI test lifecycle through bearer v2, with session-v2 setup
+// and persisted-result checks. The CLI keeps "set" as its user-facing term.
+// Repointing the CLI to the cookie-only surface must fail authentication here.
 package tests
 
 import (
@@ -18,19 +13,17 @@ import (
 func TestWSCLI_Test_RunLifecycle(t *testing.T) {
 	ts, _ := StartTestServer(t, GetDBType())
 	CreateBearerToken(t, ts)
-	w := SeedWorld(t, ts)
+	workspace := DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/workspaces", map[string]any{"name": "CLI tests", "key": "CLITEST"}), http.StatusCreated)
 
-	// 1. Seed a test case via the cookie API (admin session). Test catalog
-	//    CRUD stays cookie-only until a follow-up ticket; we rely on the
-	//    cookie surface here purely to set up state for the v1 lifecycle.
-	caseID := seedTestCase(t, ts, w.Alpha.ID, "WSCLI Login Test")
+	// 1. Create the catalog through session v2.
+	caseID := seedTestCase(t, ts, workspace.ID, "WSCLI Login Test")
 
 	// 2. Seed a test set and attach the case so a run can be started.
-	setID := seedTestSet(t, ts, w.Alpha.ID, "WSCLI Smoke Suite")
-	attachCaseToSet(t, ts, w.Alpha.ID, setID, caseID)
+	setID := seedTestSet(t, ts, workspace.ID, "WSCLI Smoke Suite")
+	attachCaseToSet(t, ts, workspace.ID, setID, caseID)
 
 	// 3. `ws test set ls` — list sets should include the one we just made.
-	out, stderr, code := runWS(t, ts, "test", "set", "ls", "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code := runWS(t, ts, "test", "set", "ls", "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	setIDs := idsFromJSONArray(t, out)
 	if !containsInt(setIDs, setID) {
@@ -38,14 +31,14 @@ func TestWSCLI_Test_RunLifecycle(t *testing.T) {
 	}
 
 	// 4. `ws test set get <id>` returns the set.
-	out, stderr, code = runWS(t, ts, "test", "set", "get", strconv.Itoa(setID), "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "set", "get", strconv.Itoa(setID), "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	if got := jsonInt(t, out, "id"); got != setID {
 		t.Fatalf("test set get: id = %d, want %d", got, setID)
 	}
 
 	// 5. `ws test case ls` returns the seeded case.
-	out, stderr, code = runWS(t, ts, "test", "case", "ls", "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "case", "ls", "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	caseIDs := idsFromJSONArray(t, out)
 	if !containsInt(caseIDs, caseID) {
@@ -53,14 +46,14 @@ func TestWSCLI_Test_RunLifecycle(t *testing.T) {
 	}
 
 	// 6. `ws test case get <id>` returns the case.
-	out, stderr, code = runWS(t, ts, "test", "case", "get", strconv.Itoa(caseID), "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "case", "get", strconv.Itoa(caseID), "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	if got := jsonInt(t, out, "id"); got != caseID {
 		t.Fatalf("test case get: id = %d, want %d", got, caseID)
 	}
 
 	// 7. `ws test run start <set>` creates a new run.
-	out, stderr, code = runWS(t, ts, "test", "run", "start", strconv.Itoa(setID), "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "run", "start", strconv.Itoa(setID), "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	runID := jsonInt(t, out, "id")
 	if runID == 0 {
@@ -68,7 +61,7 @@ func TestWSCLI_Test_RunLifecycle(t *testing.T) {
 	}
 
 	// 8. `ws test run ls` returns the new run.
-	out, stderr, code = runWS(t, ts, "test", "run", "ls", "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "run", "ls", "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	runIDs := idsFromJSONArray(t, out)
 	if !containsInt(runIDs, runID) {
@@ -76,33 +69,29 @@ func TestWSCLI_Test_RunLifecycle(t *testing.T) {
 	}
 
 	// 9. `ws test run get <id>` returns the run.
-	out, stderr, code = runWS(t, ts, "test", "run", "get", strconv.Itoa(runID), "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "run", "get", strconv.Itoa(runID), "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	if got := jsonInt(t, out, "id"); got != runID {
 		t.Fatalf("test run get: id = %d, want %d", got, runID)
 	}
 
 	// 10. `ws test result <run-id> <case-id> passed` records a result.
-	out, stderr, code = runWS(t, ts, "test", "result", strconv.Itoa(runID), strconv.Itoa(caseID), "passed", "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "result", strconv.Itoa(runID), strconv.Itoa(caseID), "passed", "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 
-	// 11. Fetch results via the cookie API (the CLI doesn't expose a
+	// 11. Fetch results via session v2 (the CLI doesn't expose a
 	//     direct results-list subcommand) and verify the case is now
 	//     marked passed.
-	resp := MakeAuthRequest(t, ts, http.MethodGet, "/workspaces/"+strconv.Itoa(w.Alpha.ID)+"/test-runs/"+strconv.Itoa(runID)+"/results", nil)
-	defer resp.Body.Close()
-	AssertStatusCode(t, resp, http.StatusOK)
-	var results []map[string]interface{}
-	DecodeJSON(t, resp, &results)
+	results := DecodeV2Document[[]map[string]interface{}](t, MakeV2SessionRequest(t, ts, http.MethodGet, "/workspaces/"+strconv.Itoa(workspace.ID)+"/test-runs/"+strconv.Itoa(runID)+"/results", nil), http.StatusOK)
 	if got := findResultStatus(results, caseID); got != "passed" {
 		t.Fatalf("test result %d for case %d: status = %q, want %q", runID, caseID, got, "passed")
 	}
 
 	// 12. `ws test run end <id>` marks the run complete.
-	_, stderr, code = runWS(t, ts, "test", "run", "end", strconv.Itoa(runID), "-w", w.Alpha.Key, "-o", "json")
+	_, stderr, code = runWS(t, ts, "test", "run", "end", strconv.Itoa(runID), "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 
-	out, stderr, code = runWS(t, ts, "test", "run", "get", strconv.Itoa(runID), "-w", w.Alpha.Key, "-o", "json")
+	out, stderr, code = runWS(t, ts, "test", "run", "get", strconv.Itoa(runID), "-w", workspace.Key, "-o", "json")
 	requireZero(t, code, stderr)
 	if ended := jsonField(t, out, "ended_at"); ended == nil || ended == "" {
 		t.Fatalf("test run get after end: ended_at is empty, body=%s", string(out))
@@ -117,33 +106,24 @@ func seedTestCase(t *testing.T, ts *TestServer, workspaceID int, title string) i
 		"title":    title,
 		"priority": "medium",
 	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/workspaces/"+strconv.Itoa(workspaceID)+"/test-cases", body)
-	defer resp.Body.Close()
-	AssertStatusCode(t, resp, http.StatusCreated)
-	var result map[string]interface{}
-	DecodeJSON(t, resp, &result)
-	return ExtractIDFromResponse(t, result)
+	return DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/workspaces/"+strconv.Itoa(workspaceID)+"/test-cases", body), http.StatusCreated).ID
 }
 
 func seedTestSet(t *testing.T, ts *TestServer, workspaceID int, name string) int {
 	t.Helper()
 	body := map[string]interface{}{"name": name, "description": "WSCLI test seed"}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/workspaces/"+strconv.Itoa(workspaceID)+"/test-sets", body)
-	defer resp.Body.Close()
-	AssertStatusCode(t, resp, http.StatusCreated)
-	var result map[string]interface{}
-	DecodeJSON(t, resp, &result)
-	return ExtractIDFromResponse(t, result)
+	return DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, ts, http.MethodPost, "/workspaces/"+strconv.Itoa(workspaceID)+"/test-plans", body), http.StatusCreated).ID
 }
 
 func attachCaseToSet(t *testing.T, ts *TestServer, workspaceID, setID, caseID int) {
 	t.Helper()
 	body := map[string]interface{}{"test_case_id": caseID}
-	resp := MakeAuthRequest(t, ts, http.MethodPost,
-		"/workspaces/"+strconv.Itoa(workspaceID)+"/test-sets/"+strconv.Itoa(setID)+"/test-cases", body)
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		AssertStatusCode(t, resp, http.StatusOK) // produce a clear failure
+	result := DecodeV2Document[struct {
+		Linked bool `json:"linked"`
+	}](t, MakeV2SessionRequest(t, ts, http.MethodPost,
+		"/workspaces/"+strconv.Itoa(workspaceID)+"/test-plans/"+strconv.Itoa(setID)+"/test-cases", body), http.StatusOK)
+	if !result.Linked {
+		t.Fatal("test case was not linked to plan")
 	}
 }
 
