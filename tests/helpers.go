@@ -1198,36 +1198,12 @@ func RevokeGlobalPermission(t *testing.T, testServer *TestServer, userID, permis
 
 // LockDownWorkspace restricts a workspace so that only explicitly assigned
 // users have access. It does this by assigning the Viewer role to the admin
-// user (the bearer-token holder), which triggers the "has explicit Viewer
+// user resolved from the setup session, which triggers the "has explicit Viewer
 // assignments" condition and blocks implicit everyone access.
 func LockDownWorkspace(t *testing.T, testServer *TestServer, workspaceID int) {
 	t.Helper()
 
-	// Get the admin user's ID via GET /users (bearer-token compatible)
-	resp := MakeAuthRequest(t, testServer, http.MethodGet, "/users", nil)
-	defer resp.Body.Close()
-	AssertStatusCode(t, resp, http.StatusOK)
-
-	var users []map[string]interface{}
-	DecodeJSON(t, resp, &users)
-	if len(users) == 0 {
-		t.Fatal("No users found")
-	}
-
-	// Find admin user (username "admin" from setup)
-	var adminID int
-	for _, u := range users {
-		if u["username"] == "admin" {
-			adminID = int(u["id"].(float64))
-			break
-		}
-	}
-	if adminID == 0 {
-		// Fallback to first user
-		adminID = int(users[0]["id"].(float64))
-	}
-
-	AssignWorkspaceRole(t, testServer, adminID, workspaceID, "Viewer")
+	AssignWorkspaceRole(t, testServer, lookupAdminUser(t, testServer).ID, workspaceID, "Viewer")
 }
 
 // CreateTestItem creates a work item in a workspace and returns its ID.

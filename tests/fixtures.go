@@ -515,26 +515,21 @@ func lookupDefaultStatuses(t *testing.T, ts *TestServer, workspaceID int) Status
 
 func lookupAdminUser(t *testing.T, ts *TestServer) UserFx {
 	t.Helper()
-	resp := MakeAuthRequest(t, ts, http.MethodGet, "/users", nil)
+	// Setup supplies an admin session. Resolve that exact identity rather than
+	// relying on a user-list route, ordering, or a hard-coded database ID.
+	resp := MakeAuthRequest(t, ts, http.MethodGet, "/auth/me", nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("list users: %d", resp.StatusCode)
+		t.Fatalf("resolve admin session: %d", resp.StatusCode)
 	}
-	var users []map[string]interface{}
-	DecodeJSON(t, resp, &users)
-	for _, u := range users {
-		if u["username"] == "admin" {
-			idF, _ := u["id"].(float64)
-			return UserFx{ID: int(idF), Username: "admin"}
-		}
+	var payload struct {
+		User UserFx `json:"user"`
 	}
-	if len(users) > 0 {
-		idF, _ := users[0]["id"].(float64)
-		uname, _ := users[0]["username"].(string)
-		return UserFx{ID: int(idF), Username: uname}
+	DecodeJSON(t, resp, &payload)
+	if payload.User.ID <= 0 || payload.User.Username != "admin" {
+		t.Fatalf("expected setup admin identity, got %+v", payload.User)
 	}
-	t.Fatal("no users found")
-	return UserFx{}
+	return payload.User
 }
 
 // idsFromJSONListItems extracts the .id field from every entry in a list

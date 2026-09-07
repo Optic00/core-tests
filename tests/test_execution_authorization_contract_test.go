@@ -12,8 +12,7 @@ func TestMCPAndRESTV2_TestExecutionAuthorizationContract(t *testing.T) {
 	defer cleanup()
 	CreateBearerToken(t, server)
 	workspaceID := DecodeV2Document[v2FixtureRecord](t, MakeV2SessionRequest(t, server, http.MethodPost, "/workspaces", map[string]any{"name": "Test execution auth", "key": "TEA"}), http.StatusCreated).ID
-	// An explicit grant disables the implicit everyone-role fallback.
-	AssignWorkspaceRole(t, server, adminUserID(t, server), workspaceID, "Viewer")
+	LockDownWorkspace(t, server, workspaceID)
 	testCaseID := seedTestCase(t, server, workspaceID, "Protected execution case")
 	setID := seedTestSet(t, server, workspaceID, "Protected execution set")
 	attachCaseToSet(t, server, workspaceID, setID, testCaseID)
