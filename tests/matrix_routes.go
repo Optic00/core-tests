@@ -25,14 +25,12 @@ type MatrixRoute struct {
 	Body   func(fx MatrixFixtures) any
 }
 
-// MatrixRoutes is the seed of the full per-route classification. The
-// drift-guard test (TestRouteClassification, future commit) will fail when
-// a registered route has no entry here, forcing each new route to be
-// explicitly classified.
+// MatrixRoutes is the seed of the full per-route classification.
+// TestRouteClassification requires an entry or documented exemption for
+// registered routes under EnforcedPrefixes, not for every v2 endpoint.
 //
-// Currently seeded with the GET /items/{id} representative for
-// workspace.item.view. Future commits expand this list to cover the full
-// /api/* and /rest/api/v1/* surface (~944 routes).
+// Four v2 representatives run against both mounts. Other entries are policy
+// intent only; prefix-scoped route enforcement remains explicitly incremental.
 var MatrixRoutes = []MatrixRoute{
 	// --- Representatives (exercised by TestPermissionMatrix) ---
 	//
@@ -42,21 +40,20 @@ var MatrixRoutes = []MatrixRoute{
 	// fired against every actor; further entries with the same Class are
 	// policy-intent declarations only (they satisfy the drift guard but
 	// are not re-tested for status code).
-	{Method: "GET", Path: "/api/items/{id}", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/api/v2/items/{id}", Class: "workspace.item.view"},
 	{
-		Method: "PUT",
-		Path:   "/api/items/{id}",
+		Method: "PATCH",
+		Path:   "/api/v2/items/{id}",
 		Class:  "workspace.item.edit",
-		// Items.Update parses the body before auth — a nil body would 400
-		// and drown the 401/403/404 signal. Empty-but-valid JSON keeps the
-		// update a no-op title set; idempotent across actor reruns.
+		// The driver makes mutation text unique per actor and verifies stored
+		// state after every allow/deny; this is not a status-only no-op PATCH.
 		Body: func(fx MatrixFixtures) any {
 			return map[string]any{"title": "Matrix updated"}
 		},
 	},
 	{
 		Method: "POST",
-		Path:   "/api/items/{id}/comments",
+		Path:   "/api/v2/items/{id}/comments",
 		Class:  "workspace.item.comment",
 		// CreateComment validates Content as non-empty. Each successful
 		// call creates a new comment row; safe to run across all actors.
@@ -65,13 +62,13 @@ var MatrixRoutes = []MatrixRoute{
 		},
 	},
 	{
-		Method: "PUT",
-		// Registered as `PUT /workspaces/{id}` but `{id}` here would resolve
+		Method: "PATCH",
+		// Registered as `PATCH /workspaces/{workspace_id}`; `{id}` would resolve
 		// to the item ID via the placeholder convention; use {workspaceId}
 		// so ExpandMatrixPath substitutes TargetWorkspaceID. Go's mux is
 		// positional — the placeholder name in the URL doesn't have to
 		// match the registration.
-		Path:  "/api/workspaces/{workspaceId}",
+		Path:  "/api/v2/workspaces/{workspaceId}",
 		Class: "workspace.admin",
 		// Workspace.Update validates Name as `required` — minimum body must
 		// include it. active=true keeps the workspace usable for any later
@@ -94,7 +91,8 @@ var MatrixRoutes = []MatrixRoute{
 	// per-actor fixture refresh; see comment below).
 
 	// workspace.item.view — routes gated on canViewItem / PermissionItemView.
-	// V2 diagram policy intent only: the representatives above remain legacy.
+	// V2 diagram policy intent only: the representative tests do not re-fire
+	// every route below.
 	// Dedicated TestV2ItemDiagrams cases exercise both mounts; bearer scopes are
 	// checked separately by TestV2Diagrams_GranularBearerScopes.
 	{Method: "GET", Path: "/api/v2/items/{item_id}/diagrams", Class: "workspace.item.view"},
@@ -173,16 +171,18 @@ var MatrixRoutes = []MatrixRoute{
 
 	// V2 label policy intent. The catalog is global, but each catalog route
 	// authorizes its workspace context. Dedicated TestV2Labels cases exercise
-	// these routes; this does not migrate the legacy matrix representatives.
+	// these routes independently of the four matrix representatives.
 	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Class: "workspace.item.view"},
 	{Method: "POST", Path: "/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.edit"},
+	{Method: "PATCH", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Class: "workspace.admin"},
 	{Method: "GET", Path: "/api/v2/items/{item_id}/labels", Class: "workspace.item.view"},
 	{Method: "PUT", Path: "/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
 	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Class: "workspace.item.view"},
 	{Method: "POST", Path: "/rest/api/v2/workspaces/{workspace_id}/labels", Class: "workspace.item.edit"},
+	{Method: "PATCH", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Class: "workspace.admin"},
 	{Method: "GET", Path: "/rest/api/v2/items/{item_id}/labels", Class: "workspace.item.view"},
 	{Method: "PUT", Path: "/rest/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/rest/api/v2/items/{item_id}/labels", Class: "workspace.item.edit"},
@@ -221,15 +221,8 @@ func RepresentativeRouteFor(className string) *MatrixRoute {
 //	{linkId}                         → fx.TargetLinkID
 //	{slug}                           → fx.PortalSlug (empty if unseeded)
 //
-// The returned path is the endpoint argument passed to MakeAuthRequestWithToken
-// (so it should start with /api or /rest/api/v1 to match how the helper
-// constructs URLs — MakeAuthRequestWithToken concatenates APIBase which is
-// already the host:port, with the leading "/api" already removed... see
-// helpers.go:938 which does testServer.APIBase + endpoint).
-//
-// NOTE: The /api/* helpers in tests/helpers.go strip the /api prefix on the
-// way in (APIBase ends in "/api"), so this function strips it from the route
-// template before returning.
+// The canonical full path is retained. MatrixSession.Do is responsible for
+// mapping /api/v2 to the session or bearer mount exactly once.
 func ExpandMatrixPath(template string, fx MatrixFixtures) string {
 	s := template
 	s = strings.ReplaceAll(s, "{otherItemId}", strconv.Itoa(fx.OtherItemID))
@@ -244,9 +237,5 @@ func ExpandMatrixPath(template string, fx MatrixFixtures) string {
 	s = strings.ReplaceAll(s, "{linkId}", strconv.Itoa(fx.TargetLinkID))
 	s = strings.ReplaceAll(s, "{slug}", fx.PortalSlug)
 
-	// MakeAuthRequestWithToken concatenates testServer.APIBase + endpoint,
-	// where APIBase already ends in "/api" (see StartTestServer). Strip the
-	// "/api" prefix from the template so we don't double it.
-	s = strings.TrimPrefix(s, "/api")
 	return s
 }

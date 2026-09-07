@@ -3,21 +3,16 @@ package tests
 import "net/http"
 
 // PermissionClass is a named (actor → expected status) row that the matrix
-// asserts for every route classified into it. Each class encodes both the
+// asserts for its representative route. Each class encodes both the
 // allow side (which actors get 2xx) and the deny side with the *exact* code
 // the security policy mandates. AssertRejected-style permissive checks
 // (accept any 401/403/404) are intentionally not used here — drift from
 // 404→403 on workspace-permission denial is exactly the leak this matrix
 // catches.
 //
-// Status-code policy (from MEMORY.md):
-//
-//	workspace-permission denial    → 404 (existence privacy)
-//	cross-workspace direct-ID      → 404
-//	per-record whitelist denial    → 403
-//	global permission denial       → 403
-//	token scope insufficient       → 403
-//	no session / no token          → 401
+// Expectations describe the current v2 representative routes, not a universal
+// status rule for every API. Scope denial is checked separately from these
+// role cells: their tokens deliberately carry all available nonadmin scopes.
 type PermissionClass struct {
 	Name        string              // e.g. "workspace.item.view"
 	Description string              // human-readable note (which permission, why)
@@ -28,15 +23,13 @@ type PermissionClass struct {
 // list and runs every actor in MatrixActors against the representative
 // route for each class (see matrix_routes.go).
 //
-// Seeded with one class — workspace.item.view — so the headline 404-not-403
-// invariant gets coverage day one. Expand one class per resource family per
-// commit (see plan: items.edit/delete, comments, attachments, channels,
-// workflow, custom fields, time, approvals, tests, assets, teams, then
-// workspace.admin + global.system.admin).
+// Four v2 classes currently run on both auth mounts. Destructive operations,
+// record ownership, per-page ACL overrides and portal actors need their own
+// fixtures; the representative matrix does not claim those policies.
 var Classes = []PermissionClass{
 	{
 		Name:        "workspace.item.view",
-		Description: "GET /items/{id} — requires models.PermissionItemView on the item's workspace.",
+		Description: "V2 GET /items/{id} requires PermissionItemView on the item's workspace.",
 		Expected: map[MatrixActor]int{
 			ActorAnonymous:            http.StatusUnauthorized, // 401
 			ActorNoMembership:         http.StatusNotFound,     // 404 — workspace-perm denial
@@ -51,7 +44,7 @@ var Classes = []PermissionClass{
 	},
 	{
 		Name:        "workspace.item.edit",
-		Description: "PUT /items/{id} — requires models.PermissionItemEdit. Item handler returns 404 on permission denial (existence privacy).",
+		Description: "V2 PATCH /items/{id} requires PermissionItemEdit and masks permission denial with 404.",
 		Expected: map[MatrixActor]int{
 			ActorAnonymous:            http.StatusUnauthorized, // 401
 			ActorNoMembership:         http.StatusNotFound,     // 404
@@ -69,7 +62,7 @@ var Classes = []PermissionClass{
 	},
 	{
 		Name:        "workspace.item.comment",
-		Description: "POST /items/{id}/comments — requires models.PermissionItemComment. Comment handler returns 404 on denial (existence privacy).",
+		Description: "V2 POST /items/{id}/comments requires PermissionItemComment and masks denial with 404.",
 		Expected: map[MatrixActor]int{
 			ActorAnonymous:            http.StatusUnauthorized, // 401 — auth runs before body parse
 			ActorNoMembership:         http.StatusNotFound,     // 404
@@ -88,20 +81,18 @@ var Classes = []PermissionClass{
 	},
 	{
 		Name: "workspace.admin",
-		// Workspace handler diverges from the item-handler 404 policy: denial
-		// is 403 (respondForbidden), not 404. Encode current behavior so the
-		// matrix catches drift in either direction; the broader 403→404
-		// alignment is a separate audit (see plan: out of scope).
-		Description: "PUT /workspaces/{id} — requires models.PermissionWorkspaceAdmin. Workspace handler returns 403 on denial (unlike item handler).",
+		// Current v2 WorkspaceApplicationService.Update returns ErrNotFound
+		// for denied CanAdminWorkspace, unlike the removed cookie PUT handler.
+		Description: "V2 PATCH /workspaces/{id} requires PermissionWorkspaceAdmin and masks denial with 404.",
 		Expected: map[MatrixActor]int{
 			ActorAnonymous:            http.StatusUnauthorized, // 401
-			ActorNoMembership:         http.StatusForbidden,    // 403 — workspace handler uses respondForbidden
-			ActorCrossWorkspaceMember: http.StatusForbidden,    // 403
-			ActorWorkspaceViewer:      http.StatusForbidden,    // 403
-			ActorWorkspaceEditor:      http.StatusForbidden,    // 403 — Editor lacks workspace.admin
-			ActorWorkspaceAdmin:       http.StatusOK,           // 200 — Administrator role has workspace.admin
-			ActorWorkspaceTester:      http.StatusForbidden,    // 403
-			ActorSystemAdmin:          http.StatusOK,           // 200
+			ActorNoMembership:         http.StatusNotFound,
+			ActorCrossWorkspaceMember: http.StatusNotFound,
+			ActorWorkspaceViewer:      http.StatusNotFound,
+			ActorWorkspaceEditor:      http.StatusNotFound,
+			ActorWorkspaceAdmin:       http.StatusOK, // 200 — Administrator role has workspace.admin
+			ActorWorkspaceTester:      http.StatusNotFound,
+			ActorSystemAdmin:          http.StatusOK, // 200
 		},
 	},
 }

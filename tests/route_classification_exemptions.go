@@ -34,11 +34,21 @@ type RouteClassificationExemption struct {
 // add to this list only when the route genuinely doesn't fit any policy
 // class.
 var RouteClassificationExemptions = []RouteClassificationExemption{
+	// V2 priority pre-registration: global catalog and system-admin mutations
+	// are not workspace-role policies. Dedicated tests cover real endpoints.
+	{Method: "GET", Path: "/api/v2/priorities", Reason: "global authenticated catalog; TestV2Priorities"},
+	{Method: "GET", Path: "/api/v2/priorities/{priority_id}", Reason: "global authenticated catalog; TestV2Priorities"},
+	{Method: "POST", Path: "/api/v2/priorities", Reason: "system-admin catalog mutation; TestV2Priorities_AuthenticationAndAdminBoundaries"},
+	{Method: "PATCH", Path: "/api/v2/priorities/{priority_id}", Reason: "system-admin catalog mutation; TestV2Priorities_AuthenticationAndAdminBoundaries"},
+	{Method: "DELETE", Path: "/api/v2/priorities/{priority_id}", Reason: "system-admin deletion plus in-use guard; TestV2Priorities_DeleteInUse"},
+	{Method: "GET", Path: "/rest/api/v2/priorities", Reason: "global catalog plus priorities:read; TestV2Priorities"},
+	{Method: "GET", Path: "/rest/api/v2/priorities/{priority_id}", Reason: "global catalog plus priorities:read; TestV2Priorities"},
+	{Method: "POST", Path: "/rest/api/v2/priorities", Reason: "system-admin mutation plus priorities:write; TestV2Priorities_AuthenticationAndAdminBoundaries"},
+	{Method: "PATCH", Path: "/rest/api/v2/priorities/{priority_id}", Reason: "system-admin mutation plus priorities:write; TestV2Priorities_AuthenticationAndAdminBoundaries"},
+	{Method: "DELETE", Path: "/rest/api/v2/priorities/{priority_id}", Reason: "system-admin deletion plus in-use guard and priorities:write; TestV2Priorities_DeleteInUse"},
 	// V2 label/link pre-registration. Prefix enforcement remains legacy-scoped.
 	// Tests below check persisted effects and independent endpoint permissions;
 	// these declarations do not imply a complete permission-matrix migration.
-	{Method: "PATCH", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "CanAdminWorkspace with 404 masking, unlike legacy workspace.admin 403; TestV2Labels_CatalogMutationPermissions"},
-	{Method: "PATCH", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "CanAdminWorkspace with 404 masking plus token scope, unlike legacy workspace.admin 403; TestV2Labels_CatalogMutationPermissions"},
 	{Method: "DELETE", Path: "/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "workspace.admin deletes global label and consumes assignments; TestV2Labels_CatalogMutationPermissions"},
 	{Method: "DELETE", Path: "/rest/api/v2/workspaces/{workspace_id}/labels/{label_id}", Reason: "workspace.admin deletes global label and consumes assignments, plus token scope; TestV2Labels_CatalogMutationPermissions"},
 	{Method: "DELETE", Path: "/api/v2/items/{item_id}/labels/{label_id}", Reason: "workspace.item.edit consumes assignment fixture; TestV2Labels_ItemAssignmentsAndPermissions"},
