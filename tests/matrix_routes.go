@@ -82,6 +82,12 @@ var MatrixRoutes = []MatrixRoute{
 	},
 
 	// --- Policy-intent classifications (drift guard only, not re-exercised) ---
+	// Local iteration collection policy is exercised independently by
+	// TestV2Iterations_WorkspaceAndGlobalPermissions on both mounts.
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/iterations", Class: "workspace.item.view"},
+	{Method: "POST", Path: "/api/v2/workspaces/{workspace_id}/iterations", Class: "workspace.item.edit"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/iterations", Class: "workspace.item.view"},
+	{Method: "POST", Path: "/rest/api/v2/workspaces/{workspace_id}/iterations", Class: "workspace.item.edit"},
 	//
 	// Routes below share a policy class with one of the representatives above.
 	// Each entry asserts "this route's auth gate follows class X" — the matrix

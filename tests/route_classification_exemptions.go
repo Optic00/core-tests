@@ -34,6 +34,20 @@ type RouteClassificationExemption struct {
 // add to this list only when the route genuinely doesn't fit any policy
 // class.
 var RouteClassificationExemptions = []RouteClassificationExemption{
+	// Iteration pre-registration: global and object-dependent scope do not
+	// share one workspace-only class. No expanded EnforcedPrefixes claim.
+	{Method: "GET", Path: "/api/v2/iterations", Reason: "authenticated global-only catalog; TestV2Iterations_ListScopeAndStatus"},
+	{Method: "POST", Path: "/api/v2/iterations", Reason: "global iteration.manage, not workspace edit; TestV2Iterations_WorkspaceAndGlobalPermissions"},
+	{Method: "GET", Path: "/api/v2/iterations/{iteration_id}", Reason: "global authenticated read or local item.view; TestV2Iterations_WorkspaceAndGlobalPermissions"},
+	{Method: "PATCH", Path: "/api/v2/iterations/{iteration_id}", Reason: "object-dependent global iteration.manage or local item.edit; TestV2Iterations_WorkspaceAndGlobalPermissions"},
+	{Method: "DELETE", Path: "/api/v2/iterations/{iteration_id}", Reason: "object-dependent global/local mutation consumes fixture; TestV2Iterations_WorkspaceAndGlobalPermissions"},
+	{Method: "GET", Path: "/api/v2/iterations/{iteration_id}/progress", Reason: "global/local read plus visible-workspace report filtering; basic progress in TestV2Iterations_CRUDAndProgress"},
+	{Method: "GET", Path: "/rest/api/v2/iterations", Reason: "global-only catalog plus iterations:read; TestV2Iterations_GranularBearerScopes"},
+	{Method: "POST", Path: "/rest/api/v2/iterations", Reason: "global iteration.manage plus iterations:write; TestV2Iterations_GranularBearerScopes"},
+	{Method: "GET", Path: "/rest/api/v2/iterations/{iteration_id}", Reason: "object-dependent global/local read plus iterations:read; TestV2Iterations"},
+	{Method: "PATCH", Path: "/rest/api/v2/iterations/{iteration_id}", Reason: "global/local mutation plus iterations:write; TestV2Iterations"},
+	{Method: "DELETE", Path: "/rest/api/v2/iterations/{iteration_id}", Reason: "global/local mutation plus distinct iterations:delete; TestV2Iterations_GranularBearerScopes"},
+	{Method: "GET", Path: "/rest/api/v2/iterations/{iteration_id}/progress", Reason: "global/local read and report filtering plus iterations:read; basic progress in TestV2Iterations"},
 	// V2 priority pre-registration: global catalog and system-admin mutations
 	// are not workspace-role policies. Dedicated tests cover real endpoints.
 	{Method: "GET", Path: "/api/v2/priorities", Reason: "global authenticated catalog; TestV2Priorities"},
