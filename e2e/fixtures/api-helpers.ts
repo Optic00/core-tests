@@ -95,6 +95,7 @@ export async function createItemViaAPI(
     start_date?: string;
     end_date?: string;
     custom_field_values?: Record<string, unknown>;
+    item_type_id?: number;
   }
 ) {
   const { status, priority, custom_field_values, ...fields } = data;

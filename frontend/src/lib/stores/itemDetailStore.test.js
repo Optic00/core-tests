@@ -435,7 +435,10 @@ describe('itemDetailStore optional item data', () => {
 
   it('loads time-modal-only picker data once', async () => {
     api.customerOrganisations.getAll.mockResolvedValue([{ id: 1 }]);
-    api.items.getAll.mockResolvedValue({ items: [{ id: 2 }] });
+    api.items.getAll.mockResolvedValue({
+      data: [{ id: 2 }],
+      pagination: { page: 1, page_size: 100, total: 1, has_more: false },
+    });
     api.workspaces.getAll.mockResolvedValue([{ id: 3 }]);
 
     await Promise.all([itemDetailStore.loadTimeModalData(), itemDetailStore.loadTimeModalData()]);
@@ -471,6 +474,34 @@ describe('itemDetailStore optional item data', () => {
     await itemDetailStore.loadDiagrams();
     expect(api.getDiagrams).toHaveBeenCalledTimes(1);
   });
+
+  it('marks the current item deleted when its diagrams return 404', async () => {
+    api.getDiagrams.mockRejectedValue({ status: 404 });
+    await itemDetailStore.loadDiagrams();
+    expect(itemDetailStore.item).toBeNull();
+    expect(itemDetailStore.notFound).toBe(true);
+  });
+
+  it.each([false, true])(
+    'ignores a stale diagram 404 after switching items (reset=%s)',
+    async (reset) => {
+      let rejectDiagrams;
+      api.getDiagrams.mockReturnValue(
+        new Promise((_, reject) => {
+          rejectDiagrams = reject;
+        })
+      );
+      const pending = itemDetailStore.loadDiagrams();
+      if (reset) itemDetailStore.reset();
+      itemDetailStore.item = { id: 43, title: 'Next item' };
+      itemDetailStore.diagrams = [{ id: 9, name: 'Next diagram' }];
+      rejectDiagrams({ status: 404 });
+      await pending;
+      expect(itemDetailStore.item).toEqual({ id: 43, title: 'Next item' });
+      expect(itemDetailStore.diagrams).toEqual([{ id: 9, name: 'Next diagram' }]);
+      expect(itemDetailStore.notFound).toBe(false);
+    }
+  );
 
   it('refreshes links without reloading the complete item', async () => {
     api.links.getForItem.mockResolvedValue({
