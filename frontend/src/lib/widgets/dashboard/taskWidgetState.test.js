@@ -85,28 +85,50 @@ describe('normalizeTaskResponse', () => {
   ];
 
   test('sorts by due date (earliest first, nulls last)', () => {
-    const result = normalizeTaskResponse(items);
+    const result = normalizeTaskResponse({ data: items });
     expect(result.map((t) => t.id)).toEqual([3, 1, 4, 2]);
   });
 
   test('respects numeric maxItems cap', () => {
-    const result = normalizeTaskResponse(items, 2);
+    const result = normalizeTaskResponse({ data: items }, 2);
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe(3); // earliest due date
   });
 
   test("'all' returns every item", () => {
-    const result = normalizeTaskResponse(items, 'all');
+    const result = normalizeTaskResponse({ data: items }, 'all');
     expect(result).toHaveLength(4);
   });
 
-  test('handles wrapped { items: [...] } responses', () => {
-    const result = normalizeTaskResponse({ items });
+  test('handles v2 data and pagination without rendering metadata', () => {
+    const result = normalizeTaskResponse({
+      data: items,
+      pagination: { page: 1, page_size: 50, total_items: 4, total_pages: 1 },
+    });
     expect(result).toHaveLength(4);
   });
 
   test('filters out entries without an id', () => {
-    const result = normalizeTaskResponse([{ title: 'no id' }, ...items]);
+    const result = normalizeTaskResponse({ data: [null, { title: 'no id' }, ...items] });
     expect(result).toHaveLength(4);
+  });
+
+  test('normalizes due dates without mutating the source objects or ordering', () => {
+    const source = Object.freeze(items.map((item) => Object.freeze({ ...item })));
+    const result = normalizeTaskResponse({ data: source });
+    expect(result.map((item) => item.dueDate)).toEqual([
+      '2026-06-01T00:00:00Z',
+      '2026-06-05T00:00:00Z',
+      '2026-06-10T00:00:00Z',
+      null,
+    ]);
+    expect(source.map((item) => item.id)).toEqual([1, 2, 3, 4]);
+    expect(source.every((item) => !Object.hasOwn(item, 'dueDate'))).toBe(true);
+  });
+
+  test('returns no rows for empty or absent v2 data', () => {
+    for (const response of [null, undefined, {}, { data: [] }]) {
+      expect(normalizeTaskResponse(response)).toEqual([]);
+    }
   });
 });
