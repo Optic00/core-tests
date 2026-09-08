@@ -39,9 +39,9 @@ describe('custom fields screen request graph', () => {
   it('loads every screen assignment with two bounded requests', async () => {
     const apiClient = {
       customFields: {
-        getAll: vi.fn().mockResolvedValue({
-          data: [{ id: 7 }],
-          index_counts: { items: { current: 2, max: 20 }, assets: { current: 1, max: 20 } },
+        getOverview: vi.fn().mockResolvedValue({
+          customFields: [{ id: 7 }],
+          indexCounts: { items: { current: 2, max: 20 }, assets: { current: 1, max: 20 } },
         }),
       },
       screens: {
@@ -52,7 +52,7 @@ describe('custom fields screen request graph', () => {
 
     const loading = loadCustomFieldsOverview(apiClient);
 
-    expect(apiClient.customFields.getAll).toHaveBeenCalledOnce();
+    expect(apiClient.customFields.getOverview).toHaveBeenCalledOnce();
     expect(apiClient.screens.getAllWithFields).toHaveBeenCalledOnce();
     expect(apiClient.screens.getFields).not.toHaveBeenCalled();
     const overview = await loading;
@@ -67,9 +67,9 @@ describe('custom fields screen request graph', () => {
   it('preserves the custom field list when screen metadata fails to load', async () => {
     const apiClient = {
       customFields: {
-        getAll: vi.fn().mockResolvedValue({
-          data: [{ id: 7 }, { id: 8 }],
-          index_counts: { items: { current: 0, max: 20 }, assets: { current: 0, max: 20 } },
+        getOverview: vi.fn().mockResolvedValue({
+          customFields: [{ id: 7 }, { id: 8 }],
+          indexCounts: { items: { current: 0, max: 20 }, assets: { current: 0, max: 20 } },
         }),
       },
       screens: {
@@ -81,5 +81,16 @@ describe('custom fields screen request graph', () => {
 
     expect(overview.customFields).toEqual([{ id: 7 }, { id: 8 }]);
     expect(overview.screens).toEqual([]);
+  });
+
+  it('propagates a custom-field overview failure instead of presenting an empty success', async () => {
+    const failure = new Error('Overview unavailable');
+    const apiClient = {
+      customFields: { getOverview: vi.fn().mockRejectedValue(failure) },
+      screens: { getAllWithFields: vi.fn().mockResolvedValue([]) },
+    };
+    await expect(loadCustomFieldsOverview(apiClient)).rejects.toBe(failure);
+    expect(apiClient.customFields.getOverview).toHaveBeenCalledOnce();
+    expect(apiClient.screens.getAllWithFields).toHaveBeenCalledOnce();
   });
 });

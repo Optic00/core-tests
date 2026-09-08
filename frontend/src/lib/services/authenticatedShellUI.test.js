@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('../api.js', () => ({
   api: {
@@ -56,7 +56,9 @@ import { workspaceDataStore } from '../stores/workspaceDataStore.svelte.js';
 import { workspacesStore } from '../stores/workspaces.svelte.js';
 import {
   hydrateAuthenticatedShellUI,
+  loadAuthenticatedShellUI,
   refreshAuthenticatedShellUI,
+  resetAuthenticatedShellUILoad,
 } from './authenticatedShellUI.js';
 
 const snapshot = {
@@ -74,11 +76,75 @@ const snapshot = {
 };
 
 beforeEach(() => {
+  resetAuthenticatedShellUILoad();
   vi.clearAllMocks();
-  api.shellBootstrap.get.mockResolvedValue(snapshot);
+  api.shellBootstrap.get.mockReset().mockResolvedValue(snapshot);
   api.themes.getActive.mockResolvedValue({ id: 9, name: 'Night' });
   workspacesStore.reload.mockResolvedValue([]);
   workspaceDataStore.refresh.mockResolvedValue();
+});
+
+afterEach(() => resetAuthenticatedShellUILoad());
+
+describe('authenticated shell load lifecycle', () => {
+  test('shares an in-flight request and reuses the settled snapshot for one audience', async () => {
+    let resolve;
+    api.shellBootstrap.get.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const first = loadAuthenticatedShellUI(1);
+    const second = loadAuthenticatedShellUI(1);
+    expect(second).toBe(first);
+    expect(api.shellBootstrap.get).toHaveBeenCalledOnce();
+    expect(moduleSettings.hydrate).not.toHaveBeenCalled();
+    resolve(snapshot);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    await expect(loadAuthenticatedShellUI(1)).resolves.toBe(true);
+    expect(api.shellBootstrap.get).toHaveBeenCalledOnce();
+    expect(moduleSettings.hydrate).toHaveBeenCalledExactlyOnceWith(snapshot.module_settings);
+  });
+
+  test('reloads for a new audience and clears the settled cache on reset', async () => {
+    await expect(loadAuthenticatedShellUI(1)).resolves.toBe(true);
+    await expect(loadAuthenticatedShellUI(2)).resolves.toBe(true);
+    expect(api.shellBootstrap.get).toHaveBeenCalledTimes(2);
+    resetAuthenticatedShellUILoad();
+    await expect(loadAuthenticatedShellUI(2)).resolves.toBe(true);
+    expect(api.shellBootstrap.get).toHaveBeenCalledTimes(3);
+    expect(moduleSettings.hydrate).toHaveBeenCalledTimes(3);
+  });
+
+  test('does not hydrate a stale response after reset while a new audience is loading', async () => {
+    let resolveOld, resolveNew;
+    api.shellBootstrap.get
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveOld = done;
+        })
+      )
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveNew = done;
+        })
+      );
+    const oldRequest = loadAuthenticatedShellUI(1);
+    resetAuthenticatedShellUILoad();
+    const newRequest = loadAuthenticatedShellUI(2);
+    resolveOld(snapshot);
+    await expect(oldRequest).resolves.toBe(false);
+    expect(moduleSettings.hydrate).not.toHaveBeenCalled();
+    expect(capabilitiesStore.hydrate).not.toHaveBeenCalled();
+    const latest = { ...snapshot, module_settings: { test_management_enabled: true } };
+    resolveNew(latest);
+    await expect(newRequest).resolves.toBe(true);
+    await expect(loadAuthenticatedShellUI(2)).resolves.toBe(true);
+    expect(api.shellBootstrap.get).toHaveBeenCalledTimes(2);
+    expect(moduleSettings.hydrate).toHaveBeenCalledExactlyOnceWith(latest.module_settings);
+    expect(capabilitiesStore.hydrate).toHaveBeenCalledExactlyOnceWith(latest.features);
+  });
 });
 
 describe('authenticated shell UI refresh', () => {
