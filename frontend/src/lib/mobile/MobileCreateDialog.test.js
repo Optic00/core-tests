@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 // jsdom lacks the Web Animations API; Svelte 5 transitions call element.animate
@@ -39,7 +39,7 @@ vi.mock('../api.js', () => ({
     items: { create: vi.fn() },
     itemTypes: { getAll: vi.fn() },
     itemTemplates: { getAll: vi.fn().mockResolvedValue([]) },
-    customFields: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
+    customFields: { getAll: vi.fn().mockResolvedValue([]) },
     configurationSets: {
       getAll: vi.fn().mockResolvedValue({ configuration_sets: [] }),
       get: vi.fn().mockResolvedValue(null),
@@ -64,14 +64,14 @@ import { api } from '../api.js';
 import MobileCreateDialog from './MobileCreateDialog.svelte';
 
 afterEach(() => {
-  document.body.innerHTML = '';
+  cleanup();
 });
 
 beforeEach(() => {
   api.items.create.mockReset();
   api.itemTypes.getAll.mockReset();
   api.itemTemplates.getAll.mockReset().mockResolvedValue([]);
-  api.customFields.getAll.mockReset().mockResolvedValue({ data: [] });
+  api.customFields.getAll.mockReset().mockResolvedValue([]);
   api.configurationSets.getAll.mockReset().mockResolvedValue({ configuration_sets: [] });
   api.configurationSets.get.mockReset().mockResolvedValue(null);
   api.screens.getFields.mockReset().mockResolvedValue([]);
@@ -156,9 +156,7 @@ describe('MobileCreateDialog — configured fields (WI-553)', () => {
       configuration_sets: [{ id: 20, is_default: true, workspace_ids: [1] }],
     });
     api.configurationSets.get.mockResolvedValue({ id: 20, create_screen_id: 55 });
-    api.customFields.getAll.mockResolvedValue({
-      data: [{ id: 7, name: 'Risk', field_type: 'text' }],
-    });
+    api.customFields.getAll.mockResolvedValue([{ id: 7, name: 'Risk', field_type: 'text' }]);
     api.screens.getFields.mockResolvedValue([
       { id: 1, field_type: 'system', field_identifier: 'story_points', is_required: true },
       { id: 2, field_type: 'custom', field_identifier: '7', is_required: true },
