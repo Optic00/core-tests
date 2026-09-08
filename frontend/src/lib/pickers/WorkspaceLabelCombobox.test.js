@@ -1,5 +1,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+
+const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+const originalResizeObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+afterAll(() => {
+  if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
+  else delete Element.prototype.animate;
+  if (originalScrollIntoView)
+    Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
+  else delete Element.prototype.scrollIntoView;
+  if (originalResizeObserver)
+    Object.defineProperty(globalThis, 'ResizeObserver', originalResizeObserver);
+  else delete globalThis.ResizeObserver;
+});
 
 vi.mock('../api.js', () => ({
   api: {
@@ -64,7 +78,7 @@ describe('WorkspaceLabelCombobox', () => {
       props: { workspaceId: 23, value: [] },
     });
 
-    await waitFor(() => expect(api.labels.getAll).toHaveBeenCalledWith());
+    await waitFor(() => expect(api.labels.getAll).toHaveBeenCalledExactlyOnceWith(23));
   });
 
   test('creates a global label using the selected workspace authorization context', async () => {

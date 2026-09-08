@@ -164,7 +164,7 @@ describe('notificationActions.markItemAsRead', () => {
     expect(errSpy).toHaveBeenCalled();
   });
 
-  test('no-op when there are no unread notifications for the item', async () => {
+  test('acknowledges the item on the server even when its local notifications are read', async () => {
     notifications.set([
       { id: 1, read: true, actionUrl: '/workspaces/2/items/42' },
       { id: 2, read: false, actionUrl: '/workspaces/2/items/99' },
@@ -172,7 +172,7 @@ describe('notificationActions.markItemAsRead', () => {
 
     await notificationActions.markItemAsRead(42);
 
-    expect(api.notifications.markItemAsRead).not.toHaveBeenCalled();
+    expect(api.notifications.markItemAsRead).toHaveBeenCalledExactlyOnceWith(42);
     expect(get(notifications)).toEqual([
       { id: 1, read: true, actionUrl: '/workspaces/2/items/42' },
       { id: 2, read: false, actionUrl: '/workspaces/2/items/99' },
@@ -280,12 +280,13 @@ describe('notificationActions.markAllAsRead', () => {
     expect(get(notifications).map((n) => n.read)).toEqual([false, false]);
   });
 
-  test('does not call the API when all notifications are already read', async () => {
+  test('acknowledges the server inbox even when the local snapshot is already read', async () => {
     notifications.set([{ id: 1, read: true }]);
 
     await notificationActions.markAllAsRead();
 
-    expect(api.notifications.markAllAsRead).not.toHaveBeenCalled();
+    expect(api.notifications.markAllAsRead).toHaveBeenCalledOnce();
+    expect(get(notifications)).toEqual([{ id: 1, read: true }]);
   });
 });
 

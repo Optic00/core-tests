@@ -13,6 +13,7 @@ vi.mock('../../api.js', () => ({
       getEnabled: vi.fn(),
     },
     workspaceSCM: {
+      getConnectionsOverview: vi.fn(),
       getConnections: vi.fn(),
       getLinkedRepos: vi.fn(),
     },
@@ -42,6 +43,7 @@ import { getShortcutDisplay } from '../../utils/keyboardShortcuts.js';
 import AgentCreate from './AgentCreate.svelte';
 
 const storedValues = new Map();
+const originalLocalStorage = Object.getOwnPropertyDescriptor(window, 'localStorage');
 const localStorageMock = {
   clear: () => storedValues.clear(),
   getItem: (key) => storedValues.get(key) ?? null,
@@ -83,12 +85,15 @@ beforeEach(() => {
     { id: 9, name: 'Primary model', model: 'gpt-example' },
   ]);
   api.workspaceSCM.getConnections.mockResolvedValue([]);
+  api.workspaceSCM.getConnectionsOverview.mockResolvedValue([]);
   api.workspaceSCM.getLinkedRepos.mockResolvedValue([]);
   api.actionCapabilities.getForWorkspace.mockResolvedValue([]);
 });
 
 afterEach(() => {
   cleanup();
+  if (originalLocalStorage) Object.defineProperty(window, 'localStorage', originalLocalStorage);
+  else delete window.localStorage;
   vi.clearAllMocks();
 });
 

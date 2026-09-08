@@ -108,14 +108,14 @@ describe('minutesBetweenTimes', () => {
     expect(minutesBetweenTimes('09:15', '09:45')).toBe(30);
   });
 
-  test('returns 0 when end equals start', () => {
-    expect(minutesBetweenTimes('09:00', '09:00')).toBe(0);
+  test('treats equal clocks as the full 24-hour interval', () => {
+    expect(minutesBetweenTimes('09:00', '09:00')).toBe(1440);
   });
 
-  test('returns 0 when end is before start (no wrap-around)', () => {
-    // Intentional: the helper guards against negative durations rather than
-    // implying overnight rollover.
-    expect(minutesBetweenTimes('10:00', '09:00')).toBe(0);
+  test('carries an earlier end clock into the following day', () => {
+    expect(minutesBetweenTimes('10:00', '09:00')).toBe(1380);
+    expect(minutesBetweenTimes('23:00', '01:00')).toBe(120);
+    expect(minutesBetweenTimes('23:59', '00:00')).toBe(1);
   });
 });
 

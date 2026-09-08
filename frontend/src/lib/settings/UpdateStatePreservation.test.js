@@ -1,5 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
+afterEach(cleanup);
+afterAll(() => {
+  if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
+  else delete Element.prototype.animate;
+});
 
 beforeAll(() => {
   if (!Element.prototype.animate) {
@@ -16,9 +23,9 @@ beforeAll(() => {
 
 vi.mock('../api.js', () => ({
   api: {
-    getUsers: vi.fn(),
+    getAdminUsers: vi.fn(),
     groups: {
-      getAll: vi.fn(),
+      getAdminAll: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -52,14 +59,14 @@ async function openRowEdit(rowText, editText) {
 describe('settings update state preservation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.getUsers.mockResolvedValue([]);
+    api.getAdminUsers.mockResolvedValue([]);
     api.groups.update.mockResolvedValue({});
     api.notificationSettings.getAvailableEvents.mockResolvedValue([]);
     api.notificationSettings.update.mockResolvedValue({});
   });
 
   it('keeps an inactive group inactive when editing its details', async () => {
-    api.groups.getAll.mockResolvedValue([
+    api.groups.getAdminAll.mockResolvedValue([
       {
         id: 41,
         name: 'Inactive Group',

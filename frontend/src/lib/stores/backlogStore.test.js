@@ -29,9 +29,9 @@ describe('BacklogStore request lifecycle', () => {
     const firstLoad = backlogStore.load(1);
     const secondLoad = backlogStore.load(2);
 
-    second.resolve({ pagination: { total: 22 } });
+    second.resolve({ data: [], pagination: { total_items: 22 } });
     await secondLoad;
-    first.resolve({ pagination: { total: 11 } });
+    first.resolve({ data: [], pagination: { total_items: 11 } });
     await firstLoad;
 
     expect(backlogStore.workspaceId).toBe(2);
@@ -44,7 +44,7 @@ describe('BacklogStore request lifecycle', () => {
 
     const load = backlogStore.load(1);
     backlogStore.setCount(1, 7);
-    pending.resolve({ pagination: { total: 3 } });
+    pending.resolve({ data: [], pagination: { total_items: 3 } });
     await load;
 
     expect(backlogStore.count).toBe(7);

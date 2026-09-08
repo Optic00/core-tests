@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../stores', async () => {
   const { writable } = await import('svelte/store');
@@ -22,7 +22,7 @@ vi.mock('../stores/portalAuth.svelte.js', async () => {
 });
 
 vi.mock('../stores/portal.svelte.js', () => ({
-  portalStore: {
+  portalCustomizationStore: {
     hasBackgroundImage: false,
     hasGradient: false,
     headerBackgroundStyle: '',
@@ -32,7 +32,9 @@ vi.mock('../stores/portal.svelte.js', () => ({
     showMainMenu: false,
     currentSlug: 'support',
     isDarkMode: false,
-    portalData: { title: 'Support' },
+    editableTitle: 'Support',
+    isEditing: false,
+    effectiveLogoUrl: null,
     toggleTheme: vi.fn(),
     setShowMyRequests: vi.fn(),
     setShowMyApprovals: vi.fn(),
@@ -52,6 +54,8 @@ vi.mock('../router.js', () => ({ navigate: vi.fn() }));
 import { authStore } from '../stores';
 import { portalAuthStore } from '../stores/portalAuth.svelte.js';
 import PortalHeader from './PortalHeader.svelte';
+
+afterEach(cleanup);
 
 describe('PortalHeader', () => {
   beforeEach(() => {

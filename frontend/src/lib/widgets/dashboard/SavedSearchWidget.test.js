@@ -50,7 +50,7 @@ describe('SavedSearchWidget', () => {
     }));
     mocks.getCollections.mockResolvedValue([]);
     mocks.getWorkspaces.mockResolvedValue([]);
-    mocks.getItems.mockResolvedValue({ items: [] });
+    mocks.getItems.mockResolvedValue({ data: [] });
   });
 
   afterAll(() => {
@@ -64,7 +64,7 @@ describe('SavedSearchWidget', () => {
   it('loads the selected collection and renders dashboard item rows', async () => {
     mocks.getCollections.mockResolvedValue([{ id: 9, name: 'Release queue', workspace_id: 7 }]);
     mocks.getItems.mockResolvedValue({
-      items: [
+      data: [
         {
           id: 21,
           title: 'Ship saved search widget',
