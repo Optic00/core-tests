@@ -96,22 +96,6 @@ func (s *serviceSetup) CreateConfigurationSet(cs models.ConfigurationSet) int {
 	return int(id)
 }
 
-func (s *serviceSetup) CreateLabel(_ int, name string) models.Label {
-	s.t.Helper()
-	repo := repository.NewLabelRepository(s.tdb.GetDatabase())
-	id, createdAt, err := repo.Create(name, "#3B82F6")
-	if err != nil {
-		s.t.Fatalf("create label: %v", err)
-	}
-	return models.Label{
-		ID:        int(id),
-		Name:      name,
-		Color:     "#3B82F6",
-		CreatedAt: createdAt,
-		UpdatedAt: createdAt,
-	}
-}
-
 func (s *serviceSetup) CreateStatusCategory(name, color string) int {
 	s.t.Helper()
 	entity, err := services.NewEnumService(
@@ -132,23 +116,6 @@ func (s *serviceSetup) CreateStatusCategory(name, color string) int {
 	return category.ID
 }
 
-func (s *serviceSetup) CreateAction(workspaceID int, name string) int {
-	s.t.Helper()
-	creatorID := 1
-	id, err := repository.NewActionRepository(s.tdb.GetDatabase()).Create(&models.Action{
-		WorkspaceID: workspaceID,
-		Name:        name,
-		Description: "Test action",
-		IsEnabled:   true,
-		TriggerType: models.ActionTriggerManual,
-		CreatedBy:   &creatorID,
-	})
-	if err != nil {
-		s.t.Fatalf("create action: %v", err)
-	}
-	return id
-}
-
 func (s *serviceSetup) CreateUser(email, username, firstName, lastName string) int {
 	s.t.Helper()
 	id, err := repository.NewUserRepository(s.tdb.GetDatabase()).Create(repository.CreateUserParams{
@@ -163,45 +130,4 @@ func (s *serviceSetup) CreateUser(email, username, firstName, lastName string) i
 		s.t.Fatalf("create user: %v", err)
 	}
 	return int(id)
-}
-
-func (s *serviceSetup) CreateCustomer(name string) int {
-	s.t.Helper()
-	customer := &models.CustomerOrganisation{Name: name, Active: true}
-	id, _, err := repository.NewCustomerOrganisationRepository(s.tdb.GetDatabase()).Create(customer)
-	if err != nil {
-		s.t.Fatalf("create customer: %v", err)
-	}
-	return id
-}
-
-func (s *serviceSetup) CreateTimeProject(name string, customerID int) int {
-	s.t.Helper()
-	project := &models.TimeProject{
-		Name:   name,
-		Status: "Active",
-		Color:  "#3B82F6",
-	}
-	if customerID != 0 {
-		project.CustomerID = &customerID
-	}
-	if err := repository.NewTimeProjectRepository(s.tdb.GetDatabase()).Create(project); err != nil {
-		s.t.Fatalf("create time project: %v", err)
-	}
-	return project.ID
-}
-
-func (s *serviceSetup) CreateLinkType(name, forwardLabel, reverseLabel string) int {
-	s.t.Helper()
-	linkType := &models.LinkType{
-		Name:         name,
-		ForwardLabel: forwardLabel,
-		ReverseLabel: reverseLabel,
-		Color:        "#64748B",
-	}
-	id, _, err := repository.NewLinkTypeRepository(s.tdb.GetDatabase()).Create(linkType)
-	if err != nil {
-		s.t.Fatalf("create link type: %v", err)
-	}
-	return id
 }

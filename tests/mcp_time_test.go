@@ -244,6 +244,9 @@ func TestMCP_Timer_StartStop(t *testing.T) {
 		t.Fatalf("start_timer started=false: %+v", started)
 	}
 
+	// No observable signals the running timer's age, so only the non-negative
+	// duration contract is asserted here; the 1-second rounding depends on
+	// wall-clock time and would require sleeping.
 	var stopped struct {
 		Stopped         bool  `json:"stopped"`
 		DurationSeconds int64 `json:"duration_seconds"`

@@ -46,3 +46,11 @@ func TestAssetEvaluatorEvaluationDoesNotMutateSharedGenerator(t *testing.T) {
 		})
 	}
 }
+
+// EvaluateToSQLAt converts an asset query using a caller-provided evaluation
+// time without mutating the evaluator's temporal state.
+func (e *AssetEvaluator) EvaluateToSQLAt(cqlQuery string, evaluationTime time.Time) (string, []any, error) { //nolint:gocritic // unnamedResult
+	local := *e.sqlGenerator
+	local.workspaceMap = e.workspaceMap
+	return evaluateQLAt(cqlQuery, &local, evaluationTime)
+}

@@ -1,13 +1,13 @@
+import { test, expect } from '../fixtures/errors';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import {
   createActionViaAPI,
   getActionViaAPI,
-  nodeConfigByType,
   openActionEditor,
-  saveAction,
   selectNodeByType,
+  saveAction,
+  nodeConfigByType,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
 
 // P1-8: output_field names are validated inline (must be a bare identifier);
 // a valid name saves and persists.

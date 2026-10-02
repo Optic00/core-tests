@@ -430,3 +430,40 @@ func assertBulkTitlesUnchanged(t *testing.T, fixture bulkFixture) {
 		t.Fatalf("rollback left %d changed titles", changed)
 	}
 }
+
+// bulkOperationLatencyWindow moved out of core with the test-only Observe
+// method (6685c27d): the bounded sample ring the latency percentiles read.
+const bulkOperationLatencyWindow = 1024
+
+func (m *BulkOperationMetrics) Observe(observation BulkOperationObservation) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kind := m.kinds[observation.Kind]
+	if kind == nil {
+		kind = &bulkOperationKindMetrics{}
+		m.kinds[observation.Kind] = kind
+	}
+	kind.stats.Requests++
+	if observation.Failed {
+		kind.stats.Failures++
+	}
+	kind.stats.RequestedItems += uint64(max(0, observation.RequestedItems))
+	kind.stats.ChangedItems += uint64(max(0, observation.ChangedItems))
+	kind.stats.SQLStatements += uint64(max(0, observation.SQLStatements))
+	kind.stats.SideEffectsEmitted += uint64(max(0, observation.SideEffectsEmitted))
+	kind.stats.LastPoolInUse = observation.PoolInUse
+	if observation.PoolInUse > kind.stats.PeakObservedPoolInUse {
+		kind.stats.PeakObservedPoolInUse = observation.PoolInUse
+	}
+	if observation.Duration > 0 {
+		if len(kind.latencies) == bulkOperationLatencyWindow {
+			copy(kind.latencies, kind.latencies[1:])
+			kind.latencies[len(kind.latencies)-1] = observation.Duration
+		} else {
+			kind.latencies = append(kind.latencies, observation.Duration)
+		}
+	}
+}

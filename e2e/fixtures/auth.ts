@@ -69,15 +69,13 @@ export const test = base.extend<AuthFixtures>({
       await pageContext.locator('#password').fill(password);
 
       // Submit
-      const loginResponse = pageContext
-        .waitForResponse((res) => res.url().includes('/api/auth/login'), { timeout: 10000 })
-        .catch(() => null);
+      const loginResponse = pageContext.waitForResponse(
+        (res) => res.url().includes('/api/auth/login'),
+        { timeout: 10000 }
+      ).catch(() => null);
       await pageContext.click('button[type="submit"]');
       await loginResponse;
-      await pageContext
-        .locator('#emailOrUsername')
-        .waitFor({ state: 'detached', timeout: 10000 })
-        .catch(() => {});
+      await pageContext.locator('#emailOrUsername').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
 
       // Verify login success
       const cookies = await pageContext.context().cookies();

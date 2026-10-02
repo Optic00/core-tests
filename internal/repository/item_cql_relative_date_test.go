@@ -16,7 +16,7 @@ func TestFindAllWithDetails_CQLRelativeCompletedAtAndMilestoneEmpty(t *testing.T
 	tdb := testutils.CreateTestDB(t, true)
 	t.Cleanup(func() { tdb.Close() })
 
-	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	workspaceID := testutils.InsertID(t, tdb.DB, `
 		INSERT INTO workspaces (name, key, description, active, created_at, updated_at)
 		VALUES ('Relative CQL', 'RLC', '', true, ?, ?)`, now, now)
@@ -74,8 +74,11 @@ func TestFindAllWithDetails_CQLRelativeCompletedAtAndMilestoneEmpty(t *testing.T
 	}
 
 	evaluator := cql.NewEvaluator(nil, nil, tdb.GetDriverName())
-	sqlWhere, sqlArgs, err := evaluator.EvaluateToSQLAt(
-		`itemtypename = Bug AND completed_at >= -90d AND milestonename IS EMPTY`, now)
+	// Evaluate with the production clock; every seeded timestamp is derived
+	// from the same `now` with day-scale offsets, so sub-second drift between
+	// seeding and evaluation cannot flip any threshold below.
+	sqlWhere, sqlArgs, err := evaluator.EvaluateToSQL(
+		`itemtypename = Bug AND completed_at >= -90d AND milestonename IS EMPTY`)
 	if err != nil {
 		t.Fatalf("evaluate CQL: %v", err)
 	}

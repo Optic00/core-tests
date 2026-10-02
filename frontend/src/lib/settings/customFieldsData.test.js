@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { customFieldFormData, loadCustomFieldsOverview } from './customFieldsData.js';
+import { customFieldFormData, customFieldUpdatePayload, linkingFieldOptions, loadCustomFieldsOverview } from './customFieldsData.js';
 
 describe('custom field editor form data', () => {
   it('preserves hidden metadata when editing an existing field', () => {
@@ -39,10 +39,10 @@ describe('custom fields screen request graph', () => {
   it('loads every screen assignment with two bounded requests', async () => {
     const apiClient = {
       customFields: {
-        getAll: vi.fn().mockResolvedValue({
-          data: [{ id: 7 }],
-          index_counts: { items: { current: 2, max: 20 }, assets: { current: 1, max: 20 } },
-        }),
+		getOverview: vi.fn().mockResolvedValue({
+		  customFields: [{ id: 7 }],
+		  indexCounts: { items: { current: 2, max: 20 }, assets: { current: 1, max: 20 } },
+		}),
       },
       screens: {
         getAllWithFields: vi.fn().mockResolvedValue([{ id: 1, fields: [{ id: 10 }] }, { id: 2 }]),
@@ -52,7 +52,7 @@ describe('custom fields screen request graph', () => {
 
     const loading = loadCustomFieldsOverview(apiClient);
 
-    expect(apiClient.customFields.getAll).toHaveBeenCalledOnce();
+    expect(apiClient.customFields.getOverview).toHaveBeenCalledOnce();
     expect(apiClient.screens.getAllWithFields).toHaveBeenCalledOnce();
     expect(apiClient.screens.getFields).not.toHaveBeenCalled();
     const overview = await loading;
@@ -67,10 +67,10 @@ describe('custom fields screen request graph', () => {
   it('preserves the custom field list when screen metadata fails to load', async () => {
     const apiClient = {
       customFields: {
-        getAll: vi.fn().mockResolvedValue({
-          data: [{ id: 7 }, { id: 8 }],
-          index_counts: { items: { current: 0, max: 20 }, assets: { current: 0, max: 20 } },
-        }),
+		getOverview: vi.fn().mockResolvedValue({
+		  customFields: [{ id: 7 }, { id: 8 }],
+		  indexCounts: { items: { current: 0, max: 20 }, assets: { current: 0, max: 20 } },
+		}),
       },
       screens: {
         getAllWithFields: vi.fn().mockRejectedValue(new Error('orphaned screen field')),
@@ -81,5 +81,97 @@ describe('custom fields screen request graph', () => {
 
     expect(overview.customFields).toEqual([{ id: 7 }, { id: 8 }]);
     expect(overview.screens).toEqual([]);
+  });
+});
+
+describe('linkingFieldOptions', () => {
+  it('passes mirror options through untouched so mirror edits keep their linkage', () => {
+    const stored = {
+      mirror_of_field_id: 12,
+      link_type_id: 3,
+      allowed_entity_types: ['item'],
+      multi: false,
+    };
+    expect(
+      linkingFieldOptions({
+        editingOptions: stored,
+        linkTypeId: null,
+        mirrorName: 'Renamed mirror',
+      })
+    ).toEqual(stored);
+  });
+
+  it('builds full options for a primary linking field', () => {
+    expect(
+      linkingFieldOptions({
+        linkTypeId: '5',
+        allowedItemTypeIds: [1, 2],
+        allowedEntityTypes: ['item', 'asset'],
+        multi: false,
+        mirrorName: ' Blocks ',
+        mirrorAllowedItemTypeIds: [7],
+      })
+    ).toEqual({
+      link_type_id: 5,
+      allowed_entity_types: ['item', 'asset'],
+      multi: false,
+      allowed_item_type_ids: [1, 2],
+      mirror_name: 'Blocks',
+      mirror_allowed_item_type_ids: [7],
+    });
+  });
+
+  it('omits optional keys when unset', () => {
+    expect(
+      linkingFieldOptions({ linkTypeId: '2' })
+    ).toEqual({
+      link_type_id: 2,
+      allowed_entity_types: ['item'],
+      multi: true,
+    });
+  });
+});
+
+describe('linkingFieldOptions primary mirror preservation', () => {
+  it('carries mirror_field_id through a primary-field edit (WI-1166)', () => {
+    const stored = {
+      link_type_id: 3,
+      allowed_entity_types: ['item'],
+      multi: true,
+      mirror_field_id: 44,
+    };
+    const built = linkingFieldOptions({
+      editingOptions: stored,
+      linkTypeId: '3',
+      allowedEntityTypes: ['item'],
+      multi: true,
+      mirrorName: '',
+    });
+    expect(built.mirror_field_id).toBe(44);
+    expect(built.link_type_id).toBe(3);
+  });
+
+  it('omits mirror_field_id when the field has no mirror', () => {
+    expect(
+      linkingFieldOptions({ linkTypeId: '2', editingOptions: null }).mirror_field_id
+    ).toBeUndefined();
+  });
+});
+
+describe('customFieldUpdatePayload', () => {
+  it('carries display_order through edits instead of resetting it (WI-1169)', () => {
+    const payload = customFieldUpdatePayload(
+      { field_name: 'Severity', field_type: 'select', description: '', required: false },
+      { id: 9, display_order: 4 },
+    );
+    expect(payload.display_order).toBe(4);
+  });
+
+  it('omits display_order on create', () => {
+    const payload = customFieldUpdatePayload(
+      { field_name: 'Severity', field_type: 'select', description: '', required: false },
+      null,
+    );
+    expect(payload).not.toHaveProperty('display_order');
   });
 });

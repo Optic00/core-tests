@@ -1,3 +1,4 @@
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import {
   createActionViaAPI,
   getActionViaAPI,
@@ -5,7 +6,6 @@ import {
   saveAction,
   selectNodeByType,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
@@ -41,7 +41,7 @@ test('manual action editor saves a workspace role visibility restriction', async
   expect(rolesResponse.ok(), `load workspace roles: ${rolesResponse.status()}`).toBeTruthy();
   const roles = (await rolesResponse.json()) as Array<{ id: number; name: string }>;
   const viewerRole = roles.find((role) => role.name === 'Viewer');
-  if (!viewerRole) throw new Error('Viewer workspace role not found');
+  expect(viewerRole).toBeTruthy();
 
   await openActionEditor(page, workspace.id, action.id);
   await selectNodeByType(page, 'trigger');
@@ -49,10 +49,10 @@ test('manual action editor saves a workspace role visibility restriction', async
   const accessControl = page.locator('#manual-action-role-selector');
   await expect(accessControl).toBeVisible();
   await page.locator('#manual-action-role-selector-input').click();
-  await page.getByTestId(`role-picker-option-${viewerRole.id}`).click();
+  await page.getByTestId(`role-picker-option-${viewerRole!.id}`).click();
   await expect(accessControl).toContainText('Viewer');
 
   await saveAction(page, workspace.id, action.id);
   const saved = await getActionViaAPI(request, workspace.id, action.id);
-  expect(saved.allowed_role_ids).toEqual([viewerRole.id]);
+  expect(saved.allowed_role_ids).toEqual([viewerRole!.id]);
 });

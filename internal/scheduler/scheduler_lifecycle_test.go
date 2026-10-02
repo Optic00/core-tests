@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 
 type noopSMTPSender struct{}
 
-func (noopSMTPSender) SendBatchedNotifications(string, string, []models.Notification) error {
+func (noopSMTPSender) SendBatchedNotificationsContext(context.Context, string, string, []models.Notification) error {
 	return nil
 }
 

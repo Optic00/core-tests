@@ -193,7 +193,7 @@ test.describe('Agent Studio responsive and authorization journey', () => {
           response.request().method() === 'GET'
       );
       await viewerPage.goto(`/workspaces/${workspace.id}/agents/new`);
-      expect((await templatesResponse).status()).toBe(403);
+      expect((await templatesResponse).status()).toBe(404);
       await expect(viewerPage.getByTestId('agent-create')).toBeVisible();
       await expect(viewerPage.getByTestId('agent-template')).toHaveCount(0);
       await expect(viewerPage.getByTestId('agent-create-submit')).toHaveCount(0);

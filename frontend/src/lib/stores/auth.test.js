@@ -12,6 +12,9 @@ vi.mock('../api.js', () => ({
       refreshSession: vi.fn(),
       changePassword: vi.fn(),
     },
+    workspaces: {
+      getOrCreatePersonal: vi.fn(),
+    },
   },
 }));
 
@@ -23,6 +26,7 @@ import { setAPIRequestSessionKey } from '../api/core.js';
 import { api } from '../api.js';
 // Import after mocking
 import { authStore } from './auth.svelte.js';
+import { workspacesStore } from './workspaces.svelte.js';
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -282,6 +286,36 @@ describe('authStore', () => {
 
       warnSpy.mockRestore();
     });
+
+    it('should clear the workspaces store so no state leaks to the next user (WI-1377)', async () => {
+      const mockUser = { id: '1', username: 'testuser' };
+      authStore.setAuthData(mockUser, { id: 'session-1' });
+
+      // Populate the personal workspace as an authenticated session would.
+      api.workspaces.getOrCreatePersonal.mockResolvedValueOnce({
+        id: 7,
+        name: 'My Todo List',
+        key: 'P1',
+        is_personal: true,
+      });
+      await workspacesStore.loadPersonalWorkspace();
+      expect(get(workspacesStore).personalWorkspace?.id).toBe(7);
+
+      api.auth.logout.mockResolvedValueOnce({});
+      await authStore.logout();
+
+      expect(get(workspacesStore).personalWorkspace).toBeNull();
+
+      // The next login re-fetches instead of inheriting the previous id.
+      api.workspaces.getOrCreatePersonal.mockResolvedValueOnce({
+        id: 9,
+        name: 'Other Todo List',
+        key: 'P2',
+        is_personal: true,
+      });
+      await workspacesStore.loadPersonalWorkspace();
+      expect(get(workspacesStore).personalWorkspace?.id).toBe(9);
+    });
   });
 
   describe('clearAuth()', () => {
@@ -333,7 +367,7 @@ describe('authStore', () => {
     it('updates profile data without replacing the active session', () => {
       authStore.setAuthData(
         { id: '7', username: 'avatar-user', avatar_url: '' },
-        { id: 'session-7' }
+        { id: 'session-7' },
       );
 
       authStore.patchCurrentUser({ avatar_url: '/api/attachments/9/download' });

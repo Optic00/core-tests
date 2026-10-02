@@ -1,20 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
-// jsdom does not implement the Web Animations API. Svelte 5 transitions
-// call element.animate when the create modal opens.
-beforeAll(() => {
-	if (!Element.prototype.animate) {
-		Element.prototype.animate = () => ({
-			finished: Promise.resolve(),
-			cancel: () => {},
-			addEventListener: () => {},
-			removeEventListener: () => {},
-			play: () => {},
-			pause: () => {},
-		});
-	}
-});
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { writable } from "svelte/store";
 
 vi.mock("../api.js", () => ({
 	api: {
@@ -27,10 +13,22 @@ vi.mock("../api.js", () => ({
 		hierarchyLevels: {
 			getAll: vi.fn(),
 		},
+		objectTranslations: {
+			list: vi.fn(),
+			upsert: vi.fn(),
+			delete: vi.fn(),
+		},
 	},
 }));
 
 vi.mock("../stores/i18n.svelte.js", () => ({
+	i18n: {
+		locale: "de",
+		supportedLocales: [
+			{ code: "en", name: "English" },
+			{ code: "de", name: "Deutsch" },
+		],
+	},
 	t: (key) => {
 		const messages = {
 			"settings.itemTypes.failedToSave": "Failed to save item type:",
@@ -41,6 +39,10 @@ vi.mock("../stores/i18n.svelte.js", () => ({
 
 vi.mock("../stores/toasts.svelte.js", () => ({
 	errorToast: vi.fn(),
+}));
+
+vi.mock("../stores/permissions.svelte.js", () => ({
+	isSystemAdmin: writable(true),
 }));
 
 vi.mock("../composables/useConfirm.js", () => ({
@@ -56,6 +58,15 @@ describe("ItemTypeManager save errors", () => {
 		vi.clearAllMocks();
 		api.itemTypes.getAll.mockResolvedValue([]);
 		api.hierarchyLevels.getAll.mockResolvedValue([{ level: 3, name: "Task" }]);
+		api.objectTranslations.list.mockResolvedValue([]);
+		api.objectTranslations.upsert.mockResolvedValue({
+			object_type: "item_type",
+			object_id: 42,
+			field: "name",
+			locale: "de",
+			source: "instance",
+			value: "Benutzerdefinierter Vorgangstyp",
+		});
 	});
 
 	it("shows a toast above the open create modal when saving fails", async () => {
@@ -75,7 +86,7 @@ describe("ItemTypeManager save errors", () => {
 
 		await waitFor(() => {
 			expect(errorToast).toHaveBeenCalledWith(
-				"Item type with this name already exists",
+				"Failed to save item type: Item type with this name already exists",
 			);
 		});
 		expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -93,5 +104,50 @@ describe("ItemTypeManager save errors", () => {
 		expect(errorToast).toHaveBeenCalledWith("settings.itemTypes.nameRequired");
 		expect(api.itemTypes.create).not.toHaveBeenCalled();
 		expect(screen.getByRole("dialog")).toBeInTheDocument();
+	});
+
+	it("renames a custom item type through the active-locale override", async () => {
+		api.itemTypes.getAll.mockResolvedValue([
+			{
+				id: 42,
+				name: "Custom item type",
+				display_name: "Benutzerdefinierter Typ",
+				description: "Canonical description",
+				display_description: "Deutsche Beschreibung",
+				icon: "FileText",
+				color: "#3b82f6",
+				hierarchy_level: 3,
+				sort_order: 1,
+				is_default: false,
+			},
+		]);
+		api.itemTypes.update.mockResolvedValue({});
+
+		render(ItemTypeManager);
+
+		const row = await screen.findByTestId("item-type-row-42");
+		await fireEvent.click(row.querySelector("button"));
+		await fireEvent.click(await screen.findByText("common.edit"));
+
+		const localizedName = await screen.findByTestId("localized-object-name-de");
+		expect(localizedName).toHaveValue("Benutzerdefinierter Typ");
+		await fireEvent.input(localizedName, {
+			target: { value: "Benutzerdefinierter Vorgangstyp" },
+		});
+		await fireEvent.click(screen.getByTestId("dialog-confirm"));
+
+		await waitFor(() => {
+			expect(api.objectTranslations.upsert).toHaveBeenCalledWith(
+				"item_type",
+				42,
+				"name",
+				"de",
+				"Benutzerdefinierter Vorgangstyp",
+			);
+		});
+		expect(api.itemTypes.update).toHaveBeenCalledWith(
+			42,
+			expect.objectContaining({ name: "Custom item type" }),
+		);
 	});
 });

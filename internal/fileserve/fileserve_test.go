@@ -1,5 +1,3 @@
-//go:build test
-
 package fileserve_test
 
 import (
@@ -66,7 +64,14 @@ func TestOpenUnderRoot_LegacyAbsolutePathUnderRoot(t *testing.T) {
 
 func TestOpenUnderRoot_RelativeRootResolvesAgainstCWD(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
 	writeFile(t, filepath.Join(dir, "uploads", "a.txt"), "rel")
 
 	// Default/e2e setup: root is itself a relative path and rows were stored

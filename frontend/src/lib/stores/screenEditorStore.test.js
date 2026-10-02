@@ -13,8 +13,8 @@ describe('screenEditorStore required-field constraints', () => {
       updateFields: vi.fn().mockResolvedValue([]),
     };
     api.customFields = {
-      getAll: vi.fn().mockResolvedValue({ data: [] }),
-    };
+	  getAll: vi.fn().mockResolvedValue([]),
+	};
   });
 
   it('prevents enabling required for system fields create cannot satisfy', () => {

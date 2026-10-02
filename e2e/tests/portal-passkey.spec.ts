@@ -1,5 +1,6 @@
+import { test, expect } from '../fixtures/mail';
 import type { BrowserContext, CDPSession, Page } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/mail';
+import { shot, SCREENSHOTS_ENABLED } from '../helpers/screenshot';
 import { createPortalChannel } from '../helpers/portal-setup';
 
 /**
@@ -42,10 +43,8 @@ async function requestAndExtractToken(
     timeoutMs: 5000,
   });
   const tokenMatch = msg.Text.match(/[?#&]token=([A-Za-z0-9_=-]+)/);
-  if (!tokenMatch) {
-    throw new Error(`token not found in body: ${msg.Text.slice(0, 200)}`);
-  }
-  return { token: tokenMatch[1], message: msg };
+  expect(tokenMatch, `token not found in body: ${msg.Text.slice(0, 200)}`).toBeTruthy();
+  return { token: tokenMatch![1], message: msg };
 }
 
 test.describe.configure({ mode: 'serial' });
@@ -73,15 +72,34 @@ test.describe('Portal passkey enrolment + discoverable login', () => {
 
   test.afterAll(async () => {
     if (cdp && authenticatorId) {
-      await cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId }).catch(() => {});
+      await cdp
+        .send('WebAuthn.removeVirtualAuthenticator', { authenticatorId })
+        .catch(() => {});
     }
     if (customerCtx) await customerCtx.close().catch(() => {});
   });
 
-  test('1. magic-link sign-in shows the passkey banner', async ({ mail }) => {
+  test('1. magic-link sign-in shows the passkey banner', async ({ mail, browser }) => {
     // page.request uses the same context as the page → verify's Set-Cookie
     // lands on customerCtx and carries into subsequent goto's.
-    const { token } = await requestAndExtractToken(customerPage.request, mail, slug, customerEmail);
+    const { token, message } = await requestAndExtractToken(
+      customerPage.request,
+      mail,
+      slug,
+      customerEmail
+    );
+
+    // Render the actual magic-link email in a fresh page so we can show what
+    // the customer received. Skipped when screenshots are disabled.
+    if (SCREENSHOTS_ENABLED && message?.HTML) {
+      const mailCtx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+      const mailPage = await mailCtx.newPage();
+      await mailPage.setViewportSize({ width: 800, height: 1000 });
+      await mailPage.setContent(message.HTML, { waitUntil: 'domcontentloaded' });
+      await shot(mailPage, '00-magic-link-email');
+      await mailCtx.close().catch(() => {});
+    }
+
     const verify = await customerPage.request.get(
       `/api/portal/${slug}/auth/verify?token=${encodeURIComponent(token)}`,
       { headers: SEC_FETCH }
@@ -92,6 +110,7 @@ test.describe('Portal passkey enrolment + discoverable login', () => {
     await expect(customerPage.getByTestId('portal-passkey-banner')).toBeVisible({
       timeout: 10000,
     });
+    await shot(customerPage, '01-banner-after-magic-link');
   });
 
   test('2. enrol a passkey via the Profile page', async () => {
@@ -113,20 +132,28 @@ test.describe('Portal passkey enrolment + discoverable login', () => {
     authenticatorId = res.authenticatorId;
 
     await customerPage.goto(`/portal/${slug}/profile`);
+    await shot(customerPage, '02-profile-empty');
 
     await customerPage.getByTestId('portal-add-passkey').click();
     await customerPage.locator('#passkey-name').fill(credentialName);
+    await shot(customerPage, '03-add-passkey-modal');
     await customerPage.getByTestId('portal-passkey-register-submit').click();
 
-    // Credential lands in the list and the dialog leaves the DOM after its
-    // success transition.
+    // Credential lands in the list and the banner is gone. Wait for the
+    // dialog to actually leave the DOM (it fades out on success) so the
+    // post-enrolment screenshot doesn't catch it mid-transition.
     await expect(
       customerPage.getByTestId('portal-passkey-list').getByText(credentialName)
     ).toBeVisible({ timeout: 10000 });
-    await expect(customerPage.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0);
+    await customerPage
+      .locator('[role="dialog"][aria-modal="true"]')
+      .waitFor({ state: 'detached', timeout: 2000 })
+      .catch(() => {});
+    await shot(customerPage, '04-passkey-enrolled');
 
     await customerPage.goto(`/portal/${slug}`);
     await expect(customerPage.getByTestId('portal-passkey-banner')).toHaveCount(0);
+    await shot(customerPage, '05-banner-gone');
   });
 
   test('3. sign in with the discoverable passkey', async () => {
@@ -140,6 +167,7 @@ test.describe('Portal passkey enrolment + discoverable login', () => {
     await signInCta.click();
 
     await expect(customerPage.locator('#email')).toBeVisible({ timeout: 5000 });
+    await shot(customerPage, '06-login-modal-with-passkey');
     await customerPage.getByTestId('portal-passkey-login').click();
 
     // After successful discoverable login, the modal closes and the
@@ -148,5 +176,6 @@ test.describe('Portal passkey enrolment + discoverable login', () => {
     await expect(customerPage.locator('#email')).toBeHidden({ timeout: 10000 });
     await expect(customerPage.locator('#portal-avatar-button')).toBeVisible();
     await expect(customerPage.getByTestId('portal-passkey-banner')).toHaveCount(0);
+    await shot(customerPage, '07-signed-back-in-via-passkey');
   });
 });

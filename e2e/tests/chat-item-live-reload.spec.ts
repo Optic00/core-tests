@@ -1,5 +1,9 @@
-import { createItemViaAPI, createWorkspaceViaAPI, updateItemViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
+import { test, expect } from '../fixtures/errors';
+import {
+  createWorkspaceViaAPI,
+  createItemViaAPI,
+  updateItemViaAPI,
+} from '../fixtures/api-helpers';
 
 /**
  * Instant-refresh contract for work item detail: when the AI chat agent
@@ -59,7 +63,9 @@ test.describe('Chat live-reload of work item detail', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{ id: 1, name: 'stub', model: 'stub-model', is_default: true }]),
+        body: JSON.stringify([
+          { id: 1, name: 'stub', model: 'stub-model', is_default: true },
+        ]),
       });
     });
     await page.route('**/api/ai/chat', async (route) => {

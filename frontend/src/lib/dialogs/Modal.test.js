@@ -1,27 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
-
-// jsdom does not implement the Web Animations API. Svelte 5 transitions
-// call element.animate during outro. Stub it with a Promise-shaped result
-// so transitions resolve immediately and don't crash the test runner.
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
-});
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 // Modal uses `use:portal` to move its DOM into document.body. The action
 // is a thin DOM operation — keep the real one.
 
 import Modal from './Modal.svelte';
+import TimeCustomerModal from './TimeCustomerModal.svelte';
 
 function childrenSnippet(text = 'MODAL-BODY') {
   return createRawSnippet(() => ({
@@ -31,10 +16,36 @@ function childrenSnippet(text = 'MODAL-BODY') {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   // The portal action moves modal nodes to document.body and only cleans
   // up on `destroy`. Between test renders any stragglers can stick — wipe
   // the body so each test starts clean.
   document.body.innerHTML = '';
+});
+
+test('delayed autofocus preserves a field the user already focused', async () => {
+  vi.useFakeTimers();
+  render(Modal, {
+    props: {
+      isOpen: true,
+      children: createRawSnippet(() => ({
+        render: () => '<div><input /><textarea data-testid="description"></textarea></div>',
+      })),
+    },
+  });
+  const description = screen.getByTestId('description');
+  description.focus();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(description).toHaveFocus();
+});
+
+test('customer dialog preserves description focus after opening', async () => {
+  vi.useFakeTimers();
+  render(TimeCustomerModal, { props: { isOpen: true } });
+  const description = document.querySelector('textarea');
+  description.focus();
+  await vi.advanceTimersByTimeAsync(120);
+  expect(description).toHaveFocus();
 });
 
 describe('Modal — open/closed visibility', () => {

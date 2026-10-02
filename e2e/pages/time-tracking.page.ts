@@ -11,7 +11,6 @@ export class TimeTrackingPage {
    */
   async goto() {
     await this.page.goto('/time');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -19,7 +18,6 @@ export class TimeTrackingPage {
    */
   async gotoProjects() {
     await this.page.goto('/time/projects');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -41,9 +39,7 @@ export class TimeTrackingPage {
     if (data.customer) {
       const customerSection = dialog.locator('.grid > div').nth(2);
       await customerSection.locator('button').click();
-      const customerOption = this.page
-        .locator('[role="option"]')
-        .filter({ hasText: data.customer });
+      const customerOption = this.page.locator('[role="option"]').filter({ hasText: data.customer });
       await customerOption.first().waitFor({ state: 'visible', timeout: 5000 });
       await customerOption.first().click();
       await customerOption.first().waitFor({ state: 'detached', timeout: 5000 });
@@ -77,17 +73,12 @@ export class TimeTrackingPage {
   /**
    * Delete a project via the row action dropdown
    */
-  async editProject(
-    currentName: string,
-    newData: { name?: string; description?: string; status?: string }
-  ) {
+  async editProject(currentName: string, newData: { name?: string; description?: string; status?: string }) {
     await this.gotoProjects();
     const row = this.findProjectByName(currentName);
 
     await row.locator('button').last().click();
-    await this.page
-      .getByRole('menuitem', { name: /Edit/i })
-      .waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.getByRole('menuitem', { name: /Edit/i }).waitFor({ state: 'visible', timeout: 5000 });
     await this.page.getByRole('menuitem', { name: /Edit/i }).click();
     await this.page.waitForSelector('div[role="dialog"]', { timeout: 5000 });
 
@@ -119,9 +110,7 @@ export class TimeTrackingPage {
 
     // Click the action dropdown (three-dot button) on the row
     await row.locator('button').last().click();
-    await this.page
-      .getByRole('menuitem', { name: /Delete/i })
-      .waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.getByRole('menuitem', { name: /Delete/i }).waitFor({ state: 'visible', timeout: 5000 });
 
     // Click "Delete" menu item and wait for the confirmation dialog
     await this.page.getByRole('menuitem', { name: /Delete/i }).click();
@@ -136,7 +125,14 @@ export class TimeTrackingPage {
   /**
    * Log time via the time entry modal
    */
-  async logTime(data: { project: string; description: string; duration: string; date?: string }) {
+  async logTime(data: {
+    project: string;
+    description: string;
+    duration: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+  }) {
     // Click "Log Time" button
     await this.page.getByTestId('time-log-open').click();
     const dialog = this.page.getByTestId('time-log-modal');
@@ -165,6 +161,18 @@ export class TimeTrackingPage {
 
     if (data.date) {
       await dialog.locator('#time-log-date').fill(data.date);
+    }
+
+    if (data.startTime) {
+      await dialog.locator('#time-log-start-time').fill(data.startTime);
+    }
+    if (data.endTime) {
+      await dialog.locator('#time-log-end-time').fill(data.endTime);
+      // Entering the end clock recomputes the duration from the clocks; the
+      // explicit fill keeps the submitted duration deterministic for
+      // overnight intervals too.
+      await duration.fill(data.duration);
+      await expect(duration).toHaveValue(data.duration);
     }
 
     // Click confirm button in dialog footer and wait for the dialog to close

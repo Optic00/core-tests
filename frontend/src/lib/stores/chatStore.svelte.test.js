@@ -86,4 +86,27 @@ describe('durable Standard chat selection', () => {
       { id: 12, role: 'assistant', content: 'Stored General history' },
     ]);
   });
+
+  test('starts a new General chat without sending prior turns to the server', async () => {
+    chatStore.connectionId = 0;
+    api.ai.chat.mockResolvedValue({
+      session_id: 11,
+      message_id: 14,
+      answer: 'Fresh answer',
+    });
+
+    await chatStore.startNewGeneralChat();
+
+    expect(chatStore.sessionType).toBe('general');
+    expect(chatStore.sessionId).toBe(11);
+    expect(chatStore.messages).toEqual([]);
+
+    await chatStore.sendMessage('Fresh question');
+
+    expect(api.ai.chat).toHaveBeenCalledWith('Fresh question', undefined, 11, undefined, 12);
+    expect(chatStore.messages).toEqual([
+      { role: 'user', content: 'Fresh question' },
+      expect.objectContaining({ role: 'assistant', content: 'Fresh answer' }),
+    ]);
+  });
 });

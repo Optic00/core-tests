@@ -27,11 +27,12 @@ func TestAttachmentService_RecordItemHistoryPreservesNullableOldValue(t *testing
 	}
 
 	service := services.NewAttachmentService(tdb.GetDatabase())
-	if err := service.RecordItemHistory(itemID, &data.UserID, "attachment_uploaded", nil, 17, "upload.txt"); err != nil {
+	actor := services.AttachmentHistoryActor{UserID: &data.UserID}
+	if err := service.RecordItemHistory(itemID, actor, "attachment_uploaded", nil, 17, "upload.txt"); err != nil {
 		t.Fatalf("record upload history: %v", err)
 	}
 	filename := "deleted.txt"
-	if err := service.RecordItemHistory(itemID, &data.UserID, "attachment_deleted", &filename, 0, filename); err != nil {
+	if err := service.RecordItemHistory(itemID, actor, "attachment_deleted", &filename, 0, filename); err != nil {
 		t.Fatalf("record delete history: %v", err)
 	}
 

@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '../fixtures/context-path';
+import { expect, type Page, type Locator } from '../fixtures/context-path';
 
 /**
  * Page object for the item-linking UI — the "Linked Items" section in the
@@ -64,12 +64,10 @@ export class ItemLinksPage {
     // Start waiting before filling so a fast local response cannot race past
     // Playwright's response listener. Results are rendered in a fixed-position
     // dropdown, so use the page-level test id rather than scoping to the modal.
-    const responsePromise = this.page
-      .waitForResponse(
-        (res) => res.request().method() === 'GET' && res.url().includes('/api/links/search'),
-        { timeout: 10000 }
-      )
-      .catch(() => null);
+    const responsePromise = this.page.waitForResponse(
+      (res) => res.request().method() === 'GET' && res.url().includes('/api/v2/links/search'),
+      { timeout: 10000 }
+    ).catch(() => null);
 
     await input.fill(query);
     await responsePromise;
@@ -82,17 +80,17 @@ export class ItemLinksPage {
   /**
    * Type into the target-item search input and return the count of visible
    * result rows. Waits long enough for the debounce + network round-trip.
+   * Requires at least one result — use expectSearchResultCount for the
+   * empty case.
    */
   async searchResultCount(query: string): Promise<number> {
     const input = this.linkModal().locator('#link-target-search');
     await expect(input).toBeEnabled({ timeout: 5000 });
 
-    const responsePromise = this.page
-      .waitForResponse(
-        (res) => res.request().method() === 'GET' && res.url().includes('/api/links/search'),
-        { timeout: 10000 }
-      )
-      .catch(() => null);
+    const responsePromise = this.page.waitForResponse(
+      (res) => res.request().method() === 'GET' && res.url().includes('/api/v2/links/search'),
+      { timeout: 10000 }
+    ).catch(() => null);
 
     await input.fill(query);
     await responsePromise;
@@ -100,6 +98,33 @@ export class ItemLinksPage {
     const results = this.page.getByTestId('link-search-result');
     await expect.poll(async () => results.count(), { timeout: 10000 }).toBeGreaterThan(0);
     return await results.count();
+  }
+
+  /**
+   * Fill the target search and assert the exact number of rendered result
+   * rows after the search response lands. Unlike searchResultCount this
+   * supports the zero-results case: the response wait guarantees the
+   * backend answered, and rendering is synchronous afterwards.
+   */
+  async expectSearchResultCount(query: string, count: number): Promise<void> {
+    const input = this.linkModal().locator('#link-target-search');
+    await expect(input).toBeEnabled({ timeout: 5000 });
+
+    const responsePromise = this.page.waitForResponse(
+      (res) => res.request().method() === 'GET' && res.url().includes('/api/v2/links/search'),
+      { timeout: 10000 }
+    ).catch(() => null);
+
+    await input.fill(query);
+    const response = await responsePromise;
+    if (!response) {
+      // No request fired — the modal suppressed the search entirely.
+      await expect(this.page.getByTestId('link-search-result')).toHaveCount(0);
+      return;
+    }
+    await expect(this.page.getByTestId('link-search-result')).toHaveCount(count, {
+      timeout: 5000,
+    });
   }
 
   /**

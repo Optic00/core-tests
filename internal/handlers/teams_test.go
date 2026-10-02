@@ -22,7 +22,8 @@ func createTeamHandler(t *testing.T, tdb *testutils.TestDB) *TeamHandler {
 	// Grant teams.manage to the default test user (ID 1) through the API
 	newServiceSetup(t, tdb).GrantGlobal(1, "teams.manage")
 
-	return NewTeamHandler(teamRepo, leaveRepo, permService, logger.NewAuditor(tdb.GetDatabase()))
+	slaRepo := repository.NewSLARepository(tdb.GetDatabase())
+	return NewTeamHandler(teamRepo, leaveRepo, slaRepo, permService, logger.NewAuditor(tdb.GetDatabase()))
 }
 
 // createTestTeam creates a team via the handler and returns its ID
@@ -148,7 +149,7 @@ func TestTeamHandler_Create_NoPermission(t *testing.T) {
 	permService, _, _ := createTestServices(t, *tdb)
 	teamRepo := repository.NewTeamRepository(tdb.GetDatabase())
 	leaveRepo := repository.NewLeaveRepository(tdb.GetDatabase())
-	handler := NewTeamHandler(teamRepo, leaveRepo, permService, logger.NewAuditor(tdb.GetDatabase()))
+	handler := NewTeamHandler(teamRepo, leaveRepo, repository.NewSLARepository(tdb.GetDatabase()), permService, logger.NewAuditor(tdb.GetDatabase()))
 
 	body := models.TeamCreateRequest{Name: "Test Team"}
 	req := testutils.CreateJSONRequest(t, "POST", "/api/teams", body)

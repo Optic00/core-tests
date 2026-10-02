@@ -63,7 +63,7 @@ func (p *reviewEventProvider) CreateIssueComment(_ context.Context, _, _ string,
 	p.comments = append(p.comments, IssueComment{ID: p.nextComment, Kind: "issue_comment", Body: body, CreatedAt: time.Now().UTC()})
 	return p.nextComment, nil
 }
-func (p *reviewEventProvider) UpdateIssueComment(context.Context, string, string, int64, string) error {
+func (p *reviewEventProvider) UpdateIssueComment(context.Context, string, string, int, int64, string) error {
 	return nil
 }
 func (p *reviewEventProvider) CanUserWriteRepository(context.Context, string, string, string) (bool, error) {

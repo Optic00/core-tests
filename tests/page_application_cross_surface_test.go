@@ -52,7 +52,7 @@ func TestPageApplication_CookieRESTAndMCPMutationAuditContract(t *testing.T) {
 	archiveResponse := MakeAuthRequest(t, server, http.MethodDelete,
 		fmt.Sprintf("/workspaces/%d/pages/%d", workspaceID, pageID), nil)
 	defer archiveResponse.Body.Close()
-	AssertStatusCode(t, archiveResponse, http.StatusOK)
+	AssertStatusCode(t, archiveResponse, http.StatusNoContent)
 
 	var archivedAt interface{}
 	if err := server.server.DB().QueryRow(`SELECT archived_at FROM pages WHERE id = ?`, pageID).Scan(&archivedAt); err != nil {
@@ -105,8 +105,8 @@ func TestPageApplication_CookieRESTAndMCPMutationAuditContract(t *testing.T) {
 			t.Fatalf("page audit action[%d] = %q, want %q", i, actions[i], wantActions[i])
 		}
 	}
-	if details[0]["auth_method"] != "cookie" || details[1]["auth_method"] != "bearer" ||
-		details[2]["source"] != "mcp" || details[3]["auth_method"] != "cookie" {
+	if details[0]["auth_method"] != "session" || details[1]["auth_method"] != "bearer" ||
+		details[2]["source"] != "mcp" || details[3]["auth_method"] != "session" {
 		t.Fatalf("page audit attribution = %#v", details)
 	}
 	if details[1]["api_token_id"] == nil {
@@ -207,5 +207,85 @@ func TestPageApplication_ContentHashPreconditionAcrossCookieRESTAndMCP(t *testin
 	}
 	if finalContent != "legacy cookie update" || finalHash == currentHash {
 		t.Fatalf("final content/hash = %q/%q", finalContent, finalHash)
+	}
+}
+
+func TestPageDiagramApplication_CookieAndBearerShareLifecycle(t *testing.T) {
+	server, _ := StartTestServer(t, GetDBType())
+	CreateBearerToken(t, server)
+	workspaceID, _ := CreateTestWorkspace(t, server, "Page Diagram Contract", shortKey("PDC"))
+
+	pageResponse := MakeAuthRequest(t, server, http.MethodPost,
+		fmt.Sprintf("/workspaces/%d/pages", workspaceID), map[string]any{
+			"title": "Shared diagram page", "content": "# Architecture",
+		})
+	defer pageResponse.Body.Close()
+	AssertStatusCode(t, pageResponse, http.StatusCreated)
+	var page struct {
+		ID          int    `json:"id"`
+		ContentHash string `json:"content_hash"`
+	}
+	DecodeJSON(t, pageResponse, &page)
+
+	createResponse := MakeAuthRequest(t, server, http.MethodPost,
+		fmt.Sprintf("/workspaces/%d/pages/%d/diagrams", workspaceID, page.ID), map[string]any{
+			"name": "Shared flow", "mermaid": "graph TD; A-->B", "placement": "end",
+			"expected_content_hash": page.ContentHash,
+		})
+	defer createResponse.Body.Close()
+	AssertStatusCode(t, createResponse, http.StatusCreated)
+	var created struct {
+		AttachmentID int    `json:"attachment_id"`
+		ContentHash  string `json:"content_hash"`
+		Name         string `json:"name"`
+	}
+	DecodeJSON(t, createResponse, &created)
+	if created.AttachmentID == 0 || created.Name != "Shared flow" {
+		t.Fatalf("cookie-created diagram = %+v", created)
+	}
+
+	v1GetResponse := MakeBearerRequest(t, server, http.MethodGet,
+		fmt.Sprintf("/rest/api/v1/workspaces/%d/pages/%d/diagrams/%d", workspaceID, page.ID, created.AttachmentID), nil)
+	defer v1GetResponse.Body.Close()
+	AssertStatusCode(t, v1GetResponse, http.StatusOK)
+	var fetched struct {
+		AttachmentID int             `json:"attachment_id"`
+		Name         string          `json:"name"`
+		Payload      json.RawMessage `json:"payload"`
+	}
+	DecodeJSON(t, v1GetResponse, &fetched)
+	var payload map[string]string
+	if err := json.Unmarshal(fetched.Payload, &payload); err != nil {
+		t.Fatalf("decode bearer diagram payload: %v", err)
+	}
+	if fetched.AttachmentID != created.AttachmentID || fetched.Name != created.Name || payload["source"] != "graph TD; A-->B" {
+		t.Fatalf("bearer read after cookie create = %+v payload=%s", fetched, fetched.Payload)
+	}
+
+	v1UpdateResponse := MakeBearerRequest(t, server, http.MethodPut,
+		fmt.Sprintf("/rest/api/v1/workspaces/%d/pages/%d/diagrams/%d", workspaceID, page.ID, created.AttachmentID), map[string]any{
+			"name": "Bearer flow", "mermaid": "graph TD; B-->C", "expected_content_hash": created.ContentHash,
+		})
+	defer v1UpdateResponse.Body.Close()
+	AssertStatusCode(t, v1UpdateResponse, http.StatusOK)
+	var updated struct {
+		AttachmentID int    `json:"attachment_id"`
+		Name         string `json:"name"`
+	}
+	DecodeJSON(t, v1UpdateResponse, &updated)
+	if updated.AttachmentID == created.AttachmentID || updated.Name != "Bearer flow" {
+		t.Fatalf("bearer-updated diagram = %+v", updated)
+	}
+
+	cookieGetResponse := MakeAuthRequest(t, server, http.MethodGet,
+		fmt.Sprintf("/workspaces/%d/pages/%d/diagrams/%d", workspaceID, page.ID, updated.AttachmentID), nil)
+	defer cookieGetResponse.Body.Close()
+	AssertStatusCode(t, cookieGetResponse, http.StatusOK)
+	DecodeJSON(t, cookieGetResponse, &fetched)
+	if err := json.Unmarshal(fetched.Payload, &payload); err != nil {
+		t.Fatalf("decode cookie diagram payload: %v", err)
+	}
+	if fetched.AttachmentID != updated.AttachmentID || fetched.Name != "Bearer flow" || payload["source"] != "graph TD; B-->C" {
+		t.Fatalf("cookie read after bearer update = %+v payload=%s", fetched, fetched.Payload)
 	}
 }

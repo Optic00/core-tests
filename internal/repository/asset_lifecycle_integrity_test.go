@@ -5,8 +5,11 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
+	"windshift/internal/database"
 
 	"windshift/internal/testutils"
 )
@@ -58,6 +61,26 @@ func TestHardDeleteSetRemovesPolymorphicAssetLinksTransactionally(t *testing.T) 
 		}
 	}
 
+	failedRepo := NewAssetRepository(assetDeleteFailureDB{Database: db})
+	if err := failedRepo.HardDeleteSet(setID); !errors.Is(err, errAssetDeleteTestFailure) {
+		t.Fatalf("failed deletion = %v", err)
+	}
+	for _, check := range []struct {
+		query string
+		want  int
+	}{
+		{"SELECT COUNT(*) FROM assets", 3},
+		{"SELECT COUNT(*) FROM item_links", 4},
+		{"SELECT COUNT(*) FROM asset_management_sets WHERE id = " + fmt.Sprint(setID), 1},
+	} {
+		var got int
+		if err := db.QueryRow(check.query).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != check.want {
+			t.Fatalf("after rollback %s = %d, want %d", check.query, got, check.want)
+		}
+	}
 	if err := repo.HardDeleteSet(setID); err != nil {
 		t.Fatalf("HardDeleteSet: %v", err)
 	}
@@ -130,4 +153,25 @@ func TestReplaceAssetTypeFieldsPrunesRemovedValues(t *testing.T) {
 	if values[fmt.Sprintf("%d", retainedID)] != "ZRH" {
 		t.Fatalf("retained field value = %v, want ZRH", values)
 	}
+}
+
+var errAssetDeleteTestFailure = errors.New("injected set deletion failure")
+
+type assetDeleteFailureDB struct{ database.Database }
+
+func (db assetDeleteFailureDB) Begin() (database.Tx, error) {
+	tx, err := db.Database.Begin()
+	if err != nil {
+		return nil, err
+	}
+	return assetDeleteFailureTx{Tx: tx}, nil
+}
+
+type assetDeleteFailureTx struct{ database.Tx }
+
+func (tx assetDeleteFailureTx) Exec(query string, args ...interface{}) (sql.Result, error) {
+	if strings.HasPrefix(query, "DELETE FROM asset_management_sets") {
+		return nil, errAssetDeleteTestFailure
+	}
+	return tx.Tx.Exec(query, args...)
 }

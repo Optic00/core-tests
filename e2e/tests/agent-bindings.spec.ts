@@ -70,19 +70,22 @@ test.describe('Agent Studio bindings', () => {
       route.fulfill({ json: [{ user_id: 42, name: 'Release Bot', username: 'release-bot' }] })
     );
     await page.route(`${apiRoot}/agent-tool-capabilities`, (route) => route.fulfill({ json: [] }));
-    await page.route(`${apiRoot}/scm-connections`, (route) =>
-      route.fulfill({
-        json: [{ id: 5, name: 'GitHub', provider_slug: 'github', is_connected: true }],
-      })
-    );
-    await page.route(`${apiRoot}/scm-connections/5/repositories`, (route) =>
+    await page.route(`${apiRoot}/scm-connections?include_repositories=true`, (route) =>
       route.fulfill({
         json: [
           {
-            id: 11,
-            repository_name: 'docs-platform',
-            repository_url: 'https://github.com/acme/docs-platform',
-            default_branch: 'main',
+            id: 5,
+            name: 'GitHub',
+            provider_slug: 'github',
+            is_connected: true,
+            repositories: [
+              {
+                id: 11,
+                repository_name: 'docs-platform',
+                repository_url: 'https://github.com/acme/docs-platform',
+                default_branch: 'main',
+              },
+            ],
           },
         ],
       })

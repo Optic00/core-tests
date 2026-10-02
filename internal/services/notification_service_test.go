@@ -55,12 +55,23 @@ func TestUnreadEmailBatchesReauthorizeWorkspaceNotifications(t *testing.T) {
 			t.Errorf("close notification service: %v", err)
 		}
 	})
+	accessibleBefore, err := env.service.AccessibleWorkspaceIDs(userID)
+	if err != nil {
+		t.Fatalf("warm permission scope before revocation: %v", err)
+	}
+	if len(accessibleBefore) != 1 || accessibleBefore[0] != allowedWorkspaceID {
+		t.Fatalf("accessible workspaces before revocation = %v, want [%d]", accessibleBefore, allowedWorkspaceID)
+	}
 
+	beforeDecodes := env.service.GetWorkspaceAccessStats().PermissionSnapshotDecodes
 	before, err := service.UnreadEmailBatches(100)
 	if err != nil {
 		t.Fatalf("email batches before revocation: %v", err)
 	}
-	assertNotificationTitles(t, before["notification-recipient@example.com"], "system notice", "allowed workspace")
+	if decodes := env.service.GetWorkspaceAccessStats().PermissionSnapshotDecodes - beforeDecodes; decodes != 1 {
+		t.Fatalf("permission scope decodes before revocation = %d, want 1 per recipient", decodes)
+	}
+	assertNotificationTitles(t, before["notification-recipient@example.com"], "allowed workspace", "system notice")
 
 	if _, err := roles.RevokeFromUser(userID, allowedWorkspaceID, viewerRoleID); err != nil {
 		t.Fatalf("revoke workspace role: %v", err)
@@ -68,9 +79,20 @@ func TestUnreadEmailBatchesReauthorizeWorkspaceNotifications(t *testing.T) {
 	if err := env.service.InvalidateUserCache(userID); err != nil {
 		t.Fatalf("invalidate permission cache: %v", err)
 	}
+	accessibleAfter, err := env.service.AccessibleWorkspaceIDs(userID)
+	if err != nil {
+		t.Fatalf("refresh permission scope after revocation: %v", err)
+	}
+	if len(accessibleAfter) != 0 {
+		t.Fatalf("accessible workspaces after revocation = %v, want none", accessibleAfter)
+	}
+	afterDecodes := env.service.GetWorkspaceAccessStats().PermissionSnapshotDecodes
 	after, err := service.UnreadEmailBatches(100)
 	if err != nil {
 		t.Fatalf("email batches after revocation: %v", err)
+	}
+	if decodes := env.service.GetWorkspaceAccessStats().PermissionSnapshotDecodes - afterDecodes; decodes != 1 {
+		t.Fatalf("permission scope decodes after revocation = %d, want 1 per recipient", decodes)
 	}
 	assertNotificationTitles(t, after["notification-recipient@example.com"], "system notice")
 }
@@ -108,7 +130,7 @@ func TestUnreadEmailBatchesReauthorizeGroupDerivedWorkspaceNotifications(t *test
 	if err != nil {
 		t.Fatalf("email batches before group revocation: %v", err)
 	}
-	assertNotificationTitles(t, before["notification-group-recipient@example.com"], "system notice", "group workspace")
+	assertNotificationTitles(t, before["notification-group-recipient@example.com"], "group workspace", "system notice")
 
 	if _, err := env.db.Exec("DELETE FROM group_members WHERE group_id = ? AND user_id = ?", groupID, userID); err != nil {
 		t.Fatalf("remove group membership: %v", err)
@@ -121,6 +143,259 @@ func TestUnreadEmailBatchesReauthorizeGroupDerivedWorkspaceNotifications(t *test
 		t.Fatalf("email batches after group revocation: %v", err)
 	}
 	assertNotificationTitles(t, after["notification-group-recipient@example.com"], "system notice")
+}
+
+func TestUnreadEmailBatchesReauthorizeAssetNotifications(t *testing.T) {
+	env := newPermTestEnv(t)
+	userID := env.insertUser("asset-notification-recipient@example.com")
+	keeperID := env.insertUser("asset-notification-keeper@example.com")
+	insertID := func(label, query string, args ...any) int {
+		t.Helper()
+		var id int
+		if err := env.db.QueryRow(query, args...).Scan(&id); err != nil {
+			t.Fatalf("insert %s: %v", label, err)
+		}
+		return id
+	}
+	setID := insertID("asset set", `INSERT INTO asset_management_sets (name, created_by) VALUES ('Notification assets', ?) RETURNING id`, keeperID)
+	typeID := insertID("asset type", `INSERT INTO asset_types (set_id, name) VALUES (?, 'Server') RETURNING id`, setID)
+	assetID := insertID("asset", `INSERT INTO assets (set_id, asset_type_id, title, created_by) VALUES (?, ?, 'Restricted server', ?) RETURNING id`, setID, typeID, keeperID)
+	viewerRoleID := insertID("viewer role", `SELECT id FROM asset_roles WHERE name = 'Viewer'`)
+	if _, err := env.db.Exec(`INSERT INTO user_asset_set_roles (user_id, set_id, role_id, granted_by) VALUES (?, ?, ?, ?)`, userID, setID, viewerRoleID, keeperID); err != nil {
+		t.Fatalf("grant asset view: %v", err)
+	}
+	if _, err := env.db.Exec(`
+		INSERT INTO notifications (user_id, title, message, type, timestamp, read, authorization_scope, source_type, source_id)
+		VALUES (?, 'restricted asset', 'restricted asset body', 'info', CURRENT_TIMESTAMP, false, ?, 'asset', ?),
+		       (?, 'system notice', 'system body', 'info', CURRENT_TIMESTAMP, false, ?, NULL, NULL)
+	`, userID, models.NotificationScopeAsset, assetID, userID, models.NotificationScopeSystem); err != nil {
+		t.Fatalf("insert notifications: %v", err)
+	}
+
+	assetPermissions := NewAssetPermissionService(repository.NewAssetRepository(env.db), env.service)
+	service := NewNotificationService(env.db, nil, env.service, DefaultNotificationServiceConfig(), assetPermissions)
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Errorf("close notification service: %v", err)
+		}
+	})
+	before, err := service.UnreadEmailBatches(100)
+	if err != nil {
+		t.Fatalf("email batches before revocation: %v", err)
+	}
+	assertNotificationTitles(t, before["asset-notification-recipient@example.com"], "restricted asset", "system notice")
+
+	if _, err := env.db.Exec(`DELETE FROM user_asset_set_roles WHERE user_id = ? AND set_id = ?`, userID, setID); err != nil {
+		t.Fatalf("revoke asset view: %v", err)
+	}
+	after, err := service.UnreadEmailBatches(100)
+	if err != nil {
+		t.Fatalf("email batches after revocation: %v", err)
+	}
+	assertNotificationTitles(t, after["asset-notification-recipient@example.com"], "system notice")
+
+	if _, err := env.db.Exec(`INSERT INTO user_asset_set_roles (user_id, set_id, role_id, granted_by) VALUES (?, ?, ?, ?)`, userID, setID, viewerRoleID, keeperID); err != nil {
+		t.Fatalf("restore asset view: %v", err)
+	}
+	otherSetID := insertID("other asset set", `INSERT INTO asset_management_sets (name, created_by) VALUES ('Moved notification assets', ?) RETURNING id`, keeperID)
+	if _, err := env.db.Exec(`UPDATE assets SET set_id = ? WHERE id = ?`, otherSetID, assetID); err != nil {
+		t.Fatalf("move asset: %v", err)
+	}
+	afterMove, err := service.UnreadEmailBatches(100)
+	if err != nil {
+		t.Fatalf("email batches after asset move: %v", err)
+	}
+	assertNotificationTitles(t, afterMove["asset-notification-recipient@example.com"], "system notice")
+	if _, err := env.db.Exec(`INSERT INTO user_asset_set_roles (user_id, set_id, role_id, granted_by) VALUES (?, ?, ?, ?)`, userID, otherSetID, viewerRoleID, keeperID); err != nil {
+		t.Fatalf("grant moved asset view: %v", err)
+	}
+	afterMoveGrant, err := service.UnreadEmailBatches(100)
+	if err != nil {
+		t.Fatalf("email batches after moved asset grant: %v", err)
+	}
+	assertNotificationTitles(t, afterMoveGrant["asset-notification-recipient@example.com"], "restricted asset", "system notice")
+	if _, err := env.db.Exec(`DELETE FROM assets WHERE id = ?`, assetID); err != nil {
+		t.Fatalf("delete asset: %v", err)
+	}
+	afterDelete, err := service.UnreadEmailBatches(100)
+	if err != nil {
+		t.Fatalf("email batches after asset deletion: %v", err)
+	}
+	assertNotificationTitles(t, afterDelete["asset-notification-recipient@example.com"], "system notice")
+}
+
+func TestUnreadEmailBatchesReauthorizeReferencedWorkspaceNotifications(t *testing.T) {
+	env := newPermTestEnv(t)
+	userID := env.insertUser("linked-notification-recipient@example.com")
+	keeperID := env.insertUser("linked-notification-keeper@example.com")
+	primaryWorkspaceID := env.insertWorkspace("LINK-NOTIFY-PRIMARY")
+	secondaryWorkspaceID := env.insertWorkspace("LINK-NOTIFY-SECONDARY")
+	viewerRoleID := env.roleID("Viewer")
+	roles := repository.NewWorkspaceRoleRepository(env.db)
+	for _, workspaceID := range []int{primaryWorkspaceID, secondaryWorkspaceID} {
+		if err := roles.AssignToUser(userID, workspaceID, viewerRoleID, keeperID); err != nil {
+			t.Fatalf("assign recipient workspace role: %v", err)
+		}
+		if err := roles.AssignToUser(keeperID, workspaceID, viewerRoleID, keeperID); err != nil {
+			t.Fatalf("assign keeper workspace role: %v", err)
+		}
+	}
+	targetID64, err := CreateItem(env.db, ItemCreationParams{WorkspaceID: secondaryWorkspaceID, Title: "Secret linked target"})
+	if err != nil {
+		t.Fatalf("create linked target: %v", err)
+	}
+	targetID := int(targetID64)
+	if _, err := env.db.Exec(`
+		INSERT INTO notifications (
+			user_id, title, message, type, timestamp, read, authorization_scope, workspace_id,
+			source_type, source_id, referenced_entity_type, referenced_entity_id,
+			referenced_workspace_id, referenced_workspace_permission
+		) VALUES
+			(?, 'linked target', 'Secret linked target', 'info', CURRENT_TIMESTAMP, false, ?, ?, ?, 1, 'item', ?, ?, ?),
+			(?, 'ambiguous legacy link', 'must fail closed', 'info', CURRENT_TIMESTAMP, false, ?, ?, ?, 1, NULL, NULL, NULL, NULL),
+			(?, 'system notice', 'system body', 'info', CURRENT_TIMESTAMP, false, ?, NULL, 'system', NULL, NULL, NULL, NULL, NULL)
+	`,
+		userID, models.NotificationScopeWorkspace, primaryWorkspaceID, models.EventItemLinked, targetID, secondaryWorkspaceID, models.PermissionItemView,
+		userID, models.NotificationScopeWorkspace, primaryWorkspaceID, models.EventItemLinked,
+		userID, models.NotificationScopeSystem,
+	); err != nil {
+		t.Fatalf("insert linked notifications: %v", err)
+	}
+
+	service := NewNotificationService(env.db, nil, env.service, DefaultNotificationServiceConfig())
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Errorf("close notification service: %v", err)
+		}
+	})
+	get := func() *UserNotificationBatch {
+		t.Helper()
+		batches, err := service.UnreadEmailBatches(100)
+		if err != nil {
+			t.Fatalf("email batches: %v", err)
+		}
+		return batches["linked-notification-recipient@example.com"]
+	}
+	assertNotificationTitles(t, get(), "linked target", "system notice")
+
+	if _, err := roles.RevokeFromUser(userID, secondaryWorkspaceID, viewerRoleID); err != nil {
+		t.Fatalf("revoke secondary workspace: %v", err)
+	}
+	if err := env.service.InvalidateUserCache(userID); err != nil {
+		t.Fatalf("invalidate secondary revocation: %v", err)
+	}
+	assertNotificationTitles(t, get(), "system notice")
+
+	if err := roles.AssignToUser(userID, secondaryWorkspaceID, viewerRoleID, keeperID); err != nil {
+		t.Fatalf("restore secondary workspace: %v", err)
+	}
+	if _, err := roles.RevokeFromUser(userID, primaryWorkspaceID, viewerRoleID); err != nil {
+		t.Fatalf("revoke primary workspace: %v", err)
+	}
+	if err := env.service.InvalidateUserCache(userID); err != nil {
+		t.Fatalf("invalidate primary revocation: %v", err)
+	}
+	assertNotificationTitles(t, get(), "system notice")
+}
+
+func TestNotificationsExcludeDeactivatedRecipientsAtCreationAndDispatch(t *testing.T) {
+	env := newPermTestEnv(t)
+	activeID := env.insertUser("active-notification-recipient@example.com")
+	inactiveID := env.insertUser("inactive-notification-recipient@example.com")
+	keeperID := env.insertUser("deactivation-notification-keeper@example.com")
+	workspaceID := env.insertWorkspace("NOTIFY-DEACTIVATE")
+	viewerRoleID := env.roleID("Viewer")
+	roles := repository.NewWorkspaceRoleRepository(env.db)
+	for _, userID := range []int{activeID, inactiveID, keeperID} {
+		if err := roles.AssignToUser(userID, workspaceID, viewerRoleID, keeperID); err != nil {
+			t.Fatalf("assign workspace role: %v", err)
+		}
+	}
+	if _, err := env.service.AccessibleWorkspaceIDs(inactiveID); err != nil {
+		t.Fatalf("warm inactive recipient permission cache: %v", err)
+	}
+	for _, recipient := range []struct {
+		id    int
+		title string
+	}{
+		{activeID, "active pending"},
+		{inactiveID, "inactive pending"},
+	} {
+		if _, err := env.db.Exec(`
+			INSERT INTO notifications (user_id, title, message, type, timestamp, read, authorization_scope, workspace_id)
+			VALUES (?, ?, ?, 'info', CURRENT_TIMESTAMP, false, ?, ?)
+		`, recipient.id, recipient.title, recipient.title+" body", models.NotificationScopeWorkspace, workspaceID); err != nil {
+			t.Fatalf("insert pending notification: %v", err)
+		}
+	}
+
+	manager := newStubNotificationManager()
+	service := NewNotificationService(env.db, manager, env.service, DefaultNotificationServiceConfig())
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Errorf("close notification service: %v", err)
+		}
+	})
+	now := time.Date(2026, 9, 5, 11, 0, 0, 0, time.UTC)
+	claims, err := service.ClaimUnreadEmailBatches("deactivation-test", now, time.Minute, 50)
+	if err != nil {
+		t.Fatalf("claim pending notifications: %v", err)
+	}
+	inactiveClaim := claims["inactive-notification-recipient@example.com"]
+	activeClaim := claims["active-notification-recipient@example.com"]
+	if inactiveClaim == nil || activeClaim == nil {
+		t.Fatalf("claims before deactivation = %+v, want both recipients", claims)
+	}
+	permissionInvalidated := false
+	deactivation := NewUserDeactivationService(env.db, UserDeactivationInvalidators{
+		Permissions: func(userID int) {
+			if userID == inactiveID {
+				permissionInvalidated = true
+			}
+			_ = env.service.InvalidateUserCache(userID)
+		},
+	})
+	if _, err := deactivation.DeactivateUser(inactiveID); err != nil {
+		t.Fatalf("deactivate notification recipient: %v", err)
+	}
+	if !permissionInvalidated {
+		t.Fatal("deactivation did not invalidate the recipient permission cache")
+	}
+	var retainedRoleCount int
+	if err := env.db.QueryRow(`SELECT COUNT(*) FROM user_workspace_roles WHERE user_id = ? AND workspace_id = ?`, inactiveID, workspaceID).Scan(&retainedRoleCount); err != nil {
+		t.Fatalf("count retained roles: %v", err)
+	}
+	if retainedRoleCount != 1 {
+		t.Fatalf("retained roles = %d, want 1", retainedRoleCount)
+	}
+	if deliverable, err := service.NotificationEmailClaimDeliverable(inactiveClaim); err != nil || deliverable {
+		t.Fatalf("inactive claim deliverable = %v, err = %v; want false", deliverable, err)
+	}
+	if deliverable, err := service.NotificationEmailClaimDeliverable(activeClaim); err != nil || !deliverable {
+		t.Fatalf("active claim deliverable = %v, err = %v; want true", deliverable, err)
+	}
+	if err := service.ReleaseNotificationEmailClaim(inactiveClaim, now); err != nil {
+		t.Fatalf("release inactive claim: %v", err)
+	}
+	if err := service.CompleteNotificationEmailClaim(activeClaim, now); err != nil {
+		t.Fatalf("complete active claim: %v", err)
+	}
+	if err := service.NotifyUsers([]int{activeID, inactiveID}, workspaceID, 99, keeperID, "info", "new notice", "new body"); err != nil {
+		t.Fatalf("create direct notifications: %v", err)
+	}
+	manager.mu.Lock()
+	created := append([]models.Notification(nil), manager.notifications...)
+	manager.mu.Unlock()
+	if len(created) != 1 || created[0].UserID != activeID {
+		t.Fatalf("created notifications = %+v, want active recipient only", created)
+	}
+	batches, err := service.UnreadEmailBatches(50)
+	if err != nil {
+		t.Fatalf("read email batches after deactivation: %v", err)
+	}
+	if _, exists := batches["inactive-notification-recipient@example.com"]; exists {
+		t.Fatalf("inactive recipient retained an email batch: %+v", batches)
+	}
 }
 
 func assertNotificationTitles(t *testing.T, batch *UserNotificationBatch, want ...string) {

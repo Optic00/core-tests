@@ -9,7 +9,7 @@ import { generateWorkspace } from '../fixtures/test-data';
 async function resultHeaders(page: Page) {
   return page
     .getByTestId('collection-search-results-table')
-    .locator('th')
+    .getByTestId(/^table-column-/)
     .allTextContents()
     .then((headers) => headers.map((header) => header.trim()));
 }
@@ -45,8 +45,8 @@ test.describe('Collection search list columns', () => {
     await page.getByTestId('remove-column-priority').click();
     const removeResponse = page.waitForResponse(
       (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes(`/api/collections/${collection.id}/board-configuration`)
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/api/v2/collections/${collection.id}/board-configuration`)
     );
     await page.getByTestId('column-selector-apply').click();
     await removeResponse;
@@ -58,7 +58,7 @@ test.describe('Collection search list columns', () => {
     const updateResponse = page.waitForResponse(
       (response) =>
         response.request().method() === 'PUT' &&
-        response.url().includes(`/api/collections/${collection.id}/board-configuration/`)
+        response.url().includes(`/api/v2/collections/${collection.id}/board-configuration`)
     );
     await page.getByTestId('column-selector-apply').click();
     await updateResponse;

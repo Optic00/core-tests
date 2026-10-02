@@ -34,9 +34,13 @@ test.describe('Knowledge Pages — print view', () => {
     pageId = await knowledge.createRootPage(workspaceId, title);
     // Seed real markdown via the API (Milkdown input rules don't fire on
     // keyboard.insertText) so the print body has a heading + paragraph.
-    const res = await page.request.put(`/api/workspaces/${workspaceId}/pages/${pageId}`, {
-      data: { title, content: `# ${heading}\n\n${body}\n` },
-    });
+    const res = await page.request.patch(
+      `/api/v2/workspaces/${workspaceId}/pages/${pageId}`,
+      {
+        headers: { 'Content-Type': 'application/merge-patch+json' },
+        data: { title, content: `# ${heading}\n\n${body}\n` },
+      },
+    );
     expect(res.ok()).toBeTruthy();
     await context.close();
   });
@@ -78,12 +82,15 @@ test.describe('Knowledge Pages — print view', () => {
 
     const popupPromise = page.waitForEvent('popup');
     await knowledge.toolbarKebab.click();
-    await page.locator('[data-menu-item]', { hasText: 'Print' }).first().click();
+    await page
+      .locator('[data-menu-item]', { hasText: 'Print' })
+      .first()
+      .click();
 
     const popup = await popupPromise;
-    await expect
-      .poll(() => popup.url())
-      .toMatch(new RegExp(`/workspaces/${workspaceId}/pages/${pageId}/print$`));
+    await expect.poll(() => popup.url()).toMatch(
+      new RegExp(`/workspaces/${workspaceId}/pages/${pageId}/print$`),
+    );
     await popup.close();
   });
 });

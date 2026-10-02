@@ -139,10 +139,8 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 		gotEntityType = r.URL.Query().Get("entity_type")
 		_ = gotEntityType // CLI does not set this — see comment above
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"message": "ok",
-			"attachment": Attachment{
+		_ = json.NewEncoder(w).Encode(DataDocument[Attachment]{
+			Data: Attachment{
 				ID:               nextID,
 				Filename:         "stored.png",
 				OriginalFilename: gotFilename,
@@ -169,7 +167,7 @@ func TestUploadAndRewrite_FullFlow(t *testing.T) {
 		t.Errorf("remote ref must remain untouched: %q", rewritten)
 	}
 
-	if gotPath != "/rest/api/v1/workspaces/42/pages/7/attachments" {
+	if gotPath != "/rest/api/v2/workspaces/42/pages/7/attachments" {
 		t.Errorf("upload path: %q", gotPath)
 	}
 	if gotAuth != "Bearer ws_test_token" {
@@ -246,17 +244,12 @@ func TestTranslatePagePermissionError(t *testing.T) {
 	})
 }
 
-// UploadPageAttachment reports a useful error when the server emits a
-// legacy {success:false,message:"..."} envelope (the cookie-auth
-// handler's validation path).
-func TestClient_UploadPageAttachment_LegacyErrorEnvelope(t *testing.T) {
+// UploadPageAttachment reports a useful error from a v2 error document.
+func TestClient_UploadPageAttachment_ErrorDocument(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": false,
-			"message": "File extension .svg is not allowed",
-		})
+		_, _ = w.Write([]byte(`{"error":{"code":"invalid_request","message":"File extension .svg is not allowed"},"request_id":"req_test"}`))
 	})
 	_, err := c.UploadPageAttachment(1, 2, "img.svg", strings.NewReader("<svg/>"))
 	if err == nil {

@@ -37,17 +37,17 @@ func TestResolveWebAuthnRPID(t *testing.T) {
 		},
 		{
 			name:             "explicit URL is normalized to its hostname",
-			explicit:         "https://project.example.com",
+			explicit:         "https://project.jmbillard.com",
 			baseURL:          "https://windshift.example.com",
 			fallbackHostname: "container-id",
-			want:             "project.example.com",
+			want:             "project.jmbillard.com",
 		},
 		{
 			name:             "explicit URL with credentials is not normalized",
-			explicit:         "https://admin@project.example.com",
+			explicit:         "https://admin@project.jmbillard.com",
 			baseURL:          "https://windshift.example.com",
 			fallbackHostname: "container-id",
-			want:             "https://admin@project.example.com",
+			want:             "https://admin@project.jmbillard.com",
 		},
 		{
 			name:             "missing public URL falls back to host",

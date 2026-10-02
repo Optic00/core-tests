@@ -1,18 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
-});
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const permissionState = vi.hoisted(() => ({ admin: false }));
 

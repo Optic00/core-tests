@@ -12,6 +12,7 @@ import (
 	"windshift/internal/testutils"
 
 	"golang.org/x/crypto/bcrypt"
+	"fmt"
 )
 
 func createInvitedUser(t *testing.T, tdb *testutils.TestDB, email, username string) int {
@@ -388,4 +389,104 @@ func TestEmailVerificationService_SendRefusesAgentRecipient(t *testing.T) {
 	if !errors.Is(err, ErrRecipientIsAgent) {
 		t.Fatalf("expected ErrRecipientIsAgent, got %v", err)
 	}
+}
+
+func TestInvitationService_VerifyRejectsOffboardedUser(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+
+	svc := NewInvitationService(tdb.GetDatabase(), nil, "http://test.local")
+	userID := createInvitedUser(t, tdb, "offboarded@example.com", "offboardeduser")
+
+	token, err := svc.GenerateInvitation(userID)
+	if err != nil {
+		t.Fatalf("GenerateInvitation failed: %v", err)
+	}
+
+	if _, err := OffboardUser(tdb.GetDatabase(), userID, nil); err != nil {
+		t.Fatalf("OffboardUser failed: %v", err)
+	}
+
+	user, err := svc.VerifyInvitation(token)
+	if !errors.Is(err, ErrInvitationInvalid) {
+		t.Fatalf("VerifyInvitation error = %v, want ErrInvitationInvalid", err)
+	}
+	if user != nil {
+		t.Fatalf("VerifyInvitation returned user %+v for offboarded account", user)
+	}
+}
+
+func TestInvitationService_AcceptDoesNotReactivateOffboardedUser(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+
+	svc := NewInvitationService(tdb.GetDatabase(), nil, "http://test.local")
+	userID := createInvitedUser(t, tdb, "reactivate@example.com", "reactivateuser")
+
+	token, err := svc.GenerateInvitation(userID)
+	if err != nil {
+		t.Fatalf("GenerateInvitation failed: %v", err)
+	}
+
+	// The account is offboarded while the invitation is still pending.
+	if _, err := OffboardUser(tdb.GetDatabase(), userID, nil); err != nil {
+		t.Fatalf("OffboardUser failed: %v", err)
+	}
+
+	err = svc.AcceptInvitation(token, "AttackerPassword1!")
+	if !errors.Is(err, ErrInvitationInvalid) {
+		t.Fatalf("AcceptInvitation error = %v, want ErrInvitationInvalid", err)
+	}
+
+	var passwordHash sql.NullString
+	var isActive bool
+	var offboarded sql.NullTime
+	if err := tdb.QueryRow(
+		`SELECT password_hash, is_active, offboarded_at FROM users WHERE id = ?`, userID,
+	).Scan(&passwordHash, &isActive, &offboarded); err != nil {
+		t.Fatalf("Failed to query user: %v", err)
+	}
+	if passwordHash.Valid {
+		t.Fatal("AcceptInvitation set a password on an offboarded account")
+	}
+	if isActive {
+		t.Fatal("AcceptInvitation reactivated an offboarded account")
+	}
+	if !offboarded.Valid {
+		t.Fatal("offboarded_at missing on offboarded account")
+	}
+
+	// Offboarding already deleted the pending invitation, so there is no
+	// token left to replay.
+	if n := offboardCount(t, tdb, `SELECT COUNT(*) FROM user_invitations WHERE user_id = ?`, userID); n != 0 {
+		t.Fatalf("pending invitation survived offboarding: %d", n)
+	}
+}
+
+func TestInvitationService_GenerateRejectsOffboardedUser(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+
+	svc := NewInvitationService(tdb.GetDatabase(), nil, "http://test.local")
+	userID := createInvitedUser(t, tdb, "reinvite@example.com", "reinviteuser")
+
+	if _, err := OffboardUser(tdb.GetDatabase(), userID, nil); err != nil {
+		t.Fatalf("OffboardUser failed: %v", err)
+	}
+
+	_, err := svc.GenerateInvitation(userID)
+	if !errors.Is(err, ErrUserOffboarded) {
+		t.Fatalf("GenerateInvitation error = %v, want ErrUserOffboarded", err)
+	}
+}
+
+// CleanupExpiredInvitations removes expired invitation tokens
+// deadcode-keep: called by core-tests/internal/services/invitation_service_test.go
+func (s *InvitationService) CleanupExpiredInvitations() error {
+	query := `DELETE FROM user_invitations WHERE expires_at < ? OR used_at IS NOT NULL`
+	_, err := s.db.ExecWrite(query, time.Now().Add(-24*time.Hour)) // Keep used/expired for 24 hours
+	if err != nil {
+		return fmt.Errorf("failed to cleanup expired invitations: %w", err)
+	}
+	return nil
 }

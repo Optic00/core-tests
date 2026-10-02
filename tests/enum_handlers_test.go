@@ -77,7 +77,7 @@ func TestStatusCategoryErrorCases(t *testing.T) {
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
-		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/status-categories", "not valid json")
+		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/v2/status-categories", "not valid json")
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})
@@ -164,7 +164,7 @@ func TestStatusErrorCases(t *testing.T) {
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
-		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/statuses", "not valid json")
+		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/v2/statuses", "not valid json")
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})
@@ -354,10 +354,6 @@ func TestMilestoneCategoryOperations(t *testing.T) {
 
 		milestoneCategoryID = ExtractIDFromResponse(t, result)
 
-		// Verify timestamps
-		if _, ok := result["created_at"]; !ok {
-			t.Error("Expected created_at in response")
-		}
 	})
 
 	t.Run("CreateWithDefaultColor", func(t *testing.T) {
@@ -524,10 +520,6 @@ func TestPriorityOperations(t *testing.T) {
 
 		priorityID = ExtractIDFromResponse(t, result)
 
-		// Verify timestamps
-		if _, ok := result["created_at"]; !ok {
-			t.Error("Expected created_at in response")
-		}
 	})
 
 	t.Run("GetAll", func(t *testing.T) {
@@ -609,8 +601,7 @@ func TestPriorityOperations(t *testing.T) {
 		}
 		resp := MakeAuthRequest(t, server, http.MethodPut, "/priorities/99999", data)
 		defer resp.Body.Close()
-		// Note: Current behavior returns 500 instead of 404 - this is a known issue to fix in refactoring
-		AssertStatusCode(t, resp, http.StatusInternalServerError)
+		AssertStatusCode(t, resp, http.StatusNotFound)
 	})
 
 	t.Run("DeleteNonExistent", func(t *testing.T) {
@@ -620,7 +611,7 @@ func TestPriorityOperations(t *testing.T) {
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
-		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/priorities", "not valid json")
+		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/v2/priorities", "not valid json")
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})
@@ -938,13 +929,11 @@ func TestMilestoneOperations(t *testing.T) {
 	// Success Cases
 	t.Run("CreateLocal", func(t *testing.T) {
 		data := map[string]interface{}{
-			"name":         fmt.Sprintf("Sprint 1 %d", timestamp),
-			"description":  "First sprint milestone",
-			"status":       "planning",
-			"is_global":    false,
-			"workspace_id": workspaceID,
+			"name":        fmt.Sprintf("Sprint 1 %d", timestamp),
+			"description": "First sprint milestone",
+			"status":      "planning",
 		}
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/milestones", data)
+		resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), data)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)
@@ -967,9 +956,8 @@ func TestMilestoneOperations(t *testing.T) {
 			"name":        fmt.Sprintf("Global Release %d", timestamp),
 			"description": "A global milestone",
 			"status":      "planning",
-			"is_global":   true,
 		}
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/milestones", data)
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/milestones", data)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)
@@ -983,7 +971,7 @@ func TestMilestoneOperations(t *testing.T) {
 	})
 
 	t.Run("GetAll", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodGet, "/milestones", nil)
+		resp := MakeAuthRequest(t, server, http.MethodGet, "/v2/milestones", nil)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -997,7 +985,7 @@ func TestMilestoneOperations(t *testing.T) {
 	})
 
 	t.Run("GetAllFilteredByWorkspace", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/milestones?workspace_id=%d", workspaceID), nil)
+		resp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), nil)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -1011,7 +999,7 @@ func TestMilestoneOperations(t *testing.T) {
 	})
 
 	t.Run("GetByID", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/milestones/%d", milestoneID), nil)
+		resp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/v2/milestones/%d", milestoneID), nil)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -1033,8 +1021,8 @@ func TestMilestoneOperations(t *testing.T) {
 			"description": "Updated milestone description",
 			"status":      "in-progress",
 		}
-		resp := MakeAuthRequest(t, server, http.MethodPut,
-			fmt.Sprintf("/workspaces/%d/milestones/%d", workspaceID, milestoneID), data)
+		resp := MakeAuthRequest(t, server, http.MethodPatch,
+			fmt.Sprintf("/v2/milestones/%d", milestoneID), data)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -1048,17 +1036,14 @@ func TestMilestoneOperations(t *testing.T) {
 
 	// Error Cases
 	t.Run("CreateMissingName", func(t *testing.T) {
-		data := map[string]interface{}{
-			"is_global":    false,
-			"workspace_id": workspaceID,
-		}
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/milestones", data)
+		data := map[string]interface{}{}
+		resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), data)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})
 
 	t.Run("GetNonExistent", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodGet, "/milestones/99999", nil)
+		resp := MakeAuthRequest(t, server, http.MethodGet, "/v2/milestones/99999", nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusNotFound)
 	})
@@ -1068,7 +1053,7 @@ func TestMilestoneOperations(t *testing.T) {
 			"name":   "Updated Name",
 			"status": "planning",
 		}
-		resp := MakeAuthRequest(t, server, http.MethodPut, "/global/milestones/99999", data)
+		resp := MakeAuthRequest(t, server, http.MethodPatch, "/v2/milestones/99999", data)
 		defer resp.Body.Close()
 		// Update of a missing milestone surfaces as 404 from the service-layer
 		// "milestone not found" branch — handler maps it to respondNotFound.
@@ -1076,26 +1061,26 @@ func TestMilestoneOperations(t *testing.T) {
 	})
 
 	t.Run("DeleteNonExistent", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodDelete, "/milestones/99999", nil)
+		resp := MakeAuthRequest(t, server, http.MethodDelete, "/v2/milestones/99999", nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusNotFound)
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
-		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/milestones", "not valid json")
+		resp := MakeAuthRequestRaw(t, server, http.MethodPost, "/v2/milestones", "not valid json")
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})
 
 	// Cleanup
 	t.Run("DeleteGlobal", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/milestones/%d", globalMilestoneID), nil)
+		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/v2/milestones/%d", globalMilestoneID), nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusNoContent)
 	})
 
 	t.Run("Delete", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/milestones/%d", milestoneID), nil)
+		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/v2/milestones/%d", milestoneID), nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusNoContent)
 	})

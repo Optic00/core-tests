@@ -115,13 +115,11 @@ func TestStatusOperations(t *testing.T) {
 			t.Errorf("Expected at least 6 statuses, got %d", len(statuses))
 		}
 
-		// Check that statuses have category information
+		// Check that statuses have canonical nested category information.
 		firstStatus := statuses[0]
-		if _, ok := firstStatus["category_name"]; !ok {
-			t.Error("Status should have category_name")
-		}
-		if _, ok := firstStatus["category_color"]; !ok {
-			t.Error("Status should have category_color")
+		category, ok := firstStatus["category"].(map[string]interface{})
+		if !ok || category["name"] == nil || category["color"] == nil {
+			t.Errorf("status should have nested category name and color: %v", firstStatus)
 		}
 	})
 
@@ -228,20 +226,25 @@ func TestWorkflowOperations(t *testing.T) {
 
 		var workflow map[string]interface{}
 		DecodeJSON(t, resp, &workflow)
-
-		transitions, ok := workflow["transitions"].([]interface{})
-		if !ok {
-			t.Fatal("Workflow should have transitions array")
+		if intField(workflow, "id") != workflowID {
+			t.Fatalf("workflow id = %v, want %d", workflow["id"], workflowID)
 		}
+
+		transitionsResp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/v2/workflows/%d/transitions", workflowID), nil)
+		defer transitionsResp.Body.Close()
+		AssertStatusCode(t, transitionsResp, http.StatusOK)
+		var transitions []map[string]interface{}
+		DecodeJSON(t, transitionsResp, &transitions)
 
 		if len(transitions) < 9 {
 			t.Errorf("Expected at least 9 transitions, got %d", len(transitions))
 		}
 
 		// Check that transitions have status names
-		firstTransition := transitions[0].(map[string]interface{})
-		if _, ok := firstTransition["to_status_name"]; !ok {
-			t.Error("Transition should have to_status_name")
+		firstTransition := transitions[0]
+		to, ok := firstTransition["to"].(map[string]interface{})
+		if !ok || to["name"] == nil {
+			t.Errorf("transition should have nested destination status: %v", firstTransition)
 		}
 	})
 

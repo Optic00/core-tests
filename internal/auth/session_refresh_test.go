@@ -19,7 +19,7 @@ func TestRefreshSessionDoesNotExtendExpiredRow(t *testing.T) {
 	if err := db.QueryRow(`SELECT id FROM users ORDER BY id LIMIT 1`).Scan(&userID); err != nil {
 		t.Fatalf("find fixture user: %v", err)
 	}
-	manager := auth.NewSessionManager(db, false, false, nil, "session-refresh-test-secret", "strict")
+	manager := auth.NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "session-refresh-test-secret", "strict", auth.DefaultSessionValidationCacheTTL)
 	session, err := manager.CreateSession(userID, "198.51.100.30", "test-agent", false)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)

@@ -97,10 +97,15 @@ func TestListSchedulesIncludesCompleteOverviewForTeamMembers(t *testing.T) {
 	}
 
 	onCallRepo := repository.NewOnCallRepository(db)
+	itemRepo := repository.NewItemRepository(db)
+	teamRepo := repository.NewTeamRepository(db)
+	onCallService := services.NewOnCallService(db, onCallRepo, repository.NewLeaveRepository(db))
 	handler := NewOnCallHandler(
 		onCallRepo,
-		repository.NewTeamRepository(db),
-		services.NewOnCallService(db, onCallRepo, repository.NewLeaveRepository(db)),
+		teamRepo,
+		itemRepo,
+		onCallService,
+		services.NewIncidentService(db, onCallRepo, itemRepo, onCallService, teamRepo, nil),
 		permissionService,
 		logger.NewAuditor(db),
 	)

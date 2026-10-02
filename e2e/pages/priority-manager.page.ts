@@ -20,14 +20,13 @@ export class PriorityManagerPage {
    */
   async goto() {
     await this.page.goto('/admin/priorities');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
    * Click the "Create Priority" button
    */
   async clickCreatePriority() {
-    await this.page.click(this.createButton);
+    await this.page.getByTestId('priority-add').click();
     await this.page.waitForSelector(this.modal, { timeout: 5000 });
   }
 
@@ -59,11 +58,7 @@ export class PriorityManagerPage {
    * Click the save/create button in the dialog footer
    */
   async clickSave() {
-    const dialog = this.page.locator(this.modal);
-    const confirmButton = dialog
-      .locator('button:has-text("Create"), button:has-text("Update")')
-      .last();
-    await confirmButton.click();
+    await this.page.getByTestId('dialog-confirm').click();
     // The `createPriority`/`editPriority` flows follow up with an explicit
     // "modal hidden" wait, so we don't duplicate it here.
   }
@@ -126,19 +121,19 @@ export class PriorityManagerPage {
     const row = this.findPriorityByName(currentName);
 
     // Click the action dropdown trigger on the row, then pick "Edit"
-    const actionButton = row.locator('button').last();
+    const actionButton = row.getByTestId(/^priority-actions-/);
     await actionButton.click();
-    const editItem = this.page.locator('button[role="menuitem"]').filter({ hasText: 'Edit' });
+    const editItem = this.page.getByTestId(/^priority-edit-/);
     await editItem.waitFor({ state: 'visible', timeout: 5000 });
     await editItem.click();
     await this.page.waitForSelector(this.modal, { timeout: 5000 });
 
     if (newData.name !== undefined) {
-      await this.page.fill(this.nameInput, newData.name);
+      await this.page.getByTestId(/^localized-object-name-/).fill(newData.name);
     }
 
     if (newData.description !== undefined) {
-      await this.fillDescription(newData.description);
+      await this.page.getByTestId(/^localized-object-description-/).fill(newData.description);
     }
 
     if (newData.sortOrder !== undefined) {
@@ -158,11 +153,9 @@ export class PriorityManagerPage {
     const row = this.findPriorityByName(name);
 
     // Click the action dropdown trigger on the row
-    const actionButton = row.locator('button').last();
+    const actionButton = row.getByTestId(/^priority-actions-/);
     await actionButton.click();
-    const deleteMenuItem = this.page
-      .locator('button[role="menuitem"]')
-      .filter({ hasText: 'Delete' });
+    const deleteMenuItem = this.page.getByTestId(/^priority-delete-/);
     await deleteMenuItem.waitFor({ state: 'visible', timeout: 5000 });
 
     // Click "Delete" from the dropdown menu and wait for the confirmation dialog
@@ -171,8 +164,7 @@ export class PriorityManagerPage {
     await confirmDialog.waitFor({ state: 'visible', timeout: 5000 });
 
     // Confirm deletion (button inside the confirm dialog, not a menuitem)
-    const confirmButton = confirmDialog.locator('button:has-text("Delete")').last();
-    await confirmButton.click();
+    await this.page.getByTestId('dialog-confirm').click();
     await row.waitFor({ state: 'detached', timeout: 10000 });
   }
 

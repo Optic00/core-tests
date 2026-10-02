@@ -14,11 +14,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"github.com/jimlambrt/gldap"
+	"github.com/jimlambrt/gldap/testdirectory"
 
 	"windshift/internal/auth"
 	"windshift/internal/config"
@@ -29,25 +34,6 @@ import (
 // testHTTPClient is a shared HTTP client with timeout for all test requests
 var testHTTPClient = &http.Client{
 	Timeout: 30 * time.Second,
-}
-
-func waitForCondition(t *testing.T, timeout time.Duration, description string, condition func() bool) {
-	t.Helper()
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		if condition() {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-deadline.C:
-			t.Fatalf("timed out waiting for %s", description)
-		}
-	}
 }
 
 // testSessionSecret is the cookie-secret the in-process server runs with.
@@ -363,7 +349,7 @@ func CreateBearerToken(t *testing.T, testServer *TestServer) string {
 	// valid mint input (WI-959), so spell out everything the admin flow needs.
 	tokenData := map[string]interface{}{
 		"name":        "Test API Token",
-		"permissions": append(auth.NonAdminScopes(), auth.AdminScopes()...),
+		"permissions": append([]string(nil), auth.AllValidScopes...),
 	}
 
 	tokenResp := makeRequest(t, http.MethodPost, testServer.APIBase+"/api-tokens", "", tokenData, map[string]string{
@@ -480,7 +466,85 @@ func MakeAuthRequest(t *testing.T, testServer *TestServer, method, endpoint stri
 	t.Helper()
 
 	url := testServer.APIBase + endpoint
-	return makeSessionRequest(t, method, url, testServer.SessionCookie, body, nil)
+	headers := canonicalJSONHeaders(method, endpoint)
+	response := makeSessionRequest(t, method, url, testServer.SessionCookie, body, headers)
+	return retryCanonicalSessionRequest(t, testServer, response, method, endpoint, body, nil)
+}
+
+func canonicalJSONHeaders(method, path string) map[string]string {
+	if method == http.MethodPatch && (strings.Contains(path, "/api/v2/") || strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/rest/api/v1/")) {
+		return map[string]string{"Content-Type": "application/merge-patch+json"}
+	}
+	return nil
+}
+
+func retryCanonicalSessionRequest(t *testing.T, testServer *TestServer, response *http.Response, method, endpoint string, body interface{}, headers map[string]string) *http.Response {
+	return retryCanonicalSessionRequestWithCookie(t, testServer, response, testServer.SessionCookie, method, endpoint, body, headers)
+}
+
+func legacyResponseShape(t *testing.T, response *http.Response) *http.Response {
+	t.Helper()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read canonical response: %v", err)
+	}
+	_ = response.Body.Close()
+	var document map[string]json.RawMessage
+	if json.Unmarshal(body, &document) == nil {
+		if data, ok := document["data"]; ok {
+			if pagination, paginated := document["pagination"]; paginated {
+				body, _ = json.Marshal(map[string]json.RawMessage{"items": data, "pagination": pagination})
+			} else {
+				body = data
+			}
+		}
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	response.ContentLength = int64(len(body))
+	response.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	return response
+}
+
+func canonicalSessionEndpoint(method, endpoint string, body interface{}) string {
+	if method == http.MethodPost && endpoint == "/labels" {
+		if values, ok := body.(map[string]interface{}); ok {
+			if workspaceID, ok := values["workspace_id"].(int); ok && workspaceID > 0 {
+				return fmt.Sprintf("/workspaces/%d/labels", workspaceID)
+			}
+		}
+	}
+	if endpoint == "/groups" {
+		return "/admin/groups"
+	}
+	if strings.HasPrefix(endpoint, "/groups/") {
+		return "/admin" + endpoint
+	}
+	if endpoint == "/admin/link-types" {
+		return "/link-types"
+	}
+	if strings.HasPrefix(endpoint, "/admin/link-types/") {
+		return strings.TrimPrefix(endpoint, "/admin")
+	}
+	if endpoint == "/time-projects" {
+		return "/time/projects"
+	}
+	if strings.HasPrefix(endpoint, "/time-projects/") {
+		return "/time/projects/" + strings.TrimPrefix(endpoint, "/time-projects/")
+	}
+	if endpoint == "/time-project-categories" {
+		return "/time/project-categories"
+	}
+	if strings.HasPrefix(endpoint, "/time-project-categories/") {
+		return "/time/project-categories/" + strings.TrimPrefix(endpoint, "/time-project-categories/")
+	}
+	return endpoint
+}
+
+func canonicalSessionBody(method, endpoint string, body interface{}) interface{} {
+	if method == http.MethodPut && strings.HasPrefix(endpoint, "/workflows/") && strings.HasSuffix(endpoint, "/transitions") {
+		return map[string]interface{}{"transitions": body}
+	}
+	return body
 }
 
 // MakeAuthRequestRaw is the raw-body variant of MakeAuthRequest. Used by tests
@@ -519,7 +583,7 @@ func MakeBearerRequest(t *testing.T, testServer *TestServer, method, path string
 	t.Helper()
 
 	url := testServer.BaseURL + path
-	return makeRequest(t, method, url, testServer.BearerToken, body, nil)
+	return makeRequest(t, method, url, testServer.BearerToken, body, canonicalJSONHeaders(method, path))
 }
 
 // AssertStatusCode checks that the response has the expected status code
@@ -555,9 +619,47 @@ func DecodeJSON(t *testing.T, resp *http.Response, v interface{}) {
 	t.Helper()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	if err := json.Unmarshal(bodyBytes, v); err != nil {
+	decodeBytes := bodyBytes
+	var document map[string]json.RawMessage
+	if !expectsDataEnvelope(v) && json.Unmarshal(bodyBytes, &document) == nil {
+		if data, ok := document["data"]; ok {
+			if pagination, paginated := document["pagination"]; paginated && !expectsSlice(v) {
+				legacy := map[string]json.RawMessage{"items": data, "pagination": pagination}
+				decodeBytes, _ = json.Marshal(legacy)
+			} else {
+				decodeBytes = data
+			}
+		} else if items, ok := document["items"]; ok && expectsSlice(v) {
+			decodeBytes = items
+		}
+	}
+	if err := json.Unmarshal(decodeBytes, v); err != nil {
 		t.Fatalf("Failed to decode JSON response: %v\nResponse body: %s", err, string(bodyBytes))
 	}
+}
+
+func expectsSlice(v interface{}) bool {
+	typeOf := reflect.TypeOf(v)
+	for typeOf != nil && typeOf.Kind() == reflect.Pointer {
+		typeOf = typeOf.Elem()
+	}
+	return typeOf != nil && typeOf.Kind() == reflect.Slice
+}
+
+func expectsDataEnvelope(v interface{}) bool {
+	typeOf := reflect.TypeOf(v)
+	for typeOf != nil && typeOf.Kind() == reflect.Pointer {
+		typeOf = typeOf.Elem()
+	}
+	if typeOf == nil || typeOf.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < typeOf.NumField(); i++ {
+		if strings.Split(typeOf.Field(i).Tag.Get("json"), ",")[0] == "data" {
+			return true
+		}
+	}
+	return false
 }
 
 // AssertJSONField checks that a JSON response contains a field with expected value
@@ -586,7 +688,7 @@ func ExtractIDFromResponse(t *testing.T, result map[string]interface{}) int {
 	return 0
 }
 
-// CreateTestWorkspace creates a test workspace and returns its ID and key
+// CreateTestWorkspace creates a workspace through the canonical session v2 API.
 func CreateTestWorkspace(t *testing.T, testServer *TestServer, name, key string) (workspaceID int, workspaceKey string) {
 	t.Helper()
 
@@ -595,13 +697,6 @@ func CreateTestWorkspace(t *testing.T, testServer *TestServer, name, key string)
 		key = shortKey("TEST")
 	}
 
-	// Stays on /api/workspaces (cookie-auth) for now — the /api handler runs
-	// extra setup (default config-set association, default statuses, etc.)
-	// that the v1 POST /rest/api/v1/workspaces does not. Migrating this helper
-	// to v1 would require either (a) adding the same setup to v1's create
-	// path or (b) doing the auxiliary setup explicitly in the test helper.
-	// Both are deferred — the test suite is fully functional via cookie-auth
-	// and v1 has dedicated coverage in api_token_scope_test.go.
 	workspaceData := map[string]interface{}{
 		"name":        name,
 		"key":         key,
@@ -609,7 +704,7 @@ func CreateTestWorkspace(t *testing.T, testServer *TestServer, name, key string)
 		"active":      true,
 	}
 
-	resp := MakeAuthRequest(t, testServer, http.MethodPost, "/workspaces", workspaceData)
+	resp := MakeAuthRequest(t, testServer, http.MethodPost, "/v2/workspaces", workspaceData)
 	defer resp.Body.Close()
 
 	AssertStatusCode(t, resp, http.StatusCreated)
@@ -856,31 +951,22 @@ func GetDefaultConfigurationSet(t *testing.T, testServer *TestServer) int {
 // GetItemTypes retrieves all item types for a configuration set as a map of name->ID
 func GetItemTypes(t *testing.T, testServer *TestServer, configSetID int) map[string]int {
 	t.Helper()
+	_ = configSetID
 
-	// First try with config set filter
-	endpoint := fmt.Sprintf("/item-types?configuration_set_id=%d", configSetID)
-	resp := MakeAuthRequest(t, testServer, http.MethodGet, endpoint, nil)
+	resp := MakeAuthRequest(t, testServer, http.MethodGet, "/v2/item-types", nil)
 	defer resp.Body.Close()
 
 	AssertStatusCode(t, resp, http.StatusOK)
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
-	var itemTypes []map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &itemTypes); err != nil {
+	var document struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &document); err != nil {
 		t.Fatalf("Failed to decode item types: %v\nResponse: %s", err, string(bodyBytes))
 	}
-
-	// If no item types found for config set, fall back to all item types
-	// This handles the case where item types aren't yet associated with configuration sets
-	if len(itemTypes) == 0 {
-		allResp := MakeAuthRequest(t, testServer, http.MethodGet, "/item-types", nil)
-		allBodyBytes, _ := io.ReadAll(allResp.Body)
-		allResp.Body.Close()
-		if err := json.Unmarshal(allBodyBytes, &itemTypes); err != nil {
-			t.Fatalf("Failed to decode all item types: %v\nResponse: %s", err, string(allBodyBytes))
-		}
-	}
+	itemTypes := document.Data
 
 	itemTypeMap := make(map[string]int)
 	for _, it := range itemTypes {
@@ -1051,7 +1137,31 @@ func MakeAuthRequestWithToken(t *testing.T, testServer *TestServer, token, metho
 	t.Helper()
 
 	url := testServer.APIBase + endpoint
-	return makeSessionRequest(t, method, url, token, body, nil)
+	headers := canonicalJSONHeaders(method, endpoint)
+	response := makeSessionRequest(t, method, url, token, body, headers)
+	return retryCanonicalSessionRequestWithCookie(t, testServer, response, token, method, endpoint, body, headers)
+}
+
+func retryCanonicalSessionRequestWithCookie(t *testing.T, testServer *TestServer, response *http.Response, cookie, method, endpoint string, body interface{}, headers map[string]string) *http.Response {
+	t.Helper()
+	if response.StatusCode != http.StatusNotFound && response.StatusCode != http.StatusMethodNotAllowed {
+		return response
+	}
+	legacyStatus := response.StatusCode
+	_ = response.Body.Close()
+	canonicalEndpoint := canonicalSessionEndpoint(method, endpoint, body)
+	canonicalBody := canonicalSessionBody(method, canonicalEndpoint, body)
+	canonicalURL := testServer.BaseURL + "/api/v2" + canonicalEndpoint
+	canonical := makeSessionRequest(t, method, canonicalURL, cookie, canonicalBody, canonicalJSONHeaders(method, canonicalURL))
+	if canonical.StatusCode == http.StatusMethodNotAllowed && method == http.MethodPut {
+		_ = canonical.Body.Close()
+		canonical = makeSessionRequest(t, http.MethodPatch, canonicalURL, cookie, canonicalBody, canonicalJSONHeaders(http.MethodPatch, canonicalURL))
+	}
+	if canonical.StatusCode == http.StatusMethodNotAllowed && legacyStatus == http.StatusNotFound {
+		_ = canonical.Body.Close()
+		return makeSessionRequest(t, method, testServer.APIBase+endpoint, cookie, body, headers)
+	}
+	return legacyResponseShape(t, canonical)
 }
 
 // MakeBearerRequestWithToken is the bearer counterpart of
@@ -1060,7 +1170,7 @@ func MakeBearerRequestWithToken(t *testing.T, testServer *TestServer, token, met
 	t.Helper()
 
 	url := testServer.BaseURL + path
-	return makeRequest(t, method, url, token, body, nil)
+	return makeRequest(t, method, url, token, body, canonicalJSONHeaders(method, path))
 }
 
 // GetWorkspaceRoles retrieves all workspace roles and returns a map of name -> ID.
@@ -1263,47 +1373,67 @@ func CreateTestItem(t *testing.T, testServer *TestServer, workspaceID int, title
 	return ExtractIDFromResponse(t, result)
 }
 
-// CreateTestItemWithToken creates a work item using a specific bearer token.
-func CreateTestItemWithToken(t *testing.T, testServer *TestServer, token string, workspaceID int, title string) (resp *http.Response, itemID int) {
+// ============================================================================
+// SCIM Testing Helpers
+// ============================================================================
+
+// CreateSCIMToken creates a SCIM token via the admin API and returns the raw token string.
+func CreateSCIMToken(t *testing.T, testServer *TestServer, name string) string {
 	t.Helper()
 
-	// Get default configuration set and item type (using admin token)
-	configSetID := GetDefaultConfigurationSet(t, testServer)
-	itemTypes := GetItemTypes(t, testServer, configSetID)
-
-	// Use a regular type explicitly. Map iteration is nondeterministic and can
-	// otherwise select the generic Sub-task type, which requires a parent.
-	itemTypeID := itemTypes["Task"]
-
-	if itemTypeID == 0 {
-		t.Fatal("No item types found")
+	tokenData := map[string]interface{}{
+		"name": name,
 	}
 
-	itemData := map[string]interface{}{
-		"title":        title,
-		"workspace_id": workspaceID,
-		"item_type_id": itemTypeID,
+	resp := MakeAuthRequest(t, testServer, http.MethodPost, "/admin/scim-tokens", tokenData)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to create SCIM token: %d - %s", resp.StatusCode, string(body))
 	}
 
-	resp = MakeAuthRequestWithToken(t, testServer, token, http.MethodPost, "/items", itemData)
+	var result struct {
+		Token string `json:"token"`
+	}
+	DecodeJSON(t, resp, &result)
 
-	if resp.StatusCode == http.StatusCreated {
-		var result map[string]interface{}
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		_ = json.Unmarshal(bodyBytes, &result)
-		if id, ok := result["id"].(float64); ok {
-			itemID = int(id)
-		}
-		// Recreate response for caller to check
-		resp = &http.Response{
-			StatusCode: http.StatusCreated,
-			Body:       io.NopCloser(bytes.NewReader(bodyBytes)),
-		}
-		return resp, itemID
+	if result.Token == "" {
+		t.Fatal("Empty SCIM token received")
 	}
 
-	return resp, 0
+	return result.Token
+}
+
+// MakeSCIMRequest makes a request to a SCIM endpoint with SCIM token authentication.
+// The endpoint should start with /scim/v2/ (e.g., "/scim/v2/Users")
+func MakeSCIMRequest(t *testing.T, testServer *TestServer, scimToken, method, endpoint string, body interface{}) *http.Response {
+	t.Helper()
+
+	url := testServer.BaseURL + endpoint
+	return makeRequest(t, method, url, scimToken, body, map[string]string{
+		"Content-Type": "application/scim+json",
+	})
+}
+
+// MakeSCIMRequestNoAuth makes a request to a SCIM endpoint without authentication.
+// Used for testing public endpoints like ServiceProviderConfig.
+func MakeSCIMRequestNoAuth(t *testing.T, testServer *TestServer, method, endpoint string) *http.Response {
+	t.Helper()
+
+	url := testServer.BaseURL + endpoint
+
+	req, err := http.NewRequest(method, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	resp, err := testHTTPClient.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	return resp
 }
 
 // EmailChannelConfig contains configuration for creating an email channel
@@ -1318,6 +1448,9 @@ type EmailChannelConfig struct {
 	Password          string
 	Encryption        string // "ssl", "tls", "starttls", "none"
 	DefaultPriorityID *int
+	// Per-sender hourly cap on new tickets; nil omits the config key so the
+	// server default applies.
+	RateLimitPerHour *int
 }
 
 // CreateEmailProvider creates an email provider for testing
@@ -1389,6 +1522,9 @@ func CreateInboundEmailChannel(t *testing.T, testServer *TestServer, config Emai
 	if config.DefaultPriorityID != nil {
 		channelConfig["email_default_priority_id"] = *config.DefaultPriorityID
 	}
+	if config.RateLimitPerHour != nil {
+		channelConfig["email_rate_limit_per_hour"] = *config.RateLimitPerHour
+	}
 
 	// Marshal the config to JSON string since Channel.Config is a string
 	configJSON, err := json.Marshal(channelConfig)
@@ -1424,6 +1560,21 @@ func CreateInboundEmailChannel(t *testing.T, testServer *TestServer, config Emai
 	}
 	t.Fatal("No ID returned for email channel")
 	return 0
+}
+
+// UpdateChannelConfig merges config keys into a channel through the
+// production config-update endpoint (PUT /channels/{id}/config).
+func UpdateChannelConfig(t *testing.T, testServer *TestServer, channelID int, config map[string]interface{}) {
+	t.Helper()
+
+	resp := MakeAuthRequest(t, testServer, http.MethodPut, fmt.Sprintf("/channels/%d/config", channelID), map[string]interface{}{
+		"config": config,
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Failed to update channel %d config: %d - %s", channelID, resp.StatusCode, string(body))
+	}
 }
 
 // TriggerEmailProcessing triggers immediate email processing for a channel
@@ -1684,7 +1835,8 @@ func MakeUnauthenticatedRequest(t *testing.T, testServer *TestServer, method, en
 	t.Helper()
 
 	url := testServer.APIBase + endpoint
-	return makeRequest(t, method, url, "", body, nil)
+	response := makeRequest(t, method, url, "", body, nil)
+	return retryCanonicalSessionRequestWithCookie(t, testServer, response, "", method, endpoint, body, nil)
 }
 
 // MakePortalRequest makes a request authenticated by a portal customer session.
@@ -1696,7 +1848,8 @@ func MakePortalRequest(t *testing.T, testServer *TestServer, portalSessionCookie
 	t.Helper()
 
 	url := testServer.APIBase + endpoint
-	return makeSessionRequest(t, method, url, portalSessionCookie, body, nil)
+	response := makeSessionRequest(t, method, url, portalSessionCookie, body, nil)
+	return retryCanonicalSessionRequestWithCookie(t, testServer, response, portalSessionCookie, method, endpoint, body, nil)
 }
 
 // SetupPortalChannel creates a portal channel with a slug and a request type.
@@ -1814,4 +1967,138 @@ func GetItemComments(t *testing.T, testServer *TestServer, itemID int) []map[str
 	}
 
 	return result.Comments
+}
+
+// ---------- LDAP test helpers ----------
+
+// StartTestLDAPServer starts an in-memory LDAP server with test users.
+// Returns the testdirectory.Directory (cleaned up automatically via t.Cleanup).
+func StartTestLDAPServer(t *testing.T) *testdirectory.Directory {
+	t.Helper()
+
+	users := CreateLDAPTestEntries(t)
+
+	td := testdirectory.Start(t,
+		testdirectory.WithNoTLS(t),
+		testdirectory.WithDefaults(t, &testdirectory.Defaults{
+			Users:  users,
+			UserDN: "ou=people,dc=example,dc=org",
+		}),
+	)
+	return td
+}
+
+// CreateLDAPTestEntries creates gldap.Entry objects representing test LDAP
+// users plus an admin bind account. User entries use inetOrgPerson-style
+// attributes (uid, mail, givenName, sn, cn, password).
+func CreateLDAPTestEntries(t *testing.T) []*gldap.Entry {
+	t.Helper()
+
+	return []*gldap.Entry{
+		// Admin bind account
+		gldap.NewEntry("cn=admin,ou=people,dc=example,dc=org", map[string][]string{
+			"cn":       {"admin"},
+			"password": {"admin-password"},
+		}),
+		// Test users
+		gldap.NewEntry("uid=alice,ou=people,dc=example,dc=org", map[string][]string{
+			"uid":       {"alice"},
+			"mail":      {"alice@example.org"},
+			"givenName": {"Alice"},
+			"sn":        {"Smith"},
+			"cn":        {"Alice Smith"},
+			"password":  {"alice-password"},
+		}),
+		gldap.NewEntry("uid=bob,ou=people,dc=example,dc=org", map[string][]string{
+			"uid":       {"bob"},
+			"mail":      {"bob@example.org"},
+			"givenName": {"Bob"},
+			"sn":        {"Jones"},
+			"cn":        {"Bob Jones"},
+			"password":  {"bob-password"},
+		}),
+		gldap.NewEntry("uid=carol,ou=people,dc=example,dc=org", map[string][]string{
+			"uid":       {"carol"},
+			"mail":      {"carol@example.org"},
+			"givenName": {"Carol"},
+			"sn":        {"Williams"},
+			"cn":        {"Carol Williams"},
+			"password":  {"carol-password"},
+		}),
+	}
+}
+
+// CreateLDAPConfig creates an LDAP config via the admin API pointing at the
+// given test LDAP server host:port. Returns the config ID.
+// Optional overrides can be provided as a single map to override default values.
+func CreateLDAPConfig(t *testing.T, ts *TestServer, host string, port int, opts ...map[string]interface{}) int {
+	t.Helper()
+
+	configData := map[string]interface{}{
+		"name":                 "Test LDAP",
+		"enabled":              true,
+		"host":                 host,
+		"port":                 port,
+		"bind_dn":              "cn=admin,ou=people,dc=example,dc=org",
+		"bind_password":        "admin-password",
+		"base_dn":              "ou=people,dc=example,dc=org",
+		"user_filter":          "(uid=*)",
+		"attr_username":        "uid",
+		"attr_email":           "mail",
+		"attr_first_name":      "givenName",
+		"attr_last_name":       "sn",
+		"attr_display_name":    "cn",
+		"auto_provision_users": true,
+	}
+
+	// Apply overrides
+	if len(opts) > 0 && opts[0] != nil {
+		for k, v := range opts[0] {
+			configData[k] = v
+		}
+	}
+
+	resp := MakeAuthRequest(t, ts, http.MethodPost, "/admin/ldap/configs", configData)
+	defer resp.Body.Close()
+
+	AssertStatusCode(t, resp, http.StatusCreated)
+
+	var result map[string]interface{}
+	DecodeJSON(t, resp, &result)
+
+	return ExtractIDFromResponse(t, result)
+}
+
+// TriggerLDAPSync triggers a sync via POST and polls sync-status until
+// completion or timeout (10s). Returns the final sync-status response.
+func TriggerLDAPSync(t *testing.T, ts *TestServer, configID int) map[string]interface{} {
+	t.Helper()
+
+	// Trigger sync
+	resp := MakeAuthRequest(t, ts, http.MethodPost,
+		fmt.Sprintf("/admin/ldap/configs/%d/sync", configID), nil)
+	defer resp.Body.Close()
+	AssertStatusCode(t, resp, http.StatusAccepted)
+
+	// Poll sync-status until completed or failed
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+
+		statusResp := MakeAuthRequest(t, ts, http.MethodGet,
+			fmt.Sprintf("/admin/ldap/configs/%d/sync-status", configID), nil)
+
+		var status map[string]interface{}
+		DecodeJSON(t, statusResp, &status)
+		statusResp.Body.Close()
+
+		if s, ok := status["status"].(string); ok {
+			if s == "completed" || s == "failed" {
+				return status
+			}
+		}
+	}
+
+	t.Fatal("LDAP sync did not complete within timeout")
+	return nil
 }

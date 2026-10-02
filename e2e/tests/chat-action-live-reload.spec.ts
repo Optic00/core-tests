@@ -1,6 +1,6 @@
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import type { Page } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/errors';
+import { test, expect } from '../fixtures/errors';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 
 /**
  * Live-reload contract: after the AI chat agent finishes a run, the action
@@ -18,7 +18,7 @@ import { expect, test } from '../fixtures/errors';
  *
  *   1. Apply a template via the existing endpoint to seed a known
  *      3-node / 2-edge action and open it in the editor.
- *   2. Persist a 1-node replacement via REST PUT (same write path the
+ *   2. Persist a 1-node replacement via REST PATCH (same write path the
  *      backend update_action tool uses).
  *   3. Open the chat panel, type a message, and submit it through the UI.
  *   4. Assert the editor refetches and shows 1 node / 0 edges.
@@ -65,7 +65,9 @@ test.describe('Chat live-reload of agent-driven action edits', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{ id: 1, name: 'stub', model: 'stub-model', is_default: true }]),
+        body: JSON.stringify([
+          { id: 1, name: 'stub', model: 'stub-model', is_default: true },
+        ]),
       });
     });
     await page.route('**/api/ai/chat', async (route) => {
@@ -90,11 +92,11 @@ test.describe('Chat live-reload of agent-driven action edits', () => {
     });
 
     const applyResp = await request.post(
-      `${BASE_URL}/api/workspaces/${ws.id}/action-templates/close_subtasks_on_parent_close/apply`,
-      { headers: defaultHeaders }
+      `${BASE_URL}/api/v2/workspaces/${ws.id}/action-templates/close_subtasks_on_parent_close/apply`,
+      { headers: defaultHeaders },
     );
     expect(applyResp.ok(), `apply failed: ${applyResp.status()}`).toBeTruthy();
-    const apply = await applyResp.json();
+    const apply = (await applyResp.json()).data;
     const actionId: number = apply.action_id;
     expect(actionId).toBeGreaterThan(0);
 
@@ -103,19 +105,30 @@ test.describe('Chat live-reload of agent-driven action edits', () => {
 
     // Replace the graph server-side. Same write path the chat-driven
     // update_action tool uses (ActionRepository.SaveActionWithNodesAndEdges).
-    const putResp = await request.put(`${BASE_URL}/api/workspaces/${ws.id}/actions/${actionId}`, {
-      headers: defaultHeaders,
-      data: {
-        name: apply.name,
-        description: '',
-        is_enabled: true,
-        trigger_type: 'status_transition',
-        trigger_config: '{"to_status_category_completed":true}',
-        nodes: [{ id: 1, node_type: 'trigger', node_config: '{}', position_x: 0, position_y: 0 }],
-        edges: [],
+    const patchResp = await request.patch(
+      `${BASE_URL}/api/v2/workspaces/${ws.id}/actions/${actionId}`,
+      {
+        headers: {
+          ...defaultHeaders,
+          'Content-Type': 'application/merge-patch+json',
+        },
+        data: {
+          name: apply.name,
+          description: '',
+          is_enabled: true,
+          trigger_type: 'status_transition',
+          trigger_config: '{"to_status_category_completed":true}',
+          nodes: [
+            { id: 1, node_type: 'trigger', node_config: '{}', position_x: 0, position_y: 0 },
+          ],
+          edges: [],
+        },
       },
-    });
-    expect(putResp.ok(), `put failed: ${putResp.status()} ${await putResp.text()}`).toBeTruthy();
+    );
+    expect(
+      patchResp.ok(),
+      `patch failed: ${patchResp.status()} ${await patchResp.text()}`
+    ).toBeTruthy();
 
     // Editor still showing the cached 3-node graph — refetch is gated on
     // the agentRuns signal, not on a poll.

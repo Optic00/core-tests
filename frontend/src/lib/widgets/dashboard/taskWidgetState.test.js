@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  ROW_COUNT_OPTIONS,
   defaultRowCount,
   normalizeTaskResponse,
-  ROW_COUNT_OPTIONS,
   resolveDensity,
   resolveRowCount,
   rowCountToLimit,
@@ -85,28 +85,28 @@ describe('normalizeTaskResponse', () => {
   ];
 
   test('sorts by due date (earliest first, nulls last)', () => {
-    const result = normalizeTaskResponse(items);
+    const result = normalizeTaskResponse({ data: items });
     expect(result.map((t) => t.id)).toEqual([3, 1, 4, 2]);
   });
 
   test('respects numeric maxItems cap', () => {
-    const result = normalizeTaskResponse(items, 2);
+    const result = normalizeTaskResponse({ data: items }, 2);
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe(3); // earliest due date
   });
 
   test("'all' returns every item", () => {
-    const result = normalizeTaskResponse(items, 'all');
+    const result = normalizeTaskResponse({ data: items }, 'all');
     expect(result).toHaveLength(4);
   });
 
-  test('handles wrapped { items: [...] } responses', () => {
-    const result = normalizeTaskResponse({ items });
+  test('handles the canonical data document', () => {
+    const result = normalizeTaskResponse({ data: items });
     expect(result).toHaveLength(4);
   });
 
   test('filters out entries without an id', () => {
-    const result = normalizeTaskResponse([{ title: 'no id' }, ...items]);
+    const result = normalizeTaskResponse({ data: [{ title: 'no id' }, ...items] });
     expect(result).toHaveLength(4);
   });
 });

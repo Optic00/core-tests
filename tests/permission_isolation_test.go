@@ -89,7 +89,7 @@ func TestCrossWorkspaceIsolation_DifferentRolesPerWorkspace(t *testing.T) {
 	server.BearerToken = adminToken
 
 	// Create two workspaces
-	workspaceA_ID, workspaceA_Key := CreateTestWorkspace(t, server, "WS A Different Roles", shortKey("WSADR"))
+	workspaceA_ID, _ := CreateTestWorkspace(t, server, "WS A Different Roles", shortKey("WSADR"))
 	workspaceB_ID, _ := CreateTestWorkspace(t, server, "WS B Different Roles", shortKey("WSBDR"))
 	LockDownWorkspace(t, server, workspaceA_ID)
 	LockDownWorkspace(t, server, workspaceB_ID)
@@ -148,7 +148,6 @@ func TestCrossWorkspaceIsolation_DifferentRolesPerWorkspace(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d", workspaceC_ID)
 		updateData := map[string]interface{}{
 			"name":        "Should Not Update",
-			"key":         workspaceA_Key, // Using any key
 			"description": "Unauthorized update",
 		}
 		resp := MakeAuthRequestWithToken(t, server, adminUserToken, http.MethodPut, endpoint, updateData)

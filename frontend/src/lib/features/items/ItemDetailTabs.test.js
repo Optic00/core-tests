@@ -108,7 +108,7 @@ vi.mock('../../utils/authenticatedDateFormatter.js', () => ({
 
 import { agentRuns } from '../../api/agentRuns.js';
 import { api } from '../../api.js';
-import { workItemStalenessSettings, workspaceDataStore } from '../../stores';
+import { itemDetailStore, workItemStalenessSettings, workspaceDataStore } from '../../stores';
 import ItemDetailTabs from './ItemDetailTabs.svelte';
 
 const baseItem = {
@@ -138,6 +138,18 @@ function renderDetails(item = baseItem) {
   });
 }
 
+function renderTime(worklogs, item = baseItem) {
+  return render(ItemDetailTabs, {
+    props: {
+      item,
+      workspace: { id: 3, key: 'WIND' },
+      tab: 'time',
+      moduleSettings: { time_tracking_enabled: true },
+      timeWorklogs: worklogs,
+    },
+  });
+}
+
 beforeEach(() => {
   agentRuns.listForItem.mockResolvedValue([]);
   api.items.getStatusDurations.mockResolvedValue({
@@ -148,6 +160,43 @@ beforeEach(() => {
   });
   workItemStalenessSettings.staleAfterDays = 30;
   workspaceDataStore.statuses = [{ id: 2, is_completed: false }];
+  itemDetailStore.includeChildItems = false;
+  itemDetailStore.timeRollup = null;
+  itemDetailStore.timeRollupLoading = false;
+});
+
+describe('ItemDetailTabs complete worklog totals', () => {
+  test.each([
+    [50, '6d 2h'],
+    [51, '6d 3h'],
+    [201, '25d 1h'],
+  ])('renders all %i entries and their exact total', (count, expectedTotal) => {
+    const worklogs = Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      duration_minutes: 60,
+      date: 1_788_537_600,
+    }));
+
+    renderTime(worklogs);
+
+    expect(screen.getByText(`items.timeEntries (${count})`)).toBeInTheDocument();
+    expect(screen.getByText(`${expectedTotal} items.logged`)).toBeInTheDocument();
+  });
+
+  test('continues to use the server rollup when child items are included', () => {
+    itemDetailStore.includeChildItems = true;
+    itemDetailStore.timeRollup = {
+      total_logged_minutes: 960,
+      total_estimate_minutes: 0,
+      item_count: 4,
+      truncated: false,
+    };
+
+    renderTime([{ id: 1, duration_minutes: 60, date: 1_788_537_600 }]);
+
+    expect(screen.getByText('2d items.logged')).toBeInTheDocument();
+    expect(screen.queryByText('1h items.logged')).not.toBeInTheDocument();
+  });
 });
 
 afterEach(() => {

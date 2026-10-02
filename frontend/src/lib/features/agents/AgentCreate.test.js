@@ -14,6 +14,7 @@ vi.mock('../../api.js', () => ({
     },
     workspaceSCM: {
       getConnections: vi.fn(),
+      getConnectionsOverview: vi.fn(),
       getLinkedRepos: vi.fn(),
     },
     actionCapabilities: {
@@ -83,6 +84,7 @@ beforeEach(() => {
     { id: 9, name: 'Primary model', model: 'gpt-example' },
   ]);
   api.workspaceSCM.getConnections.mockResolvedValue([]);
+  api.workspaceSCM.getConnectionsOverview.mockResolvedValue([]);
   api.workspaceSCM.getLinkedRepos.mockResolvedValue([]);
   api.actionCapabilities.getForWorkspace.mockResolvedValue([]);
 });
@@ -93,6 +95,31 @@ afterEach(() => {
 });
 
 describe('AgentCreate', () => {
+  it('loads linked repositories through one expanded connection request', async () => {
+    api.workspaceSCM.getConnectionsOverview.mockResolvedValue([
+      {
+        id: 3,
+        name: 'GitHub',
+        repositories: [{ id: 30, repository_name: 'acme/widgets', default_branch: 'main' }],
+      },
+      {
+        id: 4,
+        name: 'GitLab',
+        repositories: [{ id: 40, repository_name: 'acme/gadgets', default_branch: 'trunk' }],
+      },
+    ]);
+
+    render(AgentCreate, { props: { workspaceId: 7 } });
+    await screen.findAllByTestId('agent-template');
+
+    expect(api.workspaceSCM.getConnectionsOverview).toHaveBeenCalledOnce();
+    expect(api.workspaceSCM.getConnectionsOverview).toHaveBeenCalledWith(7, {
+      includeRepositories: true,
+    });
+    expect(api.workspaceSCM.getConnections).not.toHaveBeenCalled();
+    expect(api.workspaceSCM.getLinkedRepos).not.toHaveBeenCalled();
+  });
+
   it('gives each built-in specialist a distinct purpose-specific icon', async () => {
     agentBindings.listTemplates.mockResolvedValue([
       {

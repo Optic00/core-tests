@@ -1,5 +1,5 @@
+import { test, expect } from '../fixtures/errors';
 import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
 
 /**
  * Context-aware chat contract: when the user is editing an action, the
@@ -34,11 +34,11 @@ test.describe('Chat picks up the action editor context from the URL', () => {
     });
 
     const applyResp = await request.post(
-      `${BASE_URL}/api/workspaces/${ws.id}/action-templates/close_subtasks_on_parent_close/apply`,
-      { headers: defaultHeaders }
+      `${BASE_URL}/api/v2/workspaces/${ws.id}/action-templates/close_subtasks_on_parent_close/apply`,
+      { headers: defaultHeaders },
     );
     expect(applyResp.ok(), `apply failed: ${applyResp.status()}`).toBeTruthy();
-    const apply = await applyResp.json();
+    const apply = (await applyResp.json()).data;
     const actionId: number = apply.action_id;
     expect(actionId).toBeGreaterThan(0);
 
@@ -66,18 +66,8 @@ test.describe('Chat picks up the action editor context from the URL', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([
-          {
-            id: 1,
-            name: 'OpenRouter: qwen/qwen3-coder-next',
-            model: 'stub-model',
-            is_default: true,
-          },
-          {
-            id: 2,
-            name: 'OpenRouter: deepseek/deepseek-v3.2',
-            model: 'stub-model',
-            is_default: false,
-          },
+          { id: 1, name: 'OpenRouter: qwen/qwen3-coder-next', model: 'stub-model', is_default: true },
+          { id: 2, name: 'OpenRouter: deepseek/deepseek-v3.2', model: 'stub-model', is_default: false },
         ]),
       });
     });
@@ -120,11 +110,7 @@ test.describe('Chat picks up the action editor context from the URL', () => {
       .getByTestId('agent-chat-model-option')
       .filter({ hasText: 'OpenRouter: deepseek/deepseek-v3.2' });
     await expect(longModel).toBeVisible();
-    expect(
-      await longModel
-        .locator('span')
-        .evaluate((element) => element.scrollWidth <= element.clientWidth)
-    ).toBeTruthy();
+    expect(await longModel.locator('span').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBeTruthy();
 
     await textarea.fill('hi');
     await page.getByTestId('chat-send').click();

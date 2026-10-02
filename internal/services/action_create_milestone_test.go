@@ -41,6 +41,10 @@ func (s *stubNodeAPI) EmitActionEvent(event *models.ActionEvent) {
 	s.emitted = append(s.emitted, event)
 }
 
+func (s *stubNodeAPI) AuthorizeWorkspaceMutation(actorUserID, workspaceID int, permission string) error {
+	return nil
+}
+
 // newCreateMilestoneTestDB builds an in-memory SQLite with just enough
 // schema for the executor: workspaces (FK target), milestones (with
 // external_key + partial unique index), milestone_releases. Matches the
@@ -83,6 +87,12 @@ func newCreateMilestoneTestDB(t *testing.T) database.Database {
 			is_draft INTEGER NOT NULL DEFAULT 0,
 			is_prerelease INTEGER NOT NULL DEFAULT 0,
 			target_commitish TEXT,
+			workspace_repository_id INTEGER,
+			tag_url TEXT,
+			release_status TEXT NOT NULL DEFAULT 'tag_only',
+			released_at DATETIME,
+			assets_json TEXT NOT NULL DEFAULT '[]',
+			last_synced_at DATETIME,
 			scm_connection_id INTEGER,
 			scm_repository TEXT,
 			scm_release_id TEXT,

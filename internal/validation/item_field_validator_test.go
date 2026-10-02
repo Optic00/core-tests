@@ -8,6 +8,8 @@ import (
 
 	"windshift/internal/models"
 	"windshift/internal/testutils"
+	"database/sql"
+	"encoding/json"
 )
 
 // TestData holds IDs for test entities
@@ -260,7 +262,7 @@ func TestItemFieldValidator(t *testing.T) {
 			Title:       "Test Item",
 		}
 
-		err := validator.ValidateCreateRequest(item)
+		err := validator.ValidateCreateRequest(item, testData.UserID)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -272,7 +274,7 @@ func TestItemFieldValidator(t *testing.T) {
 			Title:       "",
 		}
 
-		err := validator.ValidateCreateRequest(item)
+		err := validator.ValidateCreateRequest(item, testData.UserID)
 		if err == nil {
 			t.Error("Expected validation error for missing title")
 		}
@@ -284,7 +286,7 @@ func TestItemFieldValidator(t *testing.T) {
 			Title:       "Test Item",
 		}
 
-		err := validator.ValidateCreateRequest(item)
+		err := validator.ValidateCreateRequest(item, testData.UserID)
 		if err == nil {
 			t.Error("Expected validation error for invalid workspace")
 		}
@@ -462,4 +464,21 @@ func setupTestData(t *testing.T, tdb *testutils.TestDB) *TestData {
 		MilestoneID: milestoneID,
 		IterationID: iterationID,
 	}
+}
+
+// ConvertCustomFieldValuesToJSON converts custom field values map to JSON for database storage
+func ConvertCustomFieldValuesToJSON(customFieldValues map[string]any) (sql.NullString, error) {
+	if len(customFieldValues) == 0 {
+		return sql.NullString{Valid: false}, nil
+	}
+
+	customFieldValuesBytes, err := json.Marshal(customFieldValues)
+	if err != nil {
+		return sql.NullString{}, &ValidationError{
+			Field:   "custom_field_values",
+			Message: "Invalid custom field values",
+		}
+	}
+
+	return sql.NullString{String: string(customFieldValuesBytes), Valid: true}, nil
 }

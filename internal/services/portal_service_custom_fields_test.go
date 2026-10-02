@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"windshift/internal/database"
+	"windshift/internal/models"
 )
 
 func TestPortalRowVisibleFailsClosedForMalformedRestrictions(t *testing.T) {
@@ -162,4 +163,11 @@ func TestGetCustomFieldsForChannelOnlyReturnsFieldsBoundToCreateScreen(t *testin
 	if len(validationResult.CustomFieldValues) != 1 || validationResult.CustomFieldValues[strconv.Itoa(allowedFieldID)] != "allowed value" {
 		t.Fatalf("validated custom fields = %+v, want only bound field %d", validationResult.CustomFieldValues, allowedFieldID)
 	}
+}
+
+// GetCustomFieldsForRequestType returns only the definitions consumed by one
+// public request form.
+func (s *PortalService) GetCustomFieldsForRequestType(ctx context.Context, requestTypeID int) ([]models.CustomFieldDefinition, error) {
+	_, definitions, err := s.GetRequestTypeForm(ctx, requestTypeID)
+	return definitions, err
 }

@@ -1,8 +1,8 @@
 import { expect, test } from '../fixtures/context-path';
-import { generateItem, generateWorkspace } from '../fixtures/test-data';
 import { BoardPage } from '../pages/board.page';
 import { ItemPage } from '../pages/item.page';
 import { WorkspacePage } from '../pages/workspace.page';
+import { generateItem, generateWorkspace } from '../fixtures/test-data';
 
 /**
  * Regression: Escape inside the comment editor on the item-detail modal

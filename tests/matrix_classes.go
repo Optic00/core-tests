@@ -87,31 +87,31 @@ var Classes = []PermissionClass{
 		},
 	},
 	{
-		Name: "workspace.admin",
-		// Workspace handler diverges from the item-handler 404 policy: denial
-		// is 403 (respondForbidden), not 404. Encode current behavior so the
-		// matrix catches drift in either direction; the broader 403→404
-		// alignment is a separate audit (see plan: out of scope).
-		Description: "PUT /workspaces/{id} — requires models.PermissionWorkspaceAdmin. Workspace handler returns 403 on denial (unlike item handler).",
+		Name:        "workspace.admin",
+		Description: "PATCH /v2/workspaces/{id} requires workspace administration and masks denied resources.",
 		Expected: map[MatrixActor]int{
 			ActorAnonymous:            http.StatusUnauthorized, // 401
-			ActorNoMembership:         http.StatusForbidden,    // 403 — workspace handler uses respondForbidden
-			ActorCrossWorkspaceMember: http.StatusForbidden,    // 403
-			ActorWorkspaceViewer:      http.StatusForbidden,    // 403
-			ActorWorkspaceEditor:      http.StatusForbidden,    // 403 — Editor lacks workspace.admin
+			ActorNoMembership:         http.StatusNotFound,     // 404
+			ActorCrossWorkspaceMember: http.StatusNotFound,     // 404
+			ActorWorkspaceViewer:      http.StatusNotFound,     // 404
+			ActorWorkspaceEditor:      http.StatusNotFound,     // 404 — Editor lacks workspace.admin
 			ActorWorkspaceAdmin:       http.StatusOK,           // 200 — Administrator role has workspace.admin
-			ActorWorkspaceTester:      http.StatusForbidden,    // 403
+			ActorWorkspaceTester:      http.StatusNotFound,     // 404
 			ActorSystemAdmin:          http.StatusOK,           // 200
 		},
 	},
-}
-
-// ClassByName looks up a class. Returns nil if not found.
-func ClassByName(name string) *PermissionClass {
-	for i := range Classes {
-		if Classes[i].Name == name {
-			return &Classes[i]
-		}
-	}
-	return nil
+	{
+		Name:        "global.system.admin",
+		Description: "Instance-wide administration endpoints require the global system administrator permission.",
+		Expected: map[MatrixActor]int{
+			ActorAnonymous:            http.StatusUnauthorized,
+			ActorNoMembership:         http.StatusForbidden,
+			ActorCrossWorkspaceMember: http.StatusForbidden,
+			ActorWorkspaceViewer:      http.StatusForbidden,
+			ActorWorkspaceEditor:      http.StatusForbidden,
+			ActorWorkspaceAdmin:       http.StatusForbidden,
+			ActorWorkspaceTester:      http.StatusForbidden,
+			ActorSystemAdmin:          http.StatusOK,
+		},
+	},
 }

@@ -44,7 +44,7 @@ describe('items API cross-tab broadcast', () => {
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
 
     fetchSpy = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ id: 42, title: 'x' }), {
+      new Response(JSON.stringify({ data: { id: 42, title: 'x' } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', Date: new Date().toUTCString() },
       })
@@ -82,7 +82,7 @@ describe('items API cross-tab broadcast', () => {
 
   it('transition broadcasts with the id arg', async () => {
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({ item: { id: 9, status_id: 2 } }), {
+      new Response(JSON.stringify({ data: { item: { id: 9, status_id: 2 } } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', Date: new Date().toUTCString() },
       })
@@ -105,7 +105,7 @@ describe('items API cross-tab broadcast', () => {
     const { mod, peer } = await captureBroadcasts();
     await mod.items.previewWorkspaceMove(7, { destination_workspace_id: 9 });
 
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/items/7/move-workspace/preview');
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/v2/items/7/move-workspace/preview');
     expect(fetchSpy.mock.calls[0][1].method).toBe('POST');
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ destination_workspace_id: 9 });
     expect(posted).toEqual([]);
@@ -122,10 +122,20 @@ describe('items API cross-tab broadcast', () => {
     };
     await mod.items.moveWorkspace(7, payload);
 
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/items/7/move-workspace');
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/v2/items/7/move-workspace');
     expect(fetchSpy.mock.calls[0][1].method).toBe('POST');
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual(payload);
     expect(posted[0]).toEqual(expect.objectContaining({ type: 'update', itemId: 7 }));
+    peer.close();
+  });
+
+  it('cascades through DELETE and broadcasts after a 204 response', async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const { mod, peer } = await captureBroadcasts();
+    await mod.items.deleteCascade(7);
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/v2/items/7?cascade=true');
+    expect(fetchSpy.mock.calls[0][1].method).toBe('DELETE');
+    expect(posted).toEqual([expect.objectContaining({ type: 'delete', itemId: 7 })]);
     peer.close();
   });
 
@@ -149,8 +159,17 @@ describe('items API cross-tab broadcast', () => {
     await items.getDetailSummary(42, { surface: 'mobile', signal: controller.signal });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/items/42/detail-summary?surface=mobile');
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/v2/items/42/detail-summary?surface=mobile');
     expect(fetchSpy.mock.calls[0][1].signal).toBe(controller.signal);
+  });
+
+  it('loads an item by its item key reference', async () => {
+    const { items } = await import('./items.js');
+
+    await items.get('WI-689');
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/v2/items/WI-689');
   });
 
   it('loads a key-addressed item-detail summary without a preliminary item request', async () => {
@@ -159,15 +178,15 @@ describe('items API cross-tab broadcast', () => {
     await items.getDetailSummaryByKey('WI', 689);
 
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/workspaces/WI/items/689/detail-summary');
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/v2/workspaces/WI/items/689/detail-summary');
   });
 
   it('resolves the first item from the filtered backlog', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          items: [{ id: 11 }],
-          pagination: { page: 1, limit: 1, total: 125, total_pages: 125 },
+          data: [{ id: 11 }],
+          pagination: { page: 1, page_size: 1, total_items: 125, total_pages: 125 },
         }),
         {
           status: 200,
@@ -184,11 +203,11 @@ describe('items API cross-tab broadcast', () => {
 
     expect(boundary).toEqual({ id: 11 });
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy.mock.calls[0][0]).toContain('/api/items/backlog?');
+    expect(fetchSpy.mock.calls[0][0]).toContain('/api/v2/items/backlog?');
     expect(fetchSpy.mock.calls[0][0]).toContain('workspace_id=7');
     expect(fetchSpy.mock.calls[0][0]).toContain('sub_ql=priority+%3D+high');
     expect(fetchSpy.mock.calls[0][0]).toContain('page=1');
-    expect(fetchSpy.mock.calls[0][0]).toContain('limit=1');
+    expect(fetchSpy.mock.calls[0][0]).toContain('page_size=1');
   });
 
   it('uses the current total to resolve the true last backlog item', async () => {
@@ -196,8 +215,8 @@ describe('items API cross-tab broadcast', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            items: [{ id: 11 }],
-            pagination: { page: 1, limit: 1, total: 125, total_pages: 125 },
+            data: [{ id: 11 }],
+            pagination: { page: 1, page_size: 1, total_items: 125, total_pages: 125 },
           }),
           {
             status: 200,
@@ -211,8 +230,8 @@ describe('items API cross-tab broadcast', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            items: [{ id: 135 }],
-            pagination: { page: 125, limit: 1, total: 125, total_pages: 125 },
+            data: [{ id: 135 }],
+            pagination: { page: 125, page_size: 1, total_items: 125, total_pages: 125 },
           }),
           {
             status: 200,
@@ -232,6 +251,24 @@ describe('items API cross-tab broadcast', () => {
     expect(fetchSpy.mock.calls[0][0]).toContain('collection_id=23');
     expect(fetchSpy.mock.calls[1][0]).toContain('collection_id=23');
     expect(fetchSpy.mock.calls[1][0]).toContain('page=125');
-    expect(fetchSpy.mock.calls[1][0]).toContain('limit=1');
+    expect(fetchSpy.mock.calls[1][0]).toContain('page_size=1');
+  });
+
+  it('requests accumulated item counts in a single page up to the server cap', async () => {
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', Date: new Date().toUTCString() },
+        })
+      )
+    );
+    const { items } = await import('./items.js');
+
+    await items.getAll({ workspace_id: 7, limit: 300, omit_descriptions: true });
+    await items.getAll({ workspace_id: 7, limit: 5000, omit_descriptions: true });
+
+    expect(fetchSpy.mock.calls[0][0]).toContain('page_size=300');
+    expect(fetchSpy.mock.calls[1][0]).toContain('page_size=1000');
   });
 });

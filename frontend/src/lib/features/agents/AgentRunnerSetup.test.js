@@ -1,18 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
-});
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../api.js', () => ({
   api: {
@@ -85,10 +72,11 @@ describe('AgentRunnerSetup', () => {
     await fireEvent.click(screen.getByTestId('agent-runner-generate'));
 
     await waitFor(() =>
-      expect(api.runnerPools.mintWorkspaceToken).toHaveBeenCalledWith(3, 7, {
-        description: 'Agent Studio · new runner',
-        ttl_hours: 720,
-      })
+      expect(api.runnerPools.mintWorkspaceToken).toHaveBeenCalledWith(
+        3,
+        7,
+        { description: 'Agent Studio · new runner', ttl_hours: 720 }
+      )
     );
     expect(screen.getByTestId('agent-runner-command')).toHaveTextContent(
       'docker run --rm windshift-runner'

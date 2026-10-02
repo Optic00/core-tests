@@ -22,14 +22,7 @@ describe('transitionsToEdges', () => {
   test('skips initial and from-all rows', () => {
     const edges = transitionsToEdges([
       { id: 1, workflow_id: 5, from_status_id: null, to_status_id: 2, display_order: 0 },
-      {
-        id: 2,
-        workflow_id: 5,
-        from_status_id: null,
-        to_status_id: 3,
-        from_all_statuses: true,
-        display_order: 1,
-      },
+      { id: 2, workflow_id: 5, from_status_id: null, to_status_id: 3, from_all_statuses: true, display_order: 1 },
       { id: 3, workflow_id: 5, from_status_id: 2, to_status_id: 3, display_order: 2 },
     ]);
     expect(edges).toHaveLength(1);

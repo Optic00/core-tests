@@ -23,16 +23,6 @@ vi.mock('../stores/toasts.svelte.js', () => ({
 }));
 
 beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
   if (!globalThis.ResizeObserver) {
     globalThis.ResizeObserver = class {
@@ -57,14 +47,14 @@ afterEach(() => {
 });
 
 describe('WorkspaceLabelCombobox', () => {
-  test('loads the global label catalog', async () => {
+  test('loads the workspace label catalog', async () => {
     api.labels.getAll.mockResolvedValue([{ id: 7, name: 'github' }]);
 
     render(WorkspaceLabelCombobox, {
       props: { workspaceId: 23, value: [] },
     });
 
-    await waitFor(() => expect(api.labels.getAll).toHaveBeenCalledWith());
+    await waitFor(() => expect(api.labels.getAll).toHaveBeenCalledWith(23));
   });
 
   test('creates a global label using the selected workspace authorization context', async () => {

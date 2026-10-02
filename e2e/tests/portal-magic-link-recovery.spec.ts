@@ -1,5 +1,5 @@
+import { test, expect } from '../fixtures/mail';
 import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/mail';
 import { generateWorkspace } from '../fixtures/test-data';
 
 /**
@@ -39,7 +39,10 @@ async function createPortalChannel(
       slug: cfg.slug,
     },
   });
-  expect(resp.ok(), `create portal channel: ${resp.status()} ${await resp.text()}`).toBeTruthy();
+  expect(
+    resp.ok(),
+    `create portal channel: ${resp.status()} ${await resp.text()}`
+  ).toBeTruthy();
   const channel = await resp.json();
   const configResp = await request.put(`/api/channels/${channel.id}/config`, {
     headers: SEC_FETCH,
@@ -85,10 +88,8 @@ async function requestAndExtractToken(
     timeoutMs: 5000,
   });
   const tokenMatch = msg.Text.match(/[?#&]token=([A-Za-z0-9_=-]+)/);
-  if (!tokenMatch) {
-    throw new Error(`token not found in body: ${msg.Text.slice(0, 200)}`);
-  }
-  return tokenMatch[1];
+  expect(tokenMatch, `token not found in body: ${msg.Text.slice(0, 200)}`).toBeTruthy();
+  return tokenMatch![1];
 }
 
 test.describe('Portal magic-link verify recovery', () => {
@@ -156,21 +157,16 @@ test.describe('Portal magic-link verify recovery', () => {
       timeoutMs: 5000,
     });
     const freshTokenMatch = message.Text.match(/[?#&]token=([A-Za-z0-9_=-]+)/);
-    if (!freshTokenMatch) {
-      throw new Error(`fresh token not found in body: ${message.Text.slice(0, 200)}`);
-    }
+    expect(freshTokenMatch, `fresh token not found in body: ${message.Text.slice(0, 200)}`).toBeTruthy();
 
     await page.goto(
-      `${BASE_URL}/portal/${slug}/verify#token=${encodeURIComponent(freshTokenMatch[1])}`
+      `${BASE_URL}/portal/${slug}/verify#token=${encodeURIComponent(freshTokenMatch![1])}`
     );
     // The customer-facing contract is that verification resumes the original
     // destination. Do not couple this browser test to the transport request;
     // the route assertion also waits through the visible verification state.
-    await expect(page).toHaveURL(
-      new RegExp(`${nextPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
-      {
-        timeout: 30_000,
-      }
-    );
+    await expect(page).toHaveURL(new RegExp(`${nextPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), {
+      timeout: 30_000,
+    });
   });
 });

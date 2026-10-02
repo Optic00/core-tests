@@ -1,4 +1,4 @@
-import { expect, test } from '../fixtures/context-path';
+import { test, expect } from '../fixtures/context-path';
 import { createPortalChannel } from '../helpers/portal-setup';
 
 /**
@@ -23,7 +23,10 @@ const SEC_FETCH = { 'Sec-Fetch-Site': 'same-origin' };
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 
 test.describe('Portal channel enable/disable toggle', () => {
-  test('disabled → toggle on → save → status persists as enabled', async ({ page, request }) => {
+  test('disabled → toggle on → save → status persists as enabled', async ({
+    page,
+    request,
+  }) => {
     const stamp = Date.now();
     const ch = await createPortalChannel(request, {
       slug: `e2e-toggle-on-${stamp}`,
@@ -32,9 +35,10 @@ test.describe('Portal channel enable/disable toggle', () => {
 
     // Helper creates the channel as 'enabled'. Flip it once to land in a
     // known 'disabled' starting state.
-    const seedOff = await request.put(`${BASE_URL}/api/channels/${ch.channelId}/toggle`, {
-      headers: SEC_FETCH,
-    });
+    const seedOff = await request.put(
+      `${BASE_URL}/api/channels/${ch.channelId}/toggle`,
+      { headers: SEC_FETCH }
+    );
     expect(seedOff.ok(), `seed disable: ${seedOff.status()}`).toBeTruthy();
 
     await page.goto(`${BASE_URL}/admin/channels/${ch.channelId}/portal`);
@@ -49,23 +53,31 @@ test.describe('Portal channel enable/disable toggle', () => {
     const [toggleResp] = await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/api/channels/${ch.channelId}/toggle`) && r.request().method() === 'PUT'
+          r.url().endsWith(`/api/channels/${ch.channelId}/toggle`) &&
+          r.request().method() === 'PUT'
       ),
       page.getByRole('button', { name: /save changes/i }).click(),
     ]);
     expect(toggleResp.ok(), `toggle PUT: ${toggleResp.status()}`).toBeTruthy();
 
-    const after = await request.get(`${BASE_URL}/api/channels/${ch.channelId}`, {
-      headers: SEC_FETCH,
-    });
+    const after = await request.get(
+      `${BASE_URL}/api/channels/${ch.channelId}`,
+      { headers: SEC_FETCH }
+    );
     expect(after.ok()).toBeTruthy();
     expect((await after.json()).status).toBe('enabled');
 
     await page.reload();
-    await expect(page.locator('button[role="switch"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('button[role="switch"]')).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 
-  test('enabled → toggle off → save → status persists as disabled', async ({ page, request }) => {
+  test('enabled → toggle off → save → status persists as disabled', async ({
+    page,
+    request,
+  }) => {
     const stamp = Date.now();
     const ch = await createPortalChannel(request, {
       slug: `e2e-toggle-off-${stamp}`,
@@ -83,19 +95,24 @@ test.describe('Portal channel enable/disable toggle', () => {
     const [toggleResp] = await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/api/channels/${ch.channelId}/toggle`) && r.request().method() === 'PUT'
+          r.url().endsWith(`/api/channels/${ch.channelId}/toggle`) &&
+          r.request().method() === 'PUT'
       ),
       page.getByRole('button', { name: /save changes/i }).click(),
     ]);
     expect(toggleResp.ok(), `toggle PUT: ${toggleResp.status()}`).toBeTruthy();
 
-    const after = await request.get(`${BASE_URL}/api/channels/${ch.channelId}`, {
-      headers: SEC_FETCH,
-    });
+    const after = await request.get(
+      `${BASE_URL}/api/channels/${ch.channelId}`,
+      { headers: SEC_FETCH }
+    );
     expect(after.ok()).toBeTruthy();
     expect((await after.json()).status).toBe('disabled');
 
     await page.reload();
-    await expect(page.locator('button[role="switch"]')).toHaveAttribute('aria-checked', 'false');
+    await expect(page.locator('button[role="switch"]')).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
   });
 });

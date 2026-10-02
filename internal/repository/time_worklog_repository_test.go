@@ -98,6 +98,15 @@ func TestTimeWorklogRepositoryCookieAuthDetailsLifecycle(t *testing.T) {
 	if len(listed) != 1 || listed[0].ID != int(worklogID) {
 		t.Fatalf("exclusive ListDetails = %+v, want only worklog %d", listed, worklogID)
 	}
+	page, total, err := repo.ListDetailsPage(WorklogDetailFilter{
+		AccessibleProjectIDs: []int{projectID}, Limit: 1, Offset: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListDetailsPage: %v", err)
+	}
+	if total != 2 || len(page) != 1 || page[0].ID != int(worklogID) {
+		t.Fatalf("ListDetailsPage = total %d rows %+v, want older worklog %d", total, page, worklogID)
+	}
 	forUser, total, err := repo.ListForUser(WorklogListFilter{
 		UserID: userID, DateFromUnix: &from, DateToExclusiveUnix: &endExclusive, Limit: 10,
 	})

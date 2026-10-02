@@ -1,5 +1,5 @@
-import { createUserViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { createUserViaAPI } from '../fixtures/api-helpers';
 import { generateWorkspace } from '../fixtures/test-data';
 import { WorkspacePage } from '../pages/workspace.page';
 import { WorkspaceSettingsPage } from '../pages/workspace-settings.page';
@@ -47,6 +47,15 @@ test.describe('Workspace Settings', () => {
       await expect(nameInput).toHaveValue(newName);
     });
 
+    test('should keep the workspace key read-only after creation', async () => {
+      await settingsPage.goto(workspaceId);
+
+      // The API rejects key patches, so the form must never offer editing it.
+      const keyInput = settingsPage.page.getByTestId('workspace-key-input');
+      await expect(keyInput).toBeDisabled();
+      await expect(keyInput).toHaveValue(testWorkspace.key);
+    });
+
     test('should update workspace description', async () => {
       const newDescription = 'Updated via settings page';
 
@@ -91,12 +100,12 @@ test.describe('Workspace Settings', () => {
       const rolesBody = await rolesResp.json();
       const roles: Array<{ id: number; name: string }> = rolesBody.data ?? rolesBody;
       const editorRole = roles.find((r) => r.name === 'Editor');
-      if (!editorRole) throw new Error('seeded Editor workspace role missing');
+      expect(editorRole, 'seeded Editor workspace role missing').toBeTruthy();
 
       await settingsPage.goto(workspaceId);
       const before = await settingsPage.getMemberCount();
 
-      await settingsPage.addMember(user.id, username, editorRole.id);
+      await settingsPage.addMember(user.id, username, editorRole!.id);
       await settingsPage.verifyMemberExists(username);
       expect(await settingsPage.getMemberCount()).toBe(before + 1);
 

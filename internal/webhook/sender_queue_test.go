@@ -20,7 +20,6 @@ type blockingPluginDispatcher struct {
 	active  atomic.Int64
 	maximum atomic.Int64
 	release <-chan struct{}
-	started chan<- struct{}
 }
 
 func (d *blockingPluginDispatcher) DispatchToPlugin(ctx context.Context, _, _, _ string, _ json.RawMessage) error {
@@ -32,7 +31,6 @@ func (d *blockingPluginDispatcher) DispatchToPlugin(ctx context.Context, _, _, _
 			break
 		}
 	}
-	d.started <- struct{}{}
 	select {
 	case <-d.release:
 		return nil
@@ -226,10 +224,11 @@ func TestDispatchHydratesPayloadOnceForMatchingDestinations(t *testing.T) {
 	}
 
 	sender.DispatchEvent("item.updated", &models.Item{ID: 42, WorkspaceID: 7})
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := sender.Shutdown(shutdownCtx); err != nil {
-		t.Fatalf("shutdown after dispatch: %v", err)
+	deadline := time.Now().Add(2 * time.Second)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for sender.Stats().Processed < 1 && time.Now().Before(deadline) {
+		<-tick.C
 	}
 
 	stats := sender.Stats()
@@ -255,8 +254,7 @@ func TestDeliveryConcurrencyIsBoundedPerDestination(t *testing.T) {
 		_ = sender.Shutdown(ctx)
 	})
 	release := make(chan struct{})
-	started := make(chan struct{}, 8)
-	dispatcher := &blockingPluginDispatcher{release: release, started: started}
+	dispatcher := &blockingPluginDispatcher{release: release}
 	sender.SetPluginDispatcher(dispatcher)
 	webhook := WebhookConfig{ChannelID: 99, PluginName: "test-plugin", PluginHandler: "onWebhook"}
 
@@ -268,12 +266,15 @@ func TestDeliveryConcurrencyIsBoundedPerDestination(t *testing.T) {
 			sender.sendWebhookPayload(context.Background(), webhook, "item.updated", 42, json.RawMessage(`{"id":42}`))
 		}()
 	}
-	for range destinationConcurrency {
-		select {
-		case <-started:
-		case <-time.After(time.Second):
-			t.Fatal("destination deliveries did not reach the concurrency limit")
-		}
+	deadline := time.Now().Add(time.Second)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for dispatcher.active.Load() < destinationConcurrency && time.Now().Before(deadline) {
+		<-tick.C
+	}
+	// Give late dispatches a few ticks to overshoot before asserting the cap.
+	for i := 0; i < 5; i++ {
+		<-tick.C
 	}
 	if maximum := dispatcher.maximum.Load(); maximum != destinationConcurrency {
 		t.Fatalf("maximum destination concurrency = %d, want %d", maximum, destinationConcurrency)

@@ -1,23 +1,20 @@
-import { readFileSync } from 'node:fs';
 import { preprocessMeltUI } from '@melt-ui/pp';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
-
-const manifest = JSON.parse(
-  readFileSync(new URL('../suite-manifest.json', import.meta.url), 'utf8')
-);
-const fastTests = manifest.frontend.fast.map((file) => file.replace(/^frontend\//, ''));
+import { lucideDirectImports } from './lucide-direct-imports.js';
 
 export default defineConfig({
   plugins: [
+    lucideDirectImports(),
     svelte({
       preprocess: [preprocessMeltUI()],
+      hot: false, // Disable HMR in tests
     }),
   ],
   test: {
     globals: true,
     environment: 'jsdom',
-    include: fastTests,
+    include: ['src/**/*.{test,spec}.{js,ts}'],
     setupFiles: ['./src/setupTests.js'],
     // Prevent CSS import errors in tests
     css: false,

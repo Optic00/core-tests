@@ -12,8 +12,8 @@ test.describe('Board configuration columns', () => {
       generateWorkspace(`board-column-fields-${Date.now()}`)
     );
 
-    const createConfig = await request.post(
-      `/api/collections/default/board-configuration?workspace_id=${workspace.id}`,
+    const createConfig = await request.put(
+      `/api/v2/workspaces/${workspace.id}/board-configuration`,
       {
         headers: SEC_FETCH,
         data: {
@@ -85,7 +85,7 @@ test.describe('Board configuration columns', () => {
     await retentionDays.fill('45');
 
     const filteredItemsRequest = page.waitForRequest((candidate) => {
-      if (!candidate.url().includes('/api/items?')) return false;
+      if (!candidate.url().includes('/api/v2/items?')) return false;
       return new URL(candidate.url()).searchParams.has('completed_activity_days');
     });
     await page.getByTestId('board-config-save').click();
@@ -95,11 +95,11 @@ test.describe('Board configuration columns', () => {
     expect(new URL(filteredRequest.url()).searchParams.get('completed_activity_days')).toBe('45');
 
     let configResponse = await request.get(
-      `/api/collections/default/board-configuration?workspace_id=${workspace.id}`,
+      `/api/v2/workspaces/${workspace.id}/board-configuration`,
       { headers: SEC_FETCH }
     );
     expect(configResponse.ok()).toBeTruthy();
-    let config = await configResponse.json();
+    let config = (await configResponse.json()).data;
     expect(config.show_rightmost_column_last_50).toBe(false);
     expect(config.completed_item_retention_days).toBe(45);
 
@@ -111,11 +111,11 @@ test.describe('Board configuration columns', () => {
     await page.waitForURL((url) => url.pathname === `/workspaces/${workspace.id}/board`);
 
     configResponse = await request.get(
-      `/api/collections/default/board-configuration?workspace_id=${workspace.id}`,
+      `/api/v2/workspaces/${workspace.id}/board-configuration`,
       { headers: SEC_FETCH }
     );
     expect(configResponse.ok()).toBeTruthy();
-    config = await configResponse.json();
+    config = (await configResponse.json()).data;
     expect(config.show_rightmost_column_last_50).toBe(true);
     expect(config.completed_item_retention_days ?? null).toBeNull();
   });

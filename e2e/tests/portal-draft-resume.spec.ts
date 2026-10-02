@@ -1,4 +1,4 @@
-import { expect, test } from '../fixtures/mail';
+import { test, expect } from '../fixtures/mail';
 import {
   attachRequestTypesToSection,
   createPortalChannel,
@@ -69,10 +69,8 @@ test.describe('Portal request-form draft resume', () => {
       timeoutMs: 5000,
     });
     const tokenMatch = msg.Text.match(/[?#&]token=([A-Za-z0-9_=-]+)/);
-    if (!tokenMatch) {
-      throw new Error('magic-link token not found');
-    }
-    const token = tokenMatch[1];
+    expect(tokenMatch, 'magic-link token').toBeTruthy();
+    const token = tokenMatch![1];
 
     const verifyResp = await page.request.get(
       `/api/portal/${slug}/auth/verify?token=${encodeURIComponent(token)}`,
@@ -115,9 +113,9 @@ test.describe('Portal request-form draft resume', () => {
     //    appear, title should be prefilled, and current_step should be 2
     //    (which means the description field — only on step 2 — is visible).
     await requestTypeCard.click();
-    await expect(page.locator('[data-testid="request-form-draft-resume-banner"]')).toBeVisible({
-      timeout: 5000,
-    });
+    await expect(
+      page.locator('[data-testid="request-form-draft-resume-banner"]')
+    ).toBeVisible({ timeout: 5000 });
 
     // Per RequestFormModal: when current_step lands on 2, step-1's title
     // input is no longer in the DOM (only fields for the current step
@@ -131,9 +129,10 @@ test.describe('Portal request-form draft resume', () => {
     });
 
     // 9. Cleanup so reruns on the same DB don't observe a stale draft.
-    const deleteResp = await page.request.delete(`/api/portal/${slug}/drafts/${rt.id}`, {
-      headers: SEC_FETCH,
-    });
+    const deleteResp = await page.request.delete(
+      `/api/portal/${slug}/drafts/${rt.id}`,
+      { headers: SEC_FETCH }
+    );
     expect([200, 204].includes(deleteResp.status())).toBeTruthy();
   });
 });

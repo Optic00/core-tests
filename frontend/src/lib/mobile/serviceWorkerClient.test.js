@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { removeToast, toasts } from '../stores/toasts.svelte.js';
 import {
   registerMobileServiceWorker,
   resetServiceWorkerRegistrationForTests,
 } from './serviceWorkerClient.js';
+import { removeToast, toasts } from '../stores/toasts.svelte.js';
 
 describe('registerMobileServiceWorker', () => {
   beforeEach(() => {

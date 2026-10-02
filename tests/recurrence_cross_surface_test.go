@@ -143,10 +143,15 @@ func TestRecurrence_CookieAndRESTV1Contract(t *testing.T) {
 			fmt.Sprintf("/items/%d/recurrence", cookieItemID), body)
 		defer cookieResponse.Body.Close()
 		AssertStatusCode(t, cookieResponse, http.StatusConflict)
-		var cookieError restapi.ErrorResponse
+		var cookieError struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
 		DecodeJSON(t, cookieResponse, &cookieError)
-		if cookieError.Code != restapi.ErrCodeConflict ||
-			cookieError.Error != services.RecurrenceWorkspaceLimitMessage() {
+		if cookieError.Error.Code != "conflict" ||
+			cookieError.Error.Message != services.RecurrenceWorkspaceLimitMessage() {
 			t.Fatalf("cookie quota error = %+v, want code %q and message %q",
 				cookieError, restapi.ErrCodeConflict, services.RecurrenceWorkspaceLimitMessage())
 		}

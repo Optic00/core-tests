@@ -95,17 +95,15 @@ func TestDiagnosticsDatabasePoolReportsControlledSaturation(t *testing.T) {
 		queryDone <- queryErr
 	}()
 
-	waitDeadline := time.NewTimer(time.Second)
-	defer waitDeadline.Stop()
-	waitTicker := time.NewTicker(time.Millisecond)
-	defer waitTicker.Stop()
-	for db.GetDB().Stats().WaitCount == 0 {
-		select {
-		case <-waitTicker.C:
-		case <-waitDeadline.C:
-			_ = held.Close()
-			t.Fatal("query did not wait for the saturated pool")
-		}
+	deadline := time.Now().Add(time.Second)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for db.GetDB().Stats().WaitCount == 0 && time.Now().Before(deadline) {
+		<-tick.C
+	}
+	if db.GetDB().Stats().WaitCount == 0 {
+		_ = held.Close()
+		t.Fatal("query did not wait for the saturated pool")
 	}
 
 	h := &DiagnosticsHandler{databaseDiagRepo: repository.NewDatabaseDiagnosticsRepository(db)}

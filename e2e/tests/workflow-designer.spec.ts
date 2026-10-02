@@ -52,21 +52,35 @@ async function createStatus(
   name: string,
   categoryId: number
 ): Promise<Status> {
-  const resp = await request.post('/api/statuses', {
+  const resp = await request.post('/api/v2/statuses', {
     headers: SEC_FETCH,
     data: { name, category_id: categoryId },
   });
   expect(resp.ok(), `create status ${name}: ${resp.status()} ${await resp.text()}`).toBeTruthy();
-  return resp.json();
+  return (await resp.json()).data;
 }
 
 async function createWorkflow(request: APIRequestContext, name: string): Promise<Workflow> {
-  const resp = await request.post('/api/workflows', {
+  const resp = await request.post('/api/v2/workflows', {
     headers: SEC_FETCH,
     data: { name, description: 'e2e workflow designer' },
   });
   expect(resp.ok(), `create workflow ${name}: ${resp.status()} ${await resp.text()}`).toBeTruthy();
-  return resp.json();
+  return (await resp.json()).data;
+}
+
+function normalizeTransition(transition: {
+  id: number;
+  from: { id: number } | null;
+  to: { id: number };
+  from_all_statuses?: boolean;
+}): WorkflowTransition {
+  return {
+    id: transition.id,
+    from_status_id: transition.from?.id ?? null,
+    to_status_id: transition.to.id,
+    from_all_statuses: transition.from_all_statuses,
+  };
 }
 
 async function setTransitions(
@@ -74,12 +88,12 @@ async function setTransitions(
   workflowId: number,
   transitions: Array<Partial<WorkflowTransition>>
 ): Promise<WorkflowTransition[]> {
-  const resp = await request.put(`/api/workflows/${workflowId}/transitions`, {
+  const resp = await request.put(`/api/v2/workflows/${workflowId}/transitions`, {
     headers: SEC_FETCH,
-    data: transitions,
+    data: { transitions },
   });
   expect(resp.ok(), `seed transitions: ${resp.status()} ${await resp.text()}`).toBeTruthy();
-  return resp.json();
+  return (await resp.json()).data.map(normalizeTransition);
 }
 
 async function setInitialTransition(
@@ -91,18 +105,18 @@ async function setInitialTransition(
   // A NULL from_status_id pins the workflow's "initial" status, which the
   // designer renders as a special node and uses to seed the palette →
   // workspace handoff.
-  const resp = await request.put(`/api/workflows/${workflowId}/transitions`, {
+  const resp = await request.put(`/api/v2/workflows/${workflowId}/transitions`, {
     headers: SEC_FETCH,
-    data: [{ from_status_id: null, to_status_id: initialStatusId }],
+    data: { transitions: [{ from_status_id: null, to_status_id: initialStatusId }] },
   });
   expect(resp.ok(), `seed transitions: ${resp.status()} ${await resp.text()}`).toBeTruthy();
-  return resp.json();
+  return (await resp.json()).data.map(normalizeTransition);
 }
 
 async function defaultCategoryId(request: APIRequestContext): Promise<number> {
-  const resp = await request.get('/api/status-categories', { headers: SEC_FETCH });
+  const resp = await request.get('/api/v2/status-categories', { headers: SEC_FETCH });
   expect(resp.ok()).toBeTruthy();
-  const cats: Array<{ id: number; is_default: boolean }> = await resp.json();
+  const cats: Array<{ id: number; is_default: boolean }> = (await resp.json()).data;
   const def = cats.find((c) => c.is_default) ?? cats[0];
   expect(def, 'no status categories seeded').toBeTruthy();
   return def.id;
@@ -112,11 +126,15 @@ async function getWorkflow(
   request: APIRequestContext,
   workflowId: number
 ): Promise<Workflow & { transitions?: WorkflowTransition[] }> {
-  const resp = await request.get(`/api/workflows/${workflowId}`, {
-    headers: SEC_FETCH,
-  });
-  expect(resp.ok(), `get workflow: ${resp.status()}`).toBeTruthy();
-  return resp.json();
+  const [workflowResponse, transitionsResponse] = await Promise.all([
+    request.get(`/api/v2/workflows/${workflowId}`, { headers: SEC_FETCH }),
+    request.get(`/api/v2/workflows/${workflowId}/transitions`, { headers: SEC_FETCH }),
+  ]);
+  expect(workflowResponse.ok(), `get workflow: ${workflowResponse.status()}`).toBeTruthy();
+  expect(transitionsResponse.ok(), `get transitions: ${transitionsResponse.status()}`).toBeTruthy();
+  const workflow = (await workflowResponse.json()).data;
+  const transitions = (await transitionsResponse.json()).data.map(normalizeTransition);
+  return { ...workflow, transitions };
 }
 
 test.describe('Workflow designer UI round-trip', () => {
@@ -144,7 +162,7 @@ test.describe('Workflow designer UI round-trip', () => {
     // does dynamic-import of SvelteFlowDesigner, so wait for the canvas
     // class that the underlying SvelteFlow component renders.
     await page.goto(`/workflows/${workflow.id}/design`);
-    await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('workflow-canvas')).toBeVisible({ timeout: 20_000 });
 
     // The palette is the left sidebar — its buttons are the three statuses
     // not yet in the workflow. Todo is already in the workflow (initial
@@ -156,7 +174,7 @@ test.describe('Workflow designer UI round-trip', () => {
 
     // The canvas already has one node — the initial Todo. SvelteFlow nodes
     // render with id `status-{statusId}` (SvelteFlowDesigner.svelte:262).
-    await expect(page.locator(`[data-id="status-${todo.id}"]`)).toBeVisible({
+    await expect(page.getByTestId(`workflow-status-node-${todo.id}`)).toBeVisible({
       timeout: 10_000,
     });
 
@@ -165,12 +183,12 @@ test.describe('Workflow designer UI round-trip', () => {
     // self-preservation transition is appended so the status sticks even
     // without any user-drawn edges.
     await inProgressCard.click();
-    await expect(page.locator(`[data-id="status-${inProgress.id}"]`)).toBeVisible({
+    await expect(page.getByTestId(`workflow-status-node-${inProgress.id}`)).toBeVisible({
       timeout: 10_000,
     });
 
     await doneCard.click();
-    await expect(page.locator(`[data-id="status-${done.id}"]`)).toBeVisible({
+    await expect(page.getByTestId(`workflow-status-node-${done.id}`)).toBeVisible({
       timeout: 10_000,
     });
 
@@ -179,7 +197,7 @@ test.describe('Workflow designer UI round-trip', () => {
     // outgoing PUT so the assertion below reads post-save state.
     const savePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes(`/api/workflows/${workflow.id}/transitions`) &&
+        resp.url().includes(`/api/v2/workflows/${workflow.id}/transitions`) &&
         resp.request().method() === 'PUT'
     );
     await page.getByTestId('workflow-save').click();
@@ -205,14 +223,14 @@ test.describe('Workflow designer UI round-trip', () => {
     // serialization in edgesToTransitions / transitionsToEdges would lose
     // one of the nodes here even though the API round-tripped.
     await page.goto(`/workflows/${workflow.id}/design`);
-    await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator(`[data-id="status-${todo.id}"]`)).toBeVisible({
+    await expect(page.getByTestId('workflow-canvas')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId(`workflow-status-node-${todo.id}`)).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.locator(`[data-id="status-${inProgress.id}"]`)).toBeVisible({
+    await expect(page.getByTestId(`workflow-status-node-${inProgress.id}`)).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.locator(`[data-id="status-${done.id}"]`)).toBeVisible({
+    await expect(page.getByTestId(`workflow-status-node-${done.id}`)).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -239,34 +257,56 @@ test.describe('Workflow designer UI round-trip', () => {
     ]);
 
     await page.goto(`/workflows/${workflow.id}/design`);
-    await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator(`[data-id="status-${open.id}"]`)).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(`[data-id="status-${inProgress.id}"]`)).toBeVisible({
+    await expect(page.getByTestId('workflow-canvas')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId(`workflow-status-node-${open.id}`)).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId(`workflow-status-node-${inProgress.id}`)).toBeVisible({
       timeout: 10_000,
     });
 
     // Reopened is already in the seeded graph, so the designer lays it out
     // together with the other nodes before the interaction begins.
-    const reopenedNode = page.locator(`[data-id="status-${reopened.id}"]`);
+    const reopenedNode = page.getByTestId(`workflow-status-node-${reopened.id}`);
     await expect(reopenedNode).toBeVisible({ timeout: 10_000 });
+
+    // Bring the reopened node's toggle to the canvas center. The graph's
+    // fit-view/layout can still be settling under load, so compute the pan
+    // from live bounding boxes instead of a fixed delta — a blind pan can
+    // park the toggle under the sidebar. The drag starts in the canvas
+    // corner so it pans the viewport rather than dragging a node.
+    const canvas = await page.getByTestId('workflow-canvas').boundingBox();
+    if (!canvas) throw new Error('Workflow canvas is not rendered');
+    const allToggle = reopenedNode.getByTestId('status-all-toggle');
+    const toggleBox = await allToggle.boundingBox();
+    if (!toggleBox) throw new Error('Status all-toggle is not rendered');
+    const panX = canvas.x + canvas.width / 2 - toggleBox.width / 2 - toggleBox.x;
+    const panY = canvas.y + canvas.height / 2 - toggleBox.height / 2 - toggleBox.y;
+    if (Math.abs(panX) > 2 || Math.abs(panY) > 2) {
+      await page.mouse.move(canvas.x + 20, canvas.y + 20);
+      await page.mouse.down();
+      await page.mouse.move(canvas.x + 20 + panX, canvas.y + 20 + panY, {
+        steps: 10,
+      });
+      await page.mouse.up();
+    }
 
     // Tick the per-status "All" checkbox. The chip lives inside the node and
     // carries aria-checked so the checked state is assertable without
     // relying on styling.
-    const allToggle = reopenedNode.getByTestId('status-all-toggle');
     await expect(allToggle).toHaveAttribute('aria-checked', 'false');
     await allToggle.click();
     await expect(allToggle).toHaveAttribute('aria-checked', 'true');
 
     // The single special arrow replaces N incoming arrows: one self-loop
     // edge with the stable id edge-all-{statusId}.
-    const allEdge = page.locator(`.svelte-flow__edge[data-id="edge-all-${reopened.id}"]`);
+    const allEdge = page.getByTestId(`workflow-edge-all-${reopened.id}`);
     await expect(allEdge).toBeVisible({ timeout: 10_000 });
 
     // Save and verify the persisted row through the API response.
     const savePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes(`/api/workflows/${workflow.id}/transitions`) &&
+        resp.url().includes(`/api/v2/workflows/${workflow.id}/transitions`) &&
         resp.request().method() === 'PUT'
     );
     await page.getByTestId('workflow-save').click();
@@ -282,15 +322,15 @@ test.describe('Workflow designer UI round-trip', () => {
     // Reload: the checkbox stays ticked and the special arrow re-renders
     // from the persisted transition.
     await page.goto(`/workflows/${workflow.id}/design`);
-    await expect(page.locator('.svelte-flow')).toBeVisible({ timeout: 20_000 });
-    const reloadedNode = page.locator(`[data-id="status-${reopened.id}"]`);
+    await expect(page.getByTestId('workflow-canvas')).toBeVisible({ timeout: 20_000 });
+    const reloadedNode = page.getByTestId(`workflow-status-node-${reopened.id}`);
     await expect(reloadedNode).toBeVisible({ timeout: 10_000 });
     await expect(reloadedNode.getByTestId('status-all-toggle')).toHaveAttribute(
       'aria-checked',
       'true'
     );
-    await expect(page.locator(`.svelte-flow__edge[data-id="edge-all-${reopened.id}"]`)).toBeVisible(
-      { timeout: 10_000 }
-    );
+    await expect(page.getByTestId(`workflow-edge-all-${reopened.id}`)).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });

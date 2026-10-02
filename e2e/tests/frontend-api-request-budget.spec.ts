@@ -168,7 +168,9 @@ function shortKey(value: string): string {
 async function expectOK(response: Awaited<ReturnType<APIRequestContext['get']>>, label: string) {
   const body = await response.text();
   expect(response.ok(), `${label}: ${response.status()} ${body}`).toBeTruthy();
-  return body ? JSON.parse(body) : null;
+  if (!body) return null;
+  const parsed = JSON.parse(body);
+  return parsed.data ?? parsed;
 }
 
 async function createPublicRequestChannel(
@@ -294,7 +296,7 @@ async function createTestRunWithCases(
   count: number
 ): Promise<number> {
   const testSet = await expectOK(
-    await request.post(`/api/workspaces/${workspaceId}/test-sets`, {
+    await request.post(`/api/v2/workspaces/${workspaceId}/test-plans`, {
       headers: SEC_FETCH,
       data: { name: `Budget Set ${suffix}`, description: '' },
     }),
@@ -303,7 +305,7 @@ async function createTestRunWithCases(
 
   for (let index = 0; index < count; index += 1) {
     const testCase = await expectOK(
-      await request.post(`/api/workspaces/${workspaceId}/test-cases`, {
+      await request.post(`/api/v2/workspaces/${workspaceId}/test-cases`, {
         headers: SEC_FETCH,
         data: {
           title: `Budget Case ${index + 1} ${suffix}`,
@@ -316,7 +318,7 @@ async function createTestRunWithCases(
       `create test case ${index + 1}`
     );
     await expectOK(
-      await request.post(`/api/workspaces/${workspaceId}/test-cases/${testCase.id}/steps`, {
+      await request.post(`/api/v2/workspaces/${workspaceId}/test-cases/${testCase.id}/steps`, {
         headers: SEC_FETCH,
         data: {
           action: `Perform action ${index + 1}`,
@@ -327,7 +329,7 @@ async function createTestRunWithCases(
       `create test step ${index + 1}`
     );
     await expectOK(
-      await request.post(`/api/workspaces/${workspaceId}/test-sets/${testSet.id}/test-cases`, {
+      await request.post(`/api/v2/workspaces/${workspaceId}/test-plans/${testSet.id}/test-cases`, {
         headers: SEC_FETCH,
         data: { test_case_id: testCase.id },
       }),
@@ -336,9 +338,9 @@ async function createTestRunWithCases(
   }
 
   const run = await expectOK(
-    await request.post(`/api/workspaces/${workspaceId}/test-runs`, {
+    await request.post(`/api/v2/workspaces/${workspaceId}/test-runs`, {
       headers: SEC_FETCH,
-      data: { name: `Budget Run ${suffix}`, set_id: testSet.id },
+      data: { name: `Budget Run ${suffix}`, plan_id: testSet.id },
     }),
     'create test run'
   );
@@ -370,7 +372,7 @@ test.describe('Frontend API request budgets (WI-689)', () => {
         workspace_id: workspace.id,
       });
       await expectOK(
-        await request.post(`/api/collections/${collection.id}/board-configuration`, {
+        await request.put(`/api/v2/collections/${collection.id}/board-configuration`, {
           headers: SEC_FETCH,
           data: {
             columns: [],
@@ -415,7 +417,7 @@ test.describe('Frontend API request budgets (WI-689)', () => {
       ql_query: `title ~ "${title}"`,
     });
     await expectOK(
-      await request.post(`/api/collections/${collection.id}/board-configuration`, {
+      await request.put(`/api/v2/collections/${collection.id}/board-configuration`, {
         headers: SEC_FETCH,
         data: {
           columns: [],
@@ -545,8 +547,8 @@ test.describe('Frontend API request budgets (WI-689)', () => {
     );
 
     for (const measurement of [result.cold, result.warm]) {
-      expect(measurement.requests).not.toContain(`/api/items/${item.id}/diagrams`);
-      expect(measurement.requests).not.toContain(`/api/items/${item.id}/worklogs`);
+      expect(measurement.requests).not.toContain(`/api/v2/items/${item.id}/diagrams`);
+      expect(measurement.requests).not.toContain(`/api/v2/items/${item.id}/worklogs`);
     }
   });
 
@@ -623,12 +625,12 @@ test.describe('Frontend API request budgets (WI-689)', () => {
       AUTHENTICATED_SHELL_BUDGET
     );
 
-    const detailPath = `/api/workspaces/${workspace.id}/test-runs/${runId}/detail`;
+    const detailPath = `/api/v2/workspaces/${workspace.id}/test-runs/${runId}/detail`;
     for (const measurement of [result.cold, result.warm]) {
       expect(measurement.requests.filter((path) => path === detailPath)).toHaveLength(1);
       expect(
         measurement.requests.some((path) =>
-          new RegExp(`^/api/workspaces/${workspace.id}/test-cases/\\d+/steps`).test(path)
+          new RegExp(`^/api/v2/workspaces/${workspace.id}/test-cases/\\d+/steps`).test(path)
         )
       ).toBe(false);
     }

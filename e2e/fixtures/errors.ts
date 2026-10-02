@@ -33,8 +33,21 @@ interface CapturedError {
   location?: string;
 }
 
+/**
+ * Suite-level allowances for requests the app deliberately answers with an
+ * error status that the UI handles as an empty state. The browser still logs
+ * failed requests as console errors, so without these every spec touching the
+ * surface would fail on intended behavior.
+ */
+const suiteLevelAllowedErrors: RegExp[] = [
+	// The item incident panel fetches on mount and the API answers 404 for
+	// "no incident"; the panel renders an empty state. Remove once the API
+	// grows an empty-state response.
+	/\/api\/items\/\d+\/incident/,
+];
+
 export const test = base.extend<ErrorFixtures>({
-  allowConsoleError: async ({ browserName: _browserName }, use, testInfo) => {
+  allowConsoleError: async ({}, use, testInfo) => {
     const patterns: RegExp[] = (testInfo as any)._allowedErrorPatterns ?? [];
     (testInfo as any)._allowedErrorPatterns = patterns;
     await use((pattern: RegExp) => {
@@ -47,7 +60,7 @@ export const test = base.extend<ErrorFixtures>({
 
     const isAllowed = (msg: string): boolean => {
       const patterns: RegExp[] = (testInfo as any)._allowedErrorPatterns ?? [];
-      return patterns.some((p) => p.test(msg));
+      return [...suiteLevelAllowedErrors, ...patterns].some((p) => p.test(msg));
     };
 
     page.on('pageerror', (err) => {
@@ -77,7 +90,9 @@ export const test = base.extend<ErrorFixtures>({
           return `  [${i + 1}] ${e.type}${loc}: ${e.message.split('\n')[0]}`;
         })
         .join('\n');
-      throw new Error(`Test captured ${errors.length} browser error(s):\n${summary}`);
+      throw new Error(
+        `Test captured ${errors.length} browser error(s):\n${summary}`
+      );
     }
   },
 });

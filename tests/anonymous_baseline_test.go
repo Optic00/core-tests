@@ -25,7 +25,7 @@ import (
 // route that landed without being declared in
 // anonymousBaselineKnownPublic.
 //
-// Net effect: every non-exempt route gets a trivial smoke-check; any landing that
+// Net effect: ~944 routes get a trivial smoke-check; any landing that
 // makes a previously-gated route publicly readable (or accidentally adds
 // a public-readable endpoint) fails this test loudly.
 func TestAnonymousBaseline(t *testing.T) {
@@ -97,8 +97,7 @@ var anonymousBaselineExemptions = []struct {
 	{"*", "/api/setup/"},
 
 	// Auth flows are by definition reachable without an existing session:
-	// login, magic-link consumption, and password reset. The SSO prefix is
-	// outside the public suite's feature boundary and is not audited here.
+	// login, SSO callbacks, magic-link consumption, password reset.
 	{"*", "/api/auth/"},
 	{"*", "/api/sso/"},
 	{"*", "/api/webauthn/"},
@@ -125,6 +124,13 @@ var anonymousBaselineExemptions = []struct {
 	{"*", "/api/version"},
 	{"*", "/api/setup-status"},
 	{"*", "/api/capabilities"},
+
+	// SCIM service provider config + schemas are anonymous per RFC 7644.
+	{"GET", "/scim/v2/ServiceProviderConfig"},
+	{"GET", "/scim/v2/ResourceTypes"},
+	{"GET", "/scim/v2/ResourceTypes/"},
+	{"GET", "/scim/v2/Schemas"},
+	{"GET", "/scim/v2/Schemas/"},
 
 	// OAuth 2.0 token + discovery endpoints — anonymous per RFC 6749/8414.
 	{"*", "/api/oauth/"},
@@ -200,7 +206,7 @@ func expandPlaceholders(path string) string {
 // makeAnonymousRequest fires an unauthenticated request at an absolute
 // path on the test server. Unlike MakeUnauthenticatedRequest (which
 // hard-codes the /api prefix via APIBase), this lets the caller target
-// /rest/api/v1/* surfaces as well.
+// /scim/v2/* and /rest/api/v1/* surfaces as well.
 func makeAnonymousRequest(t *testing.T, server *TestServer, method, path string) *http.Response {
 	t.Helper()
 	url := server.BaseURL + path

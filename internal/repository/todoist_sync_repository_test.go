@@ -40,6 +40,12 @@ func newTodoistRepoDB(t *testing.T) database.Database {
 			id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
 			provider_type TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE
 		)`,
+		// Minimal workspaces shape: ListEnabledConfigs joins it so the poller
+		// only picks up configs whose personal workspace is still active.
+		`CREATE TABLE workspaces (
+			id INTEGER PRIMARY KEY,
+			active BOOLEAN NOT NULL DEFAULT TRUE
+		)`,
 		`CREATE TABLE todoist_sync_config (
 			id TEXT PRIMARY KEY, user_id TEXT NOT NULL, integration_provider_id TEXT NOT NULL,
 			personal_workspace_id INTEGER NOT NULL, enabled BOOLEAN DEFAULT FALSE,
@@ -121,6 +127,13 @@ func TestTodoistSyncStateAndEnabledListing(t *testing.T) {
 
 	_ = repo.UpsertConfig(models.TodoistSyncConfig{ID: "cfg-on", UserID: "1", IntegrationProviderID: "prov-1", PersonalWorkspaceID: 1, Enabled: true, ScopeMode: models.TodoistScopeAll})
 	_ = repo.UpsertConfig(models.TodoistSyncConfig{ID: "cfg-off", UserID: "2", IntegrationProviderID: "prov-1", PersonalWorkspaceID: 2, Enabled: false, ScopeMode: models.TodoistScopeAll})
+
+	// Workspace 1 is active (its config is picked up); workspace 2 is a
+	// deactivated personal workspace (its config is skipped even while
+	// enabled=true — the join is the defense-in-depth contract).
+	if _, err := db.ExecWrite(`INSERT INTO workspaces (id, active) VALUES (1, TRUE), (2, FALSE)`); err != nil {
+		t.Fatalf("seed workspaces: %v", err)
+	}
 
 	enabled, err := repo.ListEnabledConfigs()
 	if err != nil {

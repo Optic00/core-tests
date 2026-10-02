@@ -254,3 +254,10 @@ func TestAgentConversationRepositoryStandardArchivePreservesTranscriptAndBlocksT
 		t.Fatalf("archive hard-deleted session: %v", err)
 	}
 }
+
+func (r *AgentConversationRepository) ListMessagesForParticipant(ctx context.Context, sessionID, userID, beforeID, limit int) ([]models.AgentMessage, error) {
+	if _, err := r.GetForParticipant(ctx, sessionID, userID); err != nil {
+		return nil, err
+	}
+	return r.listMessages(ctx, sessionID, 0, beforeID, limit)
+}

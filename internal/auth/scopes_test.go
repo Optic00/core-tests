@@ -23,6 +23,9 @@ func TestValidateAgentScopes_AcceptsRunScopeSet(t *testing.T) {
 	if err := ValidateAgentScopes([]string{ScopePagesWrite}); err != nil {
 		t.Fatalf("coding-agent page writes must validate; got %v", err)
 	}
+	if err := ValidateAgentScopes([]string{ScopeLinksWrite}); err != nil {
+		t.Fatalf("coding-agent link writes must validate; got %v", err)
+	}
 }
 
 func TestValidateAgentScopes_RejectsBroaderInteractiveSet(t *testing.T) {
@@ -66,7 +69,7 @@ func TestValidateAgentScopes_RejectsItemsDelete(t *testing.T) {
 }
 
 func TestValidateAgentScopes_RejectsPlanningWrites(t *testing.T) {
-	for _, s := range []string{ScopeMilestonesWrite, ScopeIterationsWrite, ScopeProjectsWrite} {
+	for _, s := range []string{ScopeMilestonesWrite, ScopeIterationsWrite} {
 		if err := ValidateAgentScopes([]string{s}); err == nil {
 			t.Errorf("planning :write scope %q must be rejected for agent tokens", s)
 		}
@@ -88,4 +91,15 @@ func TestValidateAgentScopes_AcceptsEmpty(t *testing.T) {
 	if err := ValidateAgentScopes(nil); err != nil {
 		t.Errorf("empty scope list must validate; got %v", err)
 	}
+}
+
+// AdminScopes returns the set of scopes that require system admin role.
+func AdminScopes() []string {
+	out := make([]string, 0, 9)
+	for _, s := range scopeCatalog {
+		if s.Admin {
+			out = append(out, s.Scope)
+		}
+	}
+	return out
 }

@@ -14,7 +14,7 @@ import (
 
 // RegisteredRoute is a (method, path) pair harvested from the source by
 // walking the routes/ package's AST. Path always includes the surface
-// prefix ("/api" or "/rest/api/v1") so the matrix tests and
+// prefix ("/api", "/rest/api/v1", "/scim/v2") so the matrix tests and
 // drift-guards can compare directly against incoming request paths.
 type RegisteredRoute struct {
 	Method string
@@ -22,12 +22,17 @@ type RegisteredRoute struct {
 }
 
 // EnumerateRegisteredRoutes returns every HTTP route registered by the
-// running server, parsed from the source tree. It walks two surfaces:
+// running server, parsed from the source tree. It walks three surfaces:
 //
 //  1. internal/restapi/v1/router.go     — calls to HandleWithMiddleware
 //     (string-literal first arg)        — prefix /rest/api/v1
 //  2. internal/routes/*.go              — calls to .HandleH / .Handle on
 //     the `api` route group              — prefix /api
+//  3. internal/routes/*.go              — calls to .HandleH / .Handle on
+//     anything ending in `Group` (e.g.
+//     scimGroup, portalGroup)            — prefix is currently fixed to
+//     /scim/v2 (the only such group
+//     server.go declares today)
 //
 // Direct mux.Handle("METHOD /path", ...) registrations in server.go (the
 // logbook/LLM proxies) are intentionally excluded — they bypass the
@@ -81,8 +86,9 @@ func locateCoreRoot(t *testing.T) string {
 }
 
 const (
-	apiPrefix = "/api"
-	v1Prefix  = "/rest/api/v1"
+	apiPrefix  = "/api"
+	v1Prefix   = "/rest/api/v1"
+	scimPrefix = "/scim/v2"
 )
 
 // parseV1Router harvests routes from internal/restapi/v1/router.go. It
@@ -123,7 +129,7 @@ func parseV1Router(t *testing.T, path string) []RegisteredRoute {
 //
 // The receiver's URL prefix is resolved per-function by scanning the
 // function body for short assignments of the form `<name> := deps.API`
-// then consulting depsFieldToPrefix.
+// or `<name> := deps.SCIMGroup`, then consulting depsFieldToPrefix.
 // This is brittler than tracking types via go/types, but is intentionally
 // chosen over the typed approach: a typed analysis would need to load
 // the full module and we want the enumerator to remain a fast,
@@ -193,14 +199,16 @@ func parseRoutesPackage(t *testing.T, dir string) []RegisteredRoute {
 // prefix the group mounts on. Kept in sync with internal/server/server.go
 // where the groups are constructed.
 var depsFieldToPrefix = map[string]string{
-	"API": apiPrefix,
+	"API":       apiPrefix,
+	"SCIMGroup": scimPrefix,
 }
 
 // localGroupPrefixes scans a function body for short variable declarations
 // of the form `<name> := deps.<Field>` where <Field> is one of the keys in
 // depsFieldToPrefix, and returns the resulting local-name → prefix map.
 // Used by parseRoutesPackage so a Handle call dispatched on a locally-named
-// route group is correctly prefixed.
+// route group (e.g. `scim := deps.SCIMGroup` then `scim.HandleH(...)`) is
+// correctly prefixed.
 func localGroupPrefixes(body *ast.BlockStmt) map[string]string {
 	out := map[string]string{}
 	ast.Inspect(body, func(n ast.Node) bool {

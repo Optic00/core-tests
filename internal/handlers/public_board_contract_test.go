@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"windshift/internal/models"
+	"windshift/internal/services"
 	"windshift/internal/testutils"
 	"windshift/internal/testutils/factory"
 )
@@ -169,14 +170,14 @@ func TestPublicBoardCardFieldAllowlist(t *testing.T) {
 		{FieldIdentifier: "due_date", FieldType: "system"},
 		{FieldIdentifier: "labels", FieldType: "system"},
 	}
-	if err := validatePublicBoardCardFields(supported); err != nil {
+	if err := services.ValidatePublicBoardCardFields(supported); err != nil {
 		t.Fatalf("supported fields rejected: %v", err)
 	}
 	for _, field := range []models.ListColumn{
 		{FieldIdentifier: "custom_field_7", FieldType: "custom"},
 		{FieldIdentifier: "milestone", FieldType: "system"},
 	} {
-		if err := validatePublicBoardCardFields([]models.ListColumn{field}); err == nil {
+		if err := services.ValidatePublicBoardCardFields([]models.ListColumn{field}); err == nil {
 			t.Fatalf("unsupported public field unexpectedly accepted: %+v", field)
 		}
 	}

@@ -134,9 +134,9 @@ func TestNewConfigAcceptsURLFormAllowedHosts(t *testing.T) {
 	t.Parallel()
 
 	config, err := NewConfig(Options{
-		RPID:         "project.example.com",
+		RPID:         "project.jmbillard.com",
 		RPName:       "Windshift Test",
-		AllowedHosts: "https://project.example.com",
+		AllowedHosts: "https://project.jmbillard.com",
 		Port:         "443",
 		UseProxy:     true,
 	})
@@ -144,7 +144,7 @@ func TestNewConfigAcceptsURLFormAllowedHosts(t *testing.T) {
 		t.Fatalf("NewConfig() with URL-form allowed host: %v", err)
 	}
 
-	want := []string{"https://project.example.com"}
+	want := []string{"https://project.jmbillard.com"}
 	if !reflect.DeepEqual(config.RPOrigins, want) {
 		t.Fatalf("RPOrigins = %q, want %q", config.RPOrigins, want)
 	}
@@ -157,9 +157,9 @@ func TestNewConfigRejectsNonOriginAllowedHostURLs(t *testing.T) {
 		name        string
 		allowedHost string
 	}{
-		{name: "path", allowedHost: "https://project.example.com/windshift"},
-		{name: "query", allowedHost: "https://project.example.com?tenant=other"},
-		{name: "credentials", allowedHost: "https://admin@project.example.com"},
+		{name: "path", allowedHost: "https://project.jmbillard.com/windshift"},
+		{name: "query", allowedHost: "https://project.jmbillard.com?tenant=other"},
+		{name: "credentials", allowedHost: "https://admin@project.jmbillard.com"},
 	}
 
 	for _, tt := range tests {
@@ -167,7 +167,7 @@ func TestNewConfigRejectsNonOriginAllowedHostURLs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := NewConfig(Options{
-				RPID:         "project.example.com",
+				RPID:         "project.jmbillard.com",
 				RPName:       "Windshift Test",
 				AllowedHosts: tt.allowedHost,
 				Port:         "443",

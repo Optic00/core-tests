@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   routeSubscriber: null,
@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   fetchCollectionItemChanges: vi.fn(),
   fetchCollectionItems: vi.fn(),
   getBoardConfigurationBootstrap: vi.fn(),
+  getCollection: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({
@@ -17,11 +18,12 @@ vi.mock('../api.js', () => ({
 }));
 
 vi.mock('../features/collections/collectionService.js', () => ({
+  fetchCollectionTotal: vi.fn().mockResolvedValue({ total: 300, watermark: 100 }),
   fetchCollectionBacklog: mocks.fetchCollectionBacklog,
   fetchCollectionItemChanges: mocks.fetchCollectionItemChanges,
   fetchCollectionItems: mocks.fetchCollectionItems,
   fetchItemsById: vi.fn(),
-  getCollection: vi.fn(),
+  getCollection: mocks.getCollection,
 }));
 
 vi.mock('../router.js', () => ({
@@ -50,21 +52,161 @@ function itemResult(options) {
   return {
     items: [{ id: page, status_id: 1 }],
     collectionName: 'Test board',
-    pagination: { page, limit: options.limit, total: 2, total_pages: 2 },
+    pagination: { page, page_size: options.limit, total_items: 2, total_pages: 2 },
     sortableFields: [],
     watermark: 1,
   };
 }
 
 describe('CollectionStore board ordering', () => {
+  beforeEach(() => {
+    // These partition and retention tests explicitly include completed work.
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) =>
+      key.startsWith('collection-show-completed:') ? 'true' : null
+    );
+  });
   afterAll(() => collectionStore.destroy());
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('renders the first unfinished page without waiting for background pages', async () => {
+    let resolveSecondPage;
+    mocks.fetchCollectionItems.mockImplementation((_workspaceId, _collectionId, options) => {
+      if (options.status_id === '2') {
+        return Promise.resolve({
+          items: [],
+          pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+          watermark: 1,
+        });
+      }
+      if (options.page === 1) {
+        return Promise.resolve({
+          items: [{ id: 1, status_id: 1 }],
+          collectionName: 'Large board',
+          pagination: { page: 1, page_size: 100, total_items: 200, total_pages: 2 },
+          watermark: 1,
+        });
+      }
+      return new Promise((resolve) => {
+        resolveSecondPage = resolve;
+      });
+    });
+    mocks.fetchCollectionBacklog.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+      watermark: 1,
+    });
+    mocks.getBoardConfigurationBootstrap.mockResolvedValue({
+      board_configuration: { columns: [], show_rightmost_column_last_50: false },
+      statuses: [{ id: 1, category_name: 'To Do', is_completed: false }],
+      referenced_workspace_ids: [60],
+    });
+
+    mocks.routeSubscriber({ view: 'workspace-board', params: { id: '60' } });
+
+    await vi.waitFor(() => expect(collectionStore.loading).toBe(false));
+    expect(collectionStore.items).toContainEqual({ id: 1, status_id: 1 });
+    expect(resolveSecondPage).toBeTypeOf('function');
+
+    resolveSecondPage({
+      items: [{ id: 2, status_id: 1 }],
+      collectionName: 'Large board',
+      pagination: { page: 2, page_size: 100, total_items: 200, total_pages: 2 },
+      watermark: 1,
+    });
+    await vi.waitFor(() => expect(collectionStore.items).toHaveLength(2));
+  });
+
+  it('paces unfinished board pages after the first thousand items', async () => {
+    vi.useFakeTimers();
+    mocks.fetchCollectionItems.mockImplementation((_workspaceId, _collectionId, options) => {
+      if (options.status_id === '2') {
+        return Promise.resolve({
+          items: [],
+          pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+          watermark: 1,
+        });
+      }
+      return Promise.resolve({
+        items: Array.from({ length: 100 }, (_, index) => ({
+          id: (options.page - 1) * 100 + index + 1,
+          status_id: 1,
+        })),
+        collectionName: 'Very large board',
+        pagination: { page: options.page, page_size: 100, total_items: 1100, total_pages: 11 },
+        watermark: 1,
+      });
+    });
+    mocks.fetchCollectionBacklog.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+      watermark: 1,
+    });
+    mocks.getBoardConfigurationBootstrap.mockResolvedValue({
+      board_configuration: { columns: [], show_rightmost_column_last_50: false },
+      statuses: [
+        { id: 1, category_name: 'To Do', is_completed: false },
+        { id: 2, category_name: 'Done', is_completed: true },
+      ],
+      referenced_workspace_ids: [61],
+    });
+
+    mocks.routeSubscriber({ view: 'workspace-board', params: { id: '61' } });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const unfinishedCalls = () =>
+      mocks.fetchCollectionItems.mock.calls.filter(
+        ([, , options]) => options.status_id_not === '2'
+      );
+    expect(collectionStore.loading).toBe(false);
+    expect(unfinishedCalls()).toHaveLength(10);
+    expect(collectionStore.items).toHaveLength(1000);
+
+    await vi.advanceTimersByTimeAsync(249);
+    expect(unfinishedCalls()).toHaveLength(10);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(unfinishedCalls()).toHaveLength(11);
+    await vi.waitFor(() => expect(collectionStore.items).toHaveLength(1100));
+  });
+
+  it('reuses the collection returned by the board bootstrap', async () => {
+    const collection = { id: 62, name: 'Aggregate board', ql_query: 'workspace_id = 7' };
+    mocks.getBoardConfigurationBootstrap.mockResolvedValue({
+      board_configuration: { columns: [] },
+      collection,
+      statuses: [],
+      referenced_workspace_ids: [7],
+    });
+    mocks.fetchCollectionItems.mockResolvedValue({
+      items: [],
+      collectionName: collection.name,
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+      watermark: 1,
+    });
+    mocks.fetchCollectionBacklog.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+      watermark: 1,
+    });
+
+    mocks.routeSubscriber({ view: 'collection-board', params: { id: '62' } });
+    await vi.waitFor(() => expect(collectionStore.loading).toBe(false));
+
+    expect(mocks.getCollection).not.toHaveBeenCalled();
+    expect(mocks.fetchCollectionItems).toHaveBeenCalledWith(
+      null,
+      '62',
+      expect.objectContaining({ collection })
+    );
+  });
 
   it('loads all unfinished board items before paging completed work', async () => {
     mocks.fetchCollectionItems.mockClear();
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [],
-      pagination: { page: 1, limit: 100, total: 0, total_pages: 0 },
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
       watermark: 4,
     });
     mocks.getBoardConfigurationBootstrap.mockResolvedValue({
@@ -83,7 +225,7 @@ describe('CollectionStore board ordering', () => {
             status_id: 1,
           })),
           collectionName: 'Split board',
-          pagination: { page: 1, limit: 1000, total: 38, total_pages: 1 },
+          pagination: { page: 1, page_size: 1000, total_items: 38, total_pages: 1 },
           watermark: 4,
         });
       }
@@ -96,7 +238,12 @@ describe('CollectionStore board ordering', () => {
             status_id: 2,
           })),
           collectionName: 'Split board',
-          pagination: { page: options.page, limit: 100, total: 105, total_pages: 2 },
+          pagination: {
+            page: options.page,
+            page_size: 100,
+            total_items: 105,
+            total_pages: 2,
+          },
           watermark: 4,
         });
       }
@@ -125,11 +272,77 @@ describe('CollectionStore board ordering', () => {
     expect(collectionStore.itemsHasMore).toBe(false);
   });
 
+  it('keeps load-more completed rows across a background refresh', async () => {
+    mocks.fetchCollectionItems.mockClear();
+    mocks.fetchCollectionBacklog.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+      watermark: 4,
+    });
+    mocks.getBoardConfigurationBootstrap.mockResolvedValue({
+      board_configuration: { columns: [], show_rightmost_column_last_50: false },
+      statuses: [
+        { id: 1, name: 'Open', category_name: 'To Do', is_completed: false },
+        { id: 2, name: 'Done', category_name: 'Done', is_completed: true },
+      ],
+      referenced_workspace_ids: [63],
+    });
+    const deferredPage = (page, count) => ({
+      items: Array.from({ length: count }, (_, index) => ({
+        id: 1000 + (page - 1) * 100 + index,
+        status_id: 2,
+      })),
+      collectionName: 'Deep completed board',
+      pagination: {
+        page,
+        page_size: count,
+        total_items: 250,
+        total_pages: Math.ceil(250 / count),
+      },
+      watermark: 4,
+    });
+    mocks.fetchCollectionItems.mockImplementation((_workspaceId, _collectionId, options) => {
+      if (options.status_id_not === '2') {
+        return Promise.resolve({
+          items: [{ id: 1, status_id: 1 }],
+          collectionName: 'Deep completed board',
+          pagination: { page: 1, page_size: 1000, total_items: 1, total_pages: 1 },
+          watermark: 4,
+        });
+      }
+      if (options.status_id === '2') {
+        if (options.page === 1 && options.limit === 100) return deferredPage(1, 100);
+        if (options.page === 2 && options.limit === 100) return deferredPage(2, 100);
+        if (options.page === 1 && options.limit === 200) return deferredPage(1, 200);
+      }
+      throw new Error(`unexpected item request: ${JSON.stringify(options)}`);
+    });
+
+    mocks.routeSubscriber({ view: 'workspace-board', params: { id: '63' } });
+    await vi.waitFor(() => expect(collectionStore.loading).toBe(false));
+    expect(collectionStore.items.filter((item) => item.status_id === 2)).toHaveLength(100);
+
+    await collectionStore.loadMoreItems();
+    expect(collectionStore.items.filter((item) => item.status_id === 2)).toHaveLength(200);
+
+    mocks.fetchCollectionItems.mockClear();
+    await collectionStore.refresh();
+
+    expect(mocks.fetchCollectionItems).toHaveBeenCalledWith(
+      '63',
+      null,
+      expect.objectContaining({ page: 1, limit: 200, status_id: '2' })
+    );
+    expect(collectionStore.items.filter((item) => item.status_id === 2)).toHaveLength(200);
+    expect(collectionStore.itemsRemainingCount).toBe(50);
+    expect(collectionStore.itemsHasMore).toBe(true);
+  });
+
   it('sends one completed-activity day window to initial and later completed pages', async () => {
     mocks.fetchCollectionItems.mockClear();
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [],
-      pagination: { page: 1, limit: 100, total: 0, total_pages: 0 },
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
       watermark: 5,
     });
     mocks.getBoardConfigurationBootstrap.mockResolvedValue({
@@ -149,7 +362,7 @@ describe('CollectionStore board ordering', () => {
         return Promise.resolve({
           items: [{ id: 1, status_id: 1 }],
           collectionName: 'Age-trimmed board',
-          pagination: { page: 1, limit: 1000, total: 1, total_pages: 1 },
+          pagination: { page: 1, page_size: 1000, total_items: 1, total_pages: 1 },
           watermark: 5,
         });
       }
@@ -157,7 +370,12 @@ describe('CollectionStore board ordering', () => {
         return Promise.resolve({
           items: [{ id: 100 + options.page, status_id: 2 }],
           collectionName: 'Age-trimmed board',
-          pagination: { page: options.page, limit: 100, total: 2, total_pages: 2 },
+          pagination: {
+            page: options.page,
+            page_size: 100,
+            total_items: 2,
+            total_pages: 2,
+          },
           watermark: 5,
         });
       }
@@ -193,7 +411,7 @@ describe('CollectionStore board ordering', () => {
     mocks.fetchCollectionItems.mockClear();
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [],
-      pagination: { page: 1, limit: 100, total: 0, total_pages: 0 },
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
       watermark: 6,
     });
     const collection = { id: 88, name: 'Scoped search collection' };
@@ -217,7 +435,12 @@ describe('CollectionStore board ordering', () => {
         return Promise.resolve({
           items: [{ id: 900 + options.page, status_id: 2 }],
           collectionName: collection.name,
-          pagination: { page: options.page, limit: 100, total: 2, total_pages: 2 },
+          pagination: {
+            page: options.page,
+            page_size: 100,
+            total_items: 2,
+            total_pages: 2,
+          },
           watermark: 6,
         });
       }
@@ -225,7 +448,7 @@ describe('CollectionStore board ordering', () => {
         return Promise.resolve({
           items: [{ id: 1, status_id: 1 }],
           collectionName: collection.name,
-          pagination: { page: 1, limit: 1000, total: 1, total_pages: 1 },
+          pagination: { page: 1, page_size: 1000, total_items: 1, total_pages: 1 },
           watermark: 6,
         });
       }
@@ -233,7 +456,7 @@ describe('CollectionStore board ordering', () => {
         return Promise.resolve({
           items: [{ id: 2, status_id: 2 }],
           collectionName: collection.name,
-          pagination: { page: 1, limit: 50, total: 55, total_pages: 2 },
+          pagination: { page: 1, page_size: 50, total_items: 55, total_pages: 2 },
           watermark: 6,
         });
       }
@@ -283,60 +506,59 @@ describe('CollectionStore board ordering', () => {
     );
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [],
-      pagination: { page: 1, limit: 100, total: 0, total_pages: 0 },
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
     });
     mocks.fetchCollectionItemChanges.mockResolvedValue({ watermark: 1 });
     mocks.getBoardConfigurationBootstrap.mockResolvedValue({ board_configuration: null });
 
     mocks.routeSubscriber({ view: 'workspace-board', params: { id: '42' } });
-    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(1));
-    expect(mocks.fetchCollectionItems).toHaveBeenLastCalledWith(
-      '42',
-      null,
-      expect.objectContaining({
-        page: 1,
-        limit: 100,
-        order_by: 'frac_index',
-        sort_direction: 'asc',
-      })
+    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(2));
+    expect(mocks.fetchCollectionItems.mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          '42',
+          null,
+          expect.objectContaining({
+            page: 1,
+            limit: 1000,
+            order_by: 'frac_index',
+            sort_direction: 'asc',
+          }),
+        ],
+        [
+          '42',
+          null,
+          expect.objectContaining({
+            page: 2,
+            limit: 1000,
+            order_by: 'frac_index',
+            sort_direction: 'asc',
+          }),
+        ],
+      ])
     );
 
     mocks.fetchCollectionItems.mockClear();
     collectionStore.setBoardSortMode('bubble');
-    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(1));
-    expect(mocks.fetchCollectionItems).toHaveBeenLastCalledWith(
-      '42',
-      null,
-      expect.objectContaining({
-        page: 1,
-        order_by: 'last_active_at',
-        sort_direction: 'desc',
-      })
-    );
+    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(2));
+    for (const [, , options] of mocks.fetchCollectionItems.mock.calls) {
+      expect(options).toEqual(
+        expect.objectContaining({ order_by: 'last_active_at', sort_direction: 'desc' })
+      );
+    }
 
     mocks.fetchCollectionItems.mockClear();
     await collectionStore.loadMoreItems();
-    expect(mocks.fetchCollectionItems).toHaveBeenCalledWith(
-      '42',
-      null,
-      expect.objectContaining({
-        page: 2,
-        order_by: 'last_active_at',
-        sort_direction: 'desc',
-      })
-    );
+    expect(mocks.fetchCollectionItems).not.toHaveBeenCalled();
 
     mocks.fetchCollectionItems.mockClear();
     await collectionStore.refresh();
-    expect(mocks.fetchCollectionItems).toHaveBeenCalledWith(
-      '42',
-      null,
-      expect.objectContaining({
-        page: 1,
-        order_by: 'last_active_at',
-        sort_direction: 'desc',
-      })
-    );
+    expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(2);
+    for (const [, , options] of mocks.fetchCollectionItems.mock.calls) {
+      expect(options).toEqual(
+        expect.objectContaining({ order_by: 'last_active_at', sort_direction: 'desc' })
+      );
+    }
 
     mocks.fetchCollectionItems.mockClear();
     mocks.routeSubscriber({ view: 'workspace-board', params: { id: '43' } });
@@ -345,29 +567,22 @@ describe('CollectionStore board ordering', () => {
     expect(collectionStore.items).toEqual([]);
     expect(collectionStore.backlogItems).toEqual([]);
     expect(collectionStore.itemsPagination).toBeNull();
-    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(1));
-    expect(mocks.fetchCollectionItems).toHaveBeenLastCalledWith(
-      '43',
-      null,
-      expect.objectContaining({
-        page: 1,
-        order_by: 'last_active_at',
-        sort_direction: 'desc',
-      })
-    );
+    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(2));
+    for (const [workspaceId, , options] of mocks.fetchCollectionItems.mock.calls) {
+      expect(workspaceId).toBe('43');
+      expect(options).toEqual(
+        expect.objectContaining({ order_by: 'last_active_at', sort_direction: 'desc' })
+      );
+    }
 
     mocks.fetchCollectionItems.mockClear();
     collectionStore.setBoardSortMode('rank');
-    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(1));
-    expect(mocks.fetchCollectionItems).toHaveBeenLastCalledWith(
-      '43',
-      null,
-      expect.objectContaining({
-        page: 1,
-        order_by: 'frac_index',
-        sort_direction: 'asc',
-      })
-    );
+    await vi.waitFor(() => expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(2));
+    for (const [, , options] of mocks.fetchCollectionItems.mock.calls) {
+      expect(options).toEqual(
+        expect.objectContaining({ order_by: 'frac_index', sort_direction: 'asc' })
+      );
+    }
   });
 
   it('does not log expected connectivity failures from delta polling', async () => {
@@ -376,7 +591,7 @@ describe('CollectionStore board ordering', () => {
     );
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [],
-      pagination: { page: 1, limit: 100, total: 0, total_pages: 0 },
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
     });
     mocks.getBoardConfigurationBootstrap.mockResolvedValue({ board_configuration: null });
 
@@ -403,7 +618,7 @@ describe('CollectionStore board ordering', () => {
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [{ id: 2, status_id: 1 }],
       collectionName: 'Backlog',
-      pagination: { page: 1, limit: 100, total: 1, total_pages: 1 },
+      pagination: { page: 1, page_size: 100, total_items: 1, total_pages: 1 },
       watermark: 3,
     });
 
@@ -429,7 +644,7 @@ describe('CollectionStore board ordering', () => {
     );
     mocks.fetchCollectionBacklog.mockResolvedValue({
       items: [],
-      pagination: { page: 1, limit: 100, total: 0, total_pages: 0 },
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
       watermark: 7,
     });
     mocks.fetchCollectionItemChanges.mockResolvedValue({
@@ -472,5 +687,48 @@ describe('CollectionStore board ordering', () => {
     expect(collectionStore.boardWorkspaceScopeLoaded).toBe(true);
     expect(collectionStore.boardWorkspaceIds).toEqual([48]);
     expect(collectionStore.boardCollection).toEqual({ id: 7, ql_query: 'workspace_id = 48' });
+  });
+});
+
+describe('CollectionStore list-view sorting', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterAll(() => collectionStore.destroy());
+
+  it('sends server-side sort options from setSorting and resets to page 1', async () => {
+    mocks.fetchCollectionItems.mockImplementation((_workspaceId, _collectionId, options) =>
+      Promise.resolve({
+        ...itemResult(options),
+        sortableFields: ['key', 'status', 'priority'],
+      })
+    );
+    mocks.fetchCollectionBacklog.mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+    });
+    mocks.getBoardConfigurationBootstrap.mockResolvedValue({ board_configuration: null });
+
+    mocks.routeSubscriber({ view: 'workspace-list', params: { id: '49' } });
+    await vi.waitFor(() => expect(collectionStore.loading).toBe(false));
+
+    // The server's sortable fields surface in the store for the header UI.
+    expect(collectionStore.sortableFields).toEqual(['key', 'status', 'priority']);
+
+    mocks.fetchCollectionItems.mockClear();
+    collectionStore.setSorting('priority', 'desc');
+
+    // Sorting reloads from page 1 with the sort options on every page request.
+    await vi.waitFor(() => expect(collectionStore.loading).toBe(false));
+    expect(mocks.fetchCollectionItems).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchCollectionItems).toHaveBeenCalledWith(
+      '49',
+      null,
+      expect.objectContaining({
+        page: 1,
+        order_by: 'priority',
+        sort_direction: 'desc',
+      })
+    );
   });
 });

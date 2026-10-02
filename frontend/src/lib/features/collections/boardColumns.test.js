@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   boardStatusIdForItem,
+  buildDisplayColumns,
   PERSONAL_TASK_DONE_STATUS_ID,
   PERSONAL_TASK_OPEN_STATUS_ID,
   statusIdForBoardColumnMove,
@@ -48,5 +49,25 @@ describe('personal task board status mapping', () => {
     expect(statusIdForBoardColumnMove(task, columns[2], columns, personalWorkspaceIds)).toBe(
       PERSONAL_TASK_DONE_STATUS_ID
     );
+  });
+});
+
+describe('default board column order', () => {
+  it('orders statuses from nested API v2 categories as Open, In Progress, Done', () => {
+    const statuses = [
+      { id: 3, name: 'Done', category: { builtin_key: 'done', color: '#22c55e' } },
+      {
+        id: 2,
+        name: 'In Progress',
+        category: { builtin_key: 'in_progress', color: '#3b82f6' },
+      },
+      { id: 1, name: 'Open', category: { builtin_key: 'to_do', color: '#d1d5db' } },
+    ];
+
+    expect(buildDisplayColumns(null, statuses)).toEqual([
+      expect.objectContaining({ id: 1, name: 'Open', color: '#d1d5db' }),
+      expect.objectContaining({ id: 2, name: 'In Progress', color: '#3b82f6' }),
+      expect.objectContaining({ id: 3, name: 'Done', color: '#22c55e' }),
+    ]);
   });
 });

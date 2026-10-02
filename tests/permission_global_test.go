@@ -51,7 +51,7 @@ func TestGlobalPermissions_SystemAdmin(t *testing.T) {
 			"key":         shortKey("ACW"),
 			"description": "Created by system admin",
 		}
-		resp := MakeAuthRequestWithToken(t, server, adminToken, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequestWithToken(t, server, adminToken, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusCreated)
 	})
@@ -80,7 +80,7 @@ func TestGlobalPermissions_WorkspaceCreate(t *testing.T) {
 			"key":         shortKey("UCW"),
 			"description": "Should fail",
 		}
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 		AssertRejected(t, resp)
 	})
@@ -99,7 +99,7 @@ func TestGlobalPermissions_WorkspaceCreate(t *testing.T) {
 			"key":         shortKey("UCWG"),
 			"description": "Should succeed",
 		}
-		resp := MakeAuthRequestWithToken(t, server, freshToken, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequestWithToken(t, server, freshToken, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusCreated)
 	})
@@ -117,11 +117,10 @@ func TestGlobalPermissions_UserManage(t *testing.T) {
 	_, username, password := CreateTestUserWithCredentials(t, server, "user_manage_tester", "user_manage@test.com")
 	userToken := CreateBearerTokenForUser(t, server, username, password)
 
-	t.Run("AnyAuthenticatedUser_CanListUsers", func(t *testing.T) {
-		// Any authenticated user should be able to list users (for issue assignment, mentions, etc.)
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodGet, "/users", nil)
+	t.Run("UserWithoutListPermission_CannotListUsers", func(t *testing.T) {
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodGet, "/v2/admin/users", nil)
 		defer resp.Body.Close()
-		AssertStatusCode(t, resp, http.StatusOK)
+		AssertRejected(t, resp)
 	})
 
 	t.Run("NonAdmin_CannotCreateUsers", func(t *testing.T) {
@@ -150,8 +149,8 @@ func TestGlobalPermissions_UserManage(t *testing.T) {
 			"last_name":  "Name",
 			"is_active":  true,
 		}
-		endpoint := fmt.Sprintf("/users/%d", targetUserID)
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPut, endpoint, updateData)
+		endpoint := fmt.Sprintf("/v2/admin/users/%d", targetUserID)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPatch, endpoint, updateData)
 		defer resp.Body.Close()
 		AssertRejected(t, resp)
 	})
@@ -182,8 +181,8 @@ func TestGlobalPermissions_UserManage(t *testing.T) {
 			"last_name":  "ByAdmin",
 			"is_active":  true,
 		}
-		endpoint := fmt.Sprintf("/users/%d", targetUserID)
-		resp := MakeAuthRequestWithToken(t, server, adminToken, http.MethodPut, endpoint, updateData)
+		endpoint := fmt.Sprintf("/v2/admin/users/%d", targetUserID)
+		resp := MakeAuthRequestWithToken(t, server, adminToken, http.MethodPatch, endpoint, updateData)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusOK)
 	})
@@ -211,9 +210,8 @@ func TestGlobalPermissions_IterationManage(t *testing.T) {
 			"description": "Should fail - no permission",
 			"start_date":  time.Now().Format("2006-01-02"),
 			"end_date":    time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
-			"is_global":   true,
 		}
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/iterations", iterationData)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/v2/iterations", iterationData)
 		defer resp.Body.Close()
 		AssertRejected(t, resp)
 	})
@@ -227,9 +225,8 @@ func TestGlobalPermissions_IterationManage(t *testing.T) {
 			"description": "Test global iteration",
 			"start_date":  time.Now().Format("2006-01-02"),
 			"end_date":    time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
-			"is_global":   true,
 		}
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/iterations", iterationData)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/v2/iterations", iterationData)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusCreated)
 	})
@@ -239,30 +236,26 @@ func TestGlobalPermissions_IterationManage(t *testing.T) {
 		AssignWorkspaceRole(t, server, userID, workspaceID, "Editor")
 
 		iterationData := map[string]interface{}{
-			"name":         "Workspace Iteration",
-			"description":  "Test workspace iteration",
-			"start_date":   time.Now().Format("2006-01-02"),
-			"end_date":     time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
-			"is_global":    false,
-			"workspace_id": workspaceID,
+			"name":        "Workspace Iteration",
+			"description": "Test workspace iteration",
+			"start_date":  time.Now().Format("2006-01-02"),
+			"end_date":    time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
 		}
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/iterations", iterationData)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/iterations", workspaceID), iterationData)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusCreated)
 	})
 
-	t.Run("LocalIterations_RequireWorkspaceID", func(t *testing.T) {
-		// Local iterations must have a workspace_id
+	t.Run("GlobalCollectionDoesNotRequireOwnershipFields", func(t *testing.T) {
 		iterationData := map[string]interface{}{
-			"name":        "Invalid Local Iteration",
-			"description": "Should fail - no workspace_id",
+			"name":        "Unambiguous Global Iteration",
+			"description": "Path determines global ownership",
 			"start_date":  time.Now().Format("2006-01-02"),
 			"end_date":    time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
-			"is_global":   false,
 		}
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/iterations", iterationData)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/v2/iterations", iterationData)
 		defer resp.Body.Close()
-		AssertStatusCode(t, resp, http.StatusBadRequest)
+		AssertStatusCode(t, resp, http.StatusCreated)
 	})
 
 	t.Run("GlobalIterations_CannotHaveWorkspaceID", func(t *testing.T) {
@@ -272,10 +265,9 @@ func TestGlobalPermissions_IterationManage(t *testing.T) {
 			"description":  "Should fail - has workspace_id",
 			"start_date":   time.Now().Format("2006-01-02"),
 			"end_date":     time.Now().AddDate(0, 0, 14).Format("2006-01-02"),
-			"is_global":    true,
 			"workspace_id": workspaceID,
 		}
-		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/iterations", iterationData)
+		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/v2/iterations", iterationData)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})

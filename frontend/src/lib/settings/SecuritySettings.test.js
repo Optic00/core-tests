@@ -29,10 +29,20 @@ vi.mock('../api.js', () => ({
   },
 }));
 
-vi.mock('../stores/i18n.svelte.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  t: (key) => key,
-}));
+vi.mock('../stores/i18n.svelte.js', async (importOriginal) => {
+  const translations = {
+    'securitySettings.authenticationMethod': 'Authentication Method',
+    'securitySettings.policy.password': 'Password only',
+    'securitySettings.policy.passwordDescription': 'Standard password authentication.',
+    'securitySettings.policy.passwordOrSso': 'Password or SSO',
+    'securitySettings.policy.passwordOrSsoDescription':
+      'Users may sign in with a password or through the configured SSO provider.',
+  };
+  return {
+    ...(await importOriginal()),
+    t: (key) => translations[key] ?? key,
+  };
+});
 
 vi.mock('../stores/toasts.svelte.js', () => ({
   errorToast: vi.fn(),
@@ -40,15 +50,19 @@ vi.mock('../stores/toasts.svelte.js', () => ({
 
 import SecuritySettings from './SecuritySettings.svelte';
 
-describe('SecuritySettings external images', () => {
+function authPolicyConfig(ssoConfigured) {
+  return {
+    policy: 'password',
+    preview_mode: false,
+    sso_configured: ssoConfigured,
+    fallback_enabled: false,
+    hide_password_form: false,
+  };
+}
+
+describe('SecuritySettings authentication policy labels', () => {
   beforeEach(() => {
-    mocks.getAuthPolicy.mockResolvedValue({
-      policy: 'password',
-      preview_mode: false,
-      sso_configured: false,
-      fallback_enabled: false,
-      hide_password_form: false,
-    });
+    mocks.getAuthPolicy.mockResolvedValue(authPolicyConfig(false));
     mocks.getSecuritySettings.mockResolvedValue({});
     mocks.updateSecuritySettings.mockResolvedValue({});
   });
@@ -70,5 +84,27 @@ describe('SecuritySettings external images', () => {
     });
     expect(toggle).toBeChecked();
     expect(screen.getByText('settings.security.externalImagesWarning')).toBeInTheDocument();
+  });
+
+  it('labels the default policy as password or SSO when SSO is configured', async () => {
+    mocks.getAuthPolicy.mockResolvedValue(authPolicyConfig(true));
+
+    render(SecuritySettings);
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Authentication Method' })
+    ).toHaveTextContent('Password or SSO');
+    expect(
+      screen.getByText('Users may sign in with a password or through the configured SSO provider.')
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the password-only label when no SSO provider is configured', async () => {
+    render(SecuritySettings);
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Authentication Method' })
+    ).toHaveTextContent('Password only');
+    expect(screen.getByText('Standard password authentication.')).toBeInTheDocument();
   });
 });

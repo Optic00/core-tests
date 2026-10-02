@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"strconv"
 	"windshift/internal/models"
 	"windshift/internal/repository"
 	"windshift/internal/testutils"
@@ -290,4 +291,69 @@ func TestWorkspaceHandler_GetStatuses_InvalidItemTypeID(t *testing.T) {
 	rr := testutils.ExecuteAuthenticatedRequest(t, handler.GetStatuses, req, nil)
 
 	rr.AssertStatusCode(http.StatusBadRequest)
+}
+
+func (h *WorkspaceHandler) GetStatuses(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := requireWorkspaceIDParam(w, r, h.keyCache, "id")
+	if !ok || !h.requireWorkspacePermission(w, r, workspaceID, models.PermissionItemView) {
+		return
+	}
+	var itemTypeID *int
+	if raw := r.URL.Query().Get("item_type_id"); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil {
+			respondBadRequest(w, r, "invalid item_type_id")
+			return
+		}
+		itemTypeID = &id
+	}
+	statuses, err := h.loadWorkspaceStatuses(workspaceID, itemTypeID)
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+	respondJSONOK(w, statuses)
+}
+
+// The story-points-by-assignee widget ships on the workspace dashboard
+// (WI-1340). Its type must be accepted here, or adding the widget fails
+// to save with "Invalid widget type".
+func TestWorkspaceHandler_UpdateHomepageLayout_AcceptsStoryPointsByAssigneeType(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+
+	tdb.SeedTestData(t)
+	handler := newWorkspaceHandlerForSettings(t, tdb)
+
+	layout := models.WorkspaceHomepageLayout{
+		Sections: []models.WorkspaceHomepageSection{{
+			ID:           "s-1",
+			Title:        "Charts",
+			WidgetIDs:    []string{"w-1"},
+			DisplayOrder: 0,
+		}},
+		Widgets: []models.WorkspaceWidget{{
+			ID:        "w-1",
+			Type:      "story-points-by-assignee",
+			SectionID: "s-1",
+			Width:     2,
+		}},
+	}
+
+	req := testutils.CreateJSONRequest(t, "PUT", "/api/workspaces/1/homepage/layout", layout)
+	req.SetPathValue("id", "1")
+	rr := testutils.ExecuteAuthenticatedRequest(t, handler.UpdateHomepageLayout, req, nil)
+
+	rr.AssertStatusCode(http.StatusOK)
+	var stored string
+	if err := tdb.QueryRow(`SELECT homepage_layout FROM workspaces WHERE id = 1`).Scan(&stored); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	var saved models.WorkspaceHomepageLayout
+	if err := json.Unmarshal([]byte(stored), &saved); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(saved.Widgets) != 1 || saved.Widgets[0].Type != "story-points-by-assignee" {
+		t.Fatalf("saved widgets = %+v, want one story-points-by-assignee", saved.Widgets)
+	}
 }

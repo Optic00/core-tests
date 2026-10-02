@@ -40,13 +40,21 @@ func TestItemLinksBatchEndpoint(t *testing.T) {
 	}
 
 	// Duplicate ids included intentionally — the endpoint must dedupe.
-	endpoint := fmt.Sprintf("/links/batch?ids=%d,%d,%d,%d", itemA, itemB, itemC, itemA)
+	endpoint := fmt.Sprintf("/v2/links/batch?ids=%d,%d,%d,%d", itemA, itemB, itemC, itemA)
 	resp := MakeAuthRequest(t, server, http.MethodGet, endpoint, nil)
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusOK)
 
-	var got map[string]entityLinks
-	DecodeJSON(t, resp, &got)
+	var rows []struct {
+		ItemID   int                      `json:"item_id"`
+		Outgoing []map[string]interface{} `json:"outgoing"`
+		Incoming []map[string]interface{} `json:"incoming"`
+	}
+	DecodeJSON(t, resp, &rows)
+	got := make(map[string]entityLinks, len(rows))
+	for _, row := range rows {
+		got[fmt.Sprint(row.ItemID)] = entityLinks{Outgoing: row.Outgoing, Incoming: row.Incoming}
+	}
 
 	// Every requested id present, even the one with no links (caching contract).
 	for _, id := range []int{itemA, itemB, itemC} {
@@ -87,15 +95,9 @@ func TestItemLinksBatchEndpoint_NoIDs(t *testing.T) {
 	defer cleanup()
 	CreateBearerToken(t, server) // completes setup + admin login; sets SessionCookie
 
-	resp := MakeAuthRequest(t, server, http.MethodGet, "/links/batch?ids=", nil)
+	resp := MakeAuthRequest(t, server, http.MethodGet, "/v2/links/batch?ids=", nil)
 	defer resp.Body.Close()
-	AssertStatusCode(t, resp, http.StatusOK)
-
-	var got map[string]interface{}
-	DecodeJSON(t, resp, &got)
-	if len(got) != 0 {
-		t.Fatalf("want empty object, got %v", got)
-	}
+	AssertStatusCode(t, resp, http.StatusBadRequest)
 }
 
 func intField(m map[string]interface{}, key string) int {

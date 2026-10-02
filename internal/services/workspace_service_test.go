@@ -12,6 +12,7 @@ import (
 	"windshift/internal/services"
 	"windshift/internal/testutils"
 	"windshift/internal/testutils/factory"
+	"windshift/internal/validation"
 )
 
 type allowTemplateSourceAccess struct{}
@@ -318,6 +319,43 @@ func TestWorkspaceService_CreateFromTemplateHandlesNullableCanonicalBooleans(t *
 		}
 		if isTask {
 			t.Fatal("Cloned nullable task flag = true, want false")
+		}
+	})
+
+	t.Run("invalid task seed rolls back clone", func(t *testing.T) {
+		db := createWorkspaceTestDB(t)
+		env := setupWorkspaceTestEnv(t, db)
+		itemID, err := factory.NewTestFactory(db).CreateItem(factory.CreateItemOpts{
+			WorkspaceID: env.WorkspaceID,
+			Title:       "Invalid template task",
+			CreatorID:   &env.UserID,
+		})
+		if err != nil {
+			t.Fatalf("Create source item: %v", err)
+		}
+		if _, err := db.Exec("UPDATE workspaces SET is_template = true WHERE id = ?", env.WorkspaceID); err != nil {
+			t.Fatalf("Mark source as template: %v", err)
+		}
+		if _, err := db.Exec("UPDATE items SET is_task = true WHERE id = ?", itemID); err != nil {
+			t.Fatalf("Install invalid seed task: %v", err)
+		}
+
+		_, err = services.NewWorkspaceServiceWithAccess(db, allowTemplateSourceAccess{}).Create(t.Context(), services.CreateWorkspaceParams{
+			Name:                "Rejected task seed clone",
+			Key:                 "RTSC",
+			CreatorID:           env.UserID,
+			TemplateWorkspaceID: &env.WorkspaceID,
+		})
+		var validationErr *validation.ValidationError
+		if !errors.Is(err, services.ErrInvalidWorkspaceTemplate) || !errors.As(err, &validationErr) || validationErr.Field != "is_task" {
+			t.Fatalf("Create error = %v, want invalid-template and is_task errors", err)
+		}
+		var destinations int
+		if err := db.QueryRow("SELECT COUNT(*) FROM workspaces WHERE key = 'RTSC'").Scan(&destinations); err != nil {
+			t.Fatalf("Count rolled-back destination: %v", err)
+		}
+		if destinations != 0 {
+			t.Fatalf("Destination rows = %d, want 0", destinations)
 		}
 	})
 }

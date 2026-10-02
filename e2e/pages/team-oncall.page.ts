@@ -14,7 +14,6 @@ export class TeamOnCallPage {
 
   async goto(teamId: number) {
     await this.page.goto(`/teams/${teamId}/on-call`);
-    await this.page.waitForLoadState('networkidle');
   }
 
   async createSchedule(data: { name: string; description?: string; timezone?: string }) {
@@ -61,12 +60,7 @@ export class TeamOnCallPage {
 
   async addLayerMember(userId: number, searchTerm: string) {
     const dialog = this.page.locator('div[role="dialog"]');
-    await pickUser(
-      this.page,
-      dialog.locator('[data-testid="user-picker-trigger"]'),
-      userId,
-      searchTerm
-    );
+    await pickUser(this.page, dialog.locator('[data-testid="user-picker-trigger"]'), userId, searchTerm);
   }
 
   async saveLayer() {
@@ -95,7 +89,7 @@ export class TeamOnCallPage {
       replacementSearchTerm: string;
       startTime: string;
       endTime: string;
-    }
+    },
   ) {
     const row = this.scheduleRow(scheduleName);
     await row.locator('[data-testid="override-create"]').click();
@@ -124,9 +118,7 @@ export class TeamOnCallPage {
   }
 
   async expectLayerVisible(scheduleName: string, layerName: string) {
-    const layer = this.scheduleRow(scheduleName).locator('[data-testid="layer-row"]', {
-      hasText: layerName,
-    });
+    const layer = this.scheduleRow(scheduleName).locator('[data-testid="layer-row"]', { hasText: layerName });
     await expect(layer).toBeVisible({ timeout: 10000 });
   }
 }

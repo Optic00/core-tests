@@ -1,9 +1,7 @@
 package tests
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"testing"
 )
@@ -499,18 +497,6 @@ func TestTeamPermissions(t *testing.T) {
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusNoContent)
 	})
-}
-
-// DecodeJSON is a helper that decodes response body - uses existing pattern or inlines
-func decodeJSONBody(t *testing.T, resp *http.Response, target interface{}) {
-	t.Helper()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("Failed to read response body: %v", err)
-	}
-	if err := json.Unmarshal(body, target); err != nil {
-		t.Fatalf("Failed to decode JSON: %v\nBody: %s", err, string(body))
-	}
 }
 
 // Suppress unused variable warnings for layerID

@@ -85,12 +85,3 @@ func authedRequest(method, target string, userID int, body interface{}) *http.Re
 	ctx := context.WithValue(r.Context(), contextkeys.User, user)
 	return r.WithContext(ctx)
 }
-
-// decodeJSONBody parses the recorder body into the destination, failing the
-// test on a malformed payload.
-func decodeJSONBody(t *testing.T, rr *httptest.ResponseRecorder, dst interface{}) {
-	t.Helper()
-	if err := json.Unmarshal(rr.Body.Bytes(), dst); err != nil {
-		t.Fatalf("decode response: %v (body=%s)", err, rr.Body.String())
-	}
-}

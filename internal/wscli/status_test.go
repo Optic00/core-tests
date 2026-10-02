@@ -28,18 +28,18 @@ func TestStatusListScopesTwoWorkspaces(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/rest/api/v1/workspaces":
+		case "/rest/api/v2/workspaces":
 			_ = json.NewEncoder(w).Encode(PaginatedResponse[Workspace]{Data: workspaces})
-		case "/rest/api/v1/workspaces/11":
-			_ = json.NewEncoder(w).Encode(workspaces[0])
-		case "/rest/api/v1/workspaces/22":
-			_ = json.NewEncoder(w).Encode(workspaces[1])
-		case "/rest/api/v1/workspaces/11/statuses":
-			_ = json.NewEncoder(w).Encode(workspaceStatuses[11])
-		case "/rest/api/v1/workspaces/22/statuses":
-			_ = json.NewEncoder(w).Encode(workspaceStatuses[22])
-		case "/rest/api/v1/statuses":
-			_ = json.NewEncoder(w).Encode(systemStatuses)
+		case "/rest/api/v2/workspaces/11":
+			_ = json.NewEncoder(w).Encode(DataDocument[Workspace]{Data: workspaces[0]})
+		case "/rest/api/v2/workspaces/22":
+			_ = json.NewEncoder(w).Encode(DataDocument[Workspace]{Data: workspaces[1]})
+		case "/rest/api/v2/workspaces/11/statuses":
+			_ = json.NewEncoder(w).Encode(v2StatusDocument(workspaceStatuses[11]))
+		case "/rest/api/v2/workspaces/22/statuses":
+			_ = json.NewEncoder(w).Encode(v2StatusDocument(workspaceStatuses[22]))
+		case "/rest/api/v2/statuses":
+			_ = json.NewEncoder(w).Encode(v2StatusDocument(systemStatuses))
 		default:
 			http.NotFound(w, r)
 		}
@@ -83,6 +83,21 @@ func TestStatusListScopesTwoWorkspaces(t *testing.T) {
 	if system.Scope != "system" || system.Workspace != nil || len(system.Statuses) != 3 {
 		t.Fatalf("system output = %+v", system)
 	}
+}
+
+func v2StatusDocument(statuses []Status) DataDocument[[]map[string]any] {
+	items := make([]map[string]any, len(statuses))
+	for i, status := range statuses {
+		items[i] = map[string]any{
+			"id": status.ID, "name": status.Name, "description": status.Description,
+			"is_default": status.IsDefault,
+			"category": map[string]any{
+				"id": status.CategoryID, "name": status.CategoryName,
+				"color": status.CategoryColor, "is_completed": status.IsCompleted,
+			},
+		}
+	}
+	return DataDocument[[]map[string]any]{Data: items}
 }
 
 func TestStatusListOutputLabelsScope(t *testing.T) {

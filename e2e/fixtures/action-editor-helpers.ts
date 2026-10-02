@@ -1,4 +1,4 @@
-import { type APIRequestContext, expect, type Page } from './context-path';
+import { type APIRequestContext, type Page, expect } from './context-path';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 const defaultHeaders = { 'Sec-Fetch-Site': 'same-origin' };
@@ -34,12 +34,13 @@ export async function createActionViaAPI(
     edges?: ActionEdgeInput[];
   }
 ) {
-  const resp = await request.post(`${BASE_URL}/api/workspaces/${workspaceId}/actions`, {
+  const resp = await request.post(`${BASE_URL}/api/v2/workspaces/${workspaceId}/actions`, {
     headers: defaultHeaders,
     data: { trigger_config: '{}', edges: [], ...data },
   });
   expect(resp.status(), `create action failed: ${await resp.text()}`).toBe(201);
-  return resp.json();
+  const body = await resp.json();
+  return body.data;
 }
 
 export async function getActionViaAPI(
@@ -47,11 +48,13 @@ export async function getActionViaAPI(
   workspaceId: number,
   actionId: number
 ) {
-  const resp = await request.get(`${BASE_URL}/api/workspaces/${workspaceId}/actions/${actionId}`, {
-    headers: defaultHeaders,
-  });
+  const resp = await request.get(
+    `${BASE_URL}/api/v2/workspaces/${workspaceId}/actions/${actionId}`,
+    { headers: defaultHeaders }
+  );
   expect(resp.ok(), `get action failed: ${resp.status()}`).toBeTruthy();
-  return resp.json();
+  const body = await resp.json();
+  return body.data;
 }
 
 export async function openActionEditor(page: Page, workspaceId: number, actionId: number) {
@@ -89,7 +92,7 @@ export async function chooseSelectOption(
 }
 
 /**
- * Save the action through the real button interaction and wait for the PUT to
+ * Save the action through the real button interaction and wait for the PATCH to
  * resolve. If the button is covered or disabled, the test should expose that
  * user-visible defect rather than bypassing it.
  */
@@ -97,8 +100,8 @@ export async function saveAction(page: Page, workspaceId: number, actionId: numb
   const [resp] = await Promise.all([
     page.waitForResponse(
       (r) =>
-        r.url().includes(`/api/workspaces/${workspaceId}/actions/${actionId}`) &&
-        r.request().method() === 'PUT'
+        r.url().includes(`/api/v2/workspaces/${workspaceId}/actions/${actionId}`) &&
+        r.request().method() === 'PATCH'
     ),
     page.getByTestId('action-editor-save').click(),
   ]);

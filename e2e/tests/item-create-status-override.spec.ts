@@ -34,9 +34,10 @@ interface Fixture {
 }
 
 async function fetchDefaultCategoryID(request: APIRequestContext): Promise<number> {
-  const resp = await request.get('/api/status-categories', { headers: SEC_FETCH });
+  const resp = await request.get('/api/v2/status-categories', { headers: SEC_FETCH });
   expect(resp.ok()).toBeTruthy();
-  const cats: Array<{ id: number; is_default: boolean }> = await resp.json();
+  const body = await resp.json();
+  const cats: Array<{ id: number; is_default: boolean }> = body.data;
   const def = cats.find((c) => c.is_default) ?? cats[0];
   expect(def, 'no status categories seeded').toBeTruthy();
   return def.id;
@@ -47,12 +48,12 @@ async function createStatus(
   name: string,
   categoryID: number
 ): Promise<number> {
-  const resp = await request.post('/api/statuses', {
+  const resp = await request.post('/api/v2/statuses', {
     headers: SEC_FETCH,
     data: { name, category_id: categoryID },
   });
   expect(resp.ok(), `status ${name} create: ${resp.status()}`).toBeTruthy();
-  return (await resp.json()).id as number;
+  return (await resp.json()).data.id as number;
 }
 
 async function buildFixture(request: APIRequestContext, prefix: string): Promise<Fixture> {
@@ -61,20 +62,22 @@ async function buildFixture(request: APIRequestContext, prefix: string): Promise
   const readyId = await createStatus(request, `${prefix}-Ready`, categoryID);
   const blockedId = await createStatus(request, `${prefix}-Blocked`, categoryID);
 
-  const wfResp = await request.post('/api/workflows', {
+  const wfResp = await request.post('/api/v2/workflows', {
     headers: SEC_FETCH,
     data: { name: `${prefix}-wf`, description: 'e2e create-status-override' },
   });
   expect(wfResp.ok(), `workflow create: ${wfResp.status()}`).toBeTruthy();
-  const workflowId = (await wfResp.json()).id as number;
+  const workflowId = (await wfResp.json()).data.id as number;
 
-  const txResp = await request.put(`/api/workflows/${workflowId}/transitions`, {
+  const txResp = await request.put(`/api/v2/workflows/${workflowId}/transitions`, {
     headers: SEC_FETCH,
-    data: [
-      { from_status_id: null, to_status_id: triageId }, // initial
-      { from_status_id: triageId, to_status_id: readyId },
-      { from_status_id: readyId, to_status_id: blockedId },
-    ],
+    data: {
+      transitions: [
+        { from_status_id: null, to_status_id: triageId }, // initial
+        { from_status_id: triageId, to_status_id: readyId },
+        { from_status_id: readyId, to_status_id: blockedId },
+      ],
+    },
   });
   expect(txResp.ok(), `set transitions: ${txResp.status()} ${await txResp.text()}`).toBeTruthy();
   await txResp.json();
@@ -128,10 +131,7 @@ test.describe('Item creation — status placement', () => {
     }
   });
 
-  test('UI create modal lands the item on the workflow initial status', async ({
-    page,
-    request,
-  }) => {
+  test('UI create modal lands the item on the workflow initial status', async ({ page, request }) => {
     // Frontend half of the fix: the create form no longer hardcodes a
     // default status, so the backend's initial-status placement wins.
     const itemPage = new ItemPage(page);
@@ -143,13 +143,12 @@ test.describe('Item creation — status placement', () => {
     await expect
       .poll(
         async () => {
-          const listResp = await request.get(`/api/items?workspace_id=${fx.workspaceId}`, {
+          const listResp = await request.get(`/api/v2/items?workspace_id=${fx.workspaceId}`, {
             headers: SEC_FETCH,
           });
           if (!listResp.ok()) return null;
           const body = await listResp.json();
-          const items: Array<{ title: string; status_id: number | null }> =
-            body.data ?? body.items ?? body;
+          const items: Array<{ title: string; status_id: number | null }> = body.data;
           return items.find((i) => i.title === title)?.status_id ?? null;
         },
         { message: 'UI-created item should appear with the workflow initial status' }

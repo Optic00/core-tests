@@ -179,7 +179,7 @@ func TestChannelManagerCanPreserveButNotExpandPortalWorkspaceBindings(t *testing
 
 	createWorkspace := func(name, key string) int {
 		t.Helper()
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", map[string]interface{}{
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", map[string]interface{}{
 			"name":        name,
 			"key":         key,
 			"description": "Channel manager workspace binding test",

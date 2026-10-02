@@ -5,15 +5,25 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"windshift/internal/constants"
 )
 
-func TestItemCreation_CookieAndRESTV1Contract(t *testing.T) {
+func TestItemCreationV2ContractMatchesAcrossMounts(t *testing.T) {
 	server, _ := StartTestServer(t, GetDBType())
 	CreateBearerToken(t, server)
 	workspaceID, _ := CreateTestWorkspace(t, server, "Item Creation Contract", shortKey("ICC"))
+	label := createLabelFx(t, server, workspaceID, "create-contract", "#2563eb")
 
 	itemTypes := GetItemTypes(t, server, GetDefaultConfigurationSet(t, server))
 	itemTypeID := RequireItemTypeID(t, itemTypes, "Task")
+	personalResponse := MakeAuthRequest(t, server, http.MethodGet, "/workspaces/personal", nil)
+	defer personalResponse.Body.Close()
+	AssertStatusCode(t, personalResponse, http.StatusCreated)
+	var personalWorkspace struct {
+		ID int `json:"id"`
+	}
+	DecodeJSON(t, personalResponse, &personalWorkspace)
 
 	create := func(surface string) map[string]interface{} {
 		t.Helper()
@@ -22,12 +32,13 @@ func TestItemCreation_CookieAndRESTV1Contract(t *testing.T) {
 			"item_type_id": itemTypeID,
 			"title":        "  Promise<Anything> shared item\t",
 			"description":  "before<script>bad()</script><br/>after",
+			"label_ids":    []int{label.ID},
 		}
 		var response *http.Response
-		if surface == "cookie" {
-			response = MakeAuthRequest(t, server, http.MethodPost, "/items", body)
+		if surface == "session" {
+			response = MakeAuthRequest(t, server, http.MethodPost, "/v2/items", body)
 		} else {
-			response = MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v1/items", body)
+			response = MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v2/items", body)
 		}
 		defer response.Body.Close()
 		AssertStatusCode(t, response, http.StatusCreated)
@@ -36,15 +47,85 @@ func TestItemCreation_CookieAndRESTV1Contract(t *testing.T) {
 		return item
 	}
 
-	for _, surface := range []string{"cookie", "v1"} {
+	for _, surface := range []string{"session", "bearer"} {
 		item := create(surface)
 		if item["title"] != "Promise<Anything> shared item" || item["description"] != "before<script>bad()</script><br/>after" {
 			t.Fatalf("%s create changed source = %v", surface, item)
+		}
+		labels, ok := item["labels"].([]interface{})
+		if !ok || len(labels) != 1 || labels[0].(map[string]interface{})["id"] != float64(label.ID) {
+			t.Fatalf("%s create labels = %#v, want label %d", surface, item["labels"], label.ID)
 		}
 		rendered, _ := item["description_html"].(string)
 		if strings.Contains(rendered, "<script>") || !strings.Contains(rendered, "&lt;script&gt;") || !strings.Contains(rendered, "<br>") {
 			t.Fatalf("%s description_html is not safe rendered Markdown: %q", surface, rendered)
 		}
+	}
+
+	for surface, request := range map[string]func(map[string]interface{}) *http.Response{
+		"cookie": func(body map[string]interface{}) *http.Response {
+			return MakeAuthRequest(t, server, http.MethodPost, "/v2/items", body)
+		},
+		"bearer": func(body map[string]interface{}) *http.Response {
+			return MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v2/items", body)
+		},
+	} {
+		t.Run(surface+" task invariant", func(t *testing.T) {
+			invalid := request(map[string]interface{}{
+				"workspace_id": workspaceID,
+				"item_type_id": itemTypeID,
+				"title":        "Invalid shared task",
+				"status_id":    constants.StatusIDOpen,
+				"is_task":      true,
+			})
+			AssertStatusCode(t, invalid, http.StatusBadRequest)
+			var errorBody struct {
+				Error struct {
+					Code    string            `json:"code"`
+					Details map[string]string `json:"details"`
+				} `json:"error"`
+			}
+			DecodeJSON(t, invalid, &errorBody)
+			invalid.Body.Close()
+			if errorBody.Error.Code != "validation_failed" || errorBody.Error.Details["field"] != "is_task" {
+				t.Fatalf("task validation response = %#v", errorBody)
+			}
+
+			valid := request(map[string]interface{}{
+				"workspace_id": personalWorkspace.ID,
+				"item_type_id": itemTypeID,
+				"title":        "Valid personal task",
+				"status_id":    constants.StatusIDOpen,
+				"is_task":      true,
+			})
+			defer valid.Body.Close()
+			AssertStatusCode(t, valid, http.StatusCreated)
+			var item struct {
+				ID          int  `json:"id"`
+				WorkspaceID int  `json:"workspace_id"`
+				StatusID    *int `json:"status_id"`
+				IsTask      bool `json:"is_task"`
+			}
+			DecodeJSON(t, valid, &item)
+			if item.WorkspaceID != personalWorkspace.ID || item.StatusID == nil || *item.StatusID != constants.StatusIDOpen || !item.IsTask {
+				t.Fatalf("created personal task = %#v", item)
+			}
+
+			transitionPath := fmt.Sprintf("/v2/items/%d/transition", item.ID)
+			var transition *http.Response
+			if surface == "bearer" {
+				transitionPath = fmt.Sprintf("/rest/api/v2/items/%d/transition", item.ID)
+				transition = MakeBearerRequest(t, server, http.MethodPost, transitionPath, map[string]interface{}{"to_status_id": 2})
+			} else {
+				transition = MakeAuthRequest(t, server, http.MethodPost, transitionPath, map[string]interface{}{"to_status_id": 2})
+			}
+			AssertStatusCode(t, transition, http.StatusBadRequest)
+			DecodeJSON(t, transition, &errorBody)
+			transition.Body.Close()
+			if errorBody.Error.Code != "validation_failed" || errorBody.Error.Details["field"] != "is_task" {
+				t.Fatalf("task transition response = %#v", errorBody)
+			}
+		})
 	}
 
 	for _, tc := range []struct {
@@ -67,14 +148,23 @@ func TestItemCreation_CookieAndRESTV1Contract(t *testing.T) {
 				"title":        "Invalid type",
 			},
 		},
+		{
+			name: "unknown label",
+			body: map[string]interface{}{
+				"workspace_id": workspaceID,
+				"item_type_id": itemTypeID,
+				"title":        "Invalid label",
+				"label_ids":    []int{999999},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for surface, request := range map[string]func() *http.Response{
 				"cookie": func() *http.Response {
-					return MakeAuthRequest(t, server, http.MethodPost, "/items", tc.body)
+					return MakeAuthRequest(t, server, http.MethodPost, "/v2/items", tc.body)
 				},
-				"v1": func() *http.Response {
-					return MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v1/items", tc.body)
+				"bearer": func() *http.Response {
+					return MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v2/items", tc.body)
 				},
 			} {
 				response := request()
@@ -118,10 +208,10 @@ func TestItemCreation_CookieAndRESTV1Contract(t *testing.T) {
 
 			for surface, request := range map[string]func() *http.Response{
 				"cookie": func() *http.Response {
-					return MakeAuthRequest(t, server, http.MethodPost, "/items", body)
+					return MakeAuthRequest(t, server, http.MethodPost, "/v2/items", body)
 				},
-				"v1": func() *http.Response {
-					return MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v1/items", body)
+				"bearer": func() *http.Response {
+					return MakeBearerRequest(t, server, http.MethodPost, "/rest/api/v2/items", body)
 				},
 			} {
 				response := request()
@@ -130,22 +220,9 @@ func TestItemCreation_CookieAndRESTV1Contract(t *testing.T) {
 				var errorBody map[string]interface{}
 				DecodeJSON(t, response, &errorBody)
 				response.Body.Close()
-				if errorBody["code"] != "VALIDATION_FAILED" {
-					t.Fatalf("%s error code = %v, want VALIDATION_FAILED", surface, errorBody["code"])
-				}
-
-				if surface == "cookie" {
-					if errorBody["error"] != "assignee_id: Assignee user not found" {
-						t.Fatalf("cookie error = %v, want field-scoped assignee error", errorBody["error"])
-					}
-					continue
-				}
-				if errorBody["error"] != "Assignee user not found" {
-					t.Fatalf("v1 error = %v, want Assignee user not found", errorBody["error"])
-				}
-				details, ok := errorBody["details"].(map[string]interface{})
-				if !ok || details["field"] != "assignee_id" {
-					t.Fatalf("v1 validation details = %v, want field=assignee_id", errorBody["details"])
+				apiError, ok := errorBody["error"].(map[string]interface{})
+				if !ok || apiError["code"] != "validation_failed" || !strings.Contains(fmt.Sprint(apiError["message"]), "Assignee user not found") {
+					t.Fatalf("%s validation error = %v", surface, errorBody)
 				}
 			}
 		})
@@ -171,7 +248,7 @@ func TestItemCreation_NumberAndDateCustomFieldValidation(t *testing.T) {
 			"title":               title,
 			"custom_field_values": values,
 		}
-		return MakeAuthRequest(t, server, http.MethodPost, "/items", body)
+		return MakeAuthRequest(t, server, http.MethodPost, "/v2/items", body)
 	}
 
 	t.Run("rejects invalid number", func(t *testing.T) {
@@ -180,7 +257,7 @@ func TestItemCreation_NumberAndDateCustomFieldValidation(t *testing.T) {
 		AssertStatusCode(t, response, http.StatusBadRequest)
 		var body map[string]interface{}
 		DecodeJSON(t, response, &body)
-		if body["code"] != "VALIDATION_FAILED" || !strings.Contains(fmt.Sprint(body), "number value must be numeric") {
+		if !strings.Contains(fmt.Sprint(body), "validation_failed") || !strings.Contains(fmt.Sprint(body), "number value must be numeric") {
 			t.Fatalf("invalid-number response = %v", body)
 		}
 	})
@@ -191,7 +268,7 @@ func TestItemCreation_NumberAndDateCustomFieldValidation(t *testing.T) {
 		AssertStatusCode(t, response, http.StatusBadRequest)
 		var body map[string]interface{}
 		DecodeJSON(t, response, &body)
-		if body["code"] != "VALIDATION_FAILED" || !strings.Contains(fmt.Sprint(body), "YYYY-MM-DD") {
+		if !strings.Contains(fmt.Sprint(body), "validation_failed") || !strings.Contains(fmt.Sprint(body), "YYYY-MM-DD") {
 			t.Fatalf("invalid-date response = %v", body)
 		}
 	})

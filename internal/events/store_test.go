@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -203,6 +204,117 @@ func TestExpiredLeaseIsReclaimedAndRejectsStaleAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestRenewedLeasePreventsConcurrentReclaimUntilWorkerStops(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+	ctx := context.Background()
+	store := NewStore(tdb.DB)
+	configureConsumer(t, store, "actions.items", "item.changed")
+	event := appendEvent(t, store, testEvent("item", "42", "item.changed"))
+	reconcile(t, store, 1)
+
+	claimedAt := time.Date(2030, time.September, 5, 12, 0, 0, 0, time.UTC)
+	leaseDuration := time.Minute
+	owner := claim(t, store, "actions.items", "worker-old", claimedAt)
+	renewedAt := claimedAt.Add(50 * time.Second)
+	renewedUntil, err := store.Renew(ctx, owner, renewedAt, leaseDuration)
+	if err != nil {
+		t.Fatalf("Renew() error = %v", err)
+	}
+	if want := renewedAt.Add(leaseDuration); !renewedUntil.Equal(want) {
+		t.Fatalf("renewed expiry = %s, want %s", renewedUntil, want)
+	}
+
+	blocked, err := store.Claim(ctx, "actions.items", "worker-new", claimedAt.Add(70*time.Second), leaseDuration)
+	if err != nil {
+		t.Fatalf("Claim() during renewed ownership error = %v", err)
+	}
+	if blocked != nil {
+		t.Fatalf("worker-new reclaimed event %d while worker-old lease was renewed", blocked.Event.ID)
+	}
+
+	reclaimed := claim(t, store, "actions.items", "worker-new", renewedUntil.Add(time.Nanosecond))
+	if reclaimed.Event.ID != event.ID || reclaimed.LeaseToken == owner.LeaseToken {
+		t.Fatalf("reclaimed delivery = event:%d token:%q, want event %d with a new token", reclaimed.Event.ID, reclaimed.LeaseToken, event.ID)
+	}
+	if _, err := store.Renew(ctx, owner, renewedUntil.Add(time.Second), leaseDuration); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("stale Renew() error = %v, want ErrLeaseLost", err)
+	}
+}
+
+func TestEngineRenewsOwnershipWhileHandlerIsStillRunning(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+	ctx := context.Background()
+	config := Config{
+		WorkerCount: 1, PollInterval: time.Second,
+		LeaseDuration: 300 * time.Millisecond, HandlerTimeout: 200 * time.Millisecond,
+		ReconcileBatch: 10, MaxAttempts: 2,
+		BaseRetryDelay: time.Millisecond, MaxRetryDelay: time.Second,
+		FullReconcileInterval: time.Hour,
+	}
+	engine := NewEngine(tdb.DB, config)
+	configureConsumer(t, engine.Store(), "actions.items", "item.changed")
+	appendEvent(t, engine.Store(), testEvent("item", "42", "item.changed"))
+	reconcile(t, engine.Store(), 1)
+
+	claimedAt := time.Date(2030, time.September, 5, 12, 0, 0, 0, time.UTC)
+	var logicalNow atomic.Int64
+	logicalNow.Store(claimedAt.UnixNano())
+	engine.now = func() time.Time { return time.Unix(0, logicalNow.Load()).UTC() }
+	started := make(chan struct{})
+	release := make(chan struct{})
+	renewed := make(chan time.Time, 1)
+	engine.leaseRenewed = func(_ Delivery, expiresAt time.Time) { renewed <- expiresAt }
+	if err := engine.RegisterHandler("actions.items", HandlerFunc(func(context.Context, Event) error {
+		close(started)
+		<-release
+		return nil
+	})); err != nil {
+		t.Fatalf("RegisterHandler() error = %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := engine.processOne(ctx)
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("first worker handler did not start")
+	}
+	logicalNow.Store(claimedAt.Add(200 * time.Millisecond).UnixNano())
+
+	var renewedUntil time.Time
+	select {
+	case renewedUntil = <-renewed:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("first worker did not renew its delivery lease")
+	}
+	second, err := engine.Store().Claim(ctx, "actions.items", "worker-new", claimedAt.Add(301*time.Millisecond), config.LeaseDuration)
+	if err != nil {
+		close(release)
+		t.Fatalf("second worker Claim() error = %v", err)
+	}
+	if second != nil {
+		close(release)
+		t.Fatalf("second worker reclaimed event %d before renewed expiry %s", second.Event.ID, renewedUntil)
+	}
+
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("first worker processOne() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first worker did not finish after release")
+	}
+}
+
 func TestFailedDeliveryReplayAndSkipAreAuditedAndUnblockStream(t *testing.T) {
 	tdb := testutils.CreateTestDB(t, true)
 	defer tdb.Close()
@@ -374,6 +486,55 @@ func TestEngineProcessesRegisteredConsumerAndReportsStats(t *testing.T) {
 	}
 }
 
+func TestEngineRotatesConsumerClaimPriority(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	t.Cleanup(func() { _ = tdb.Close() })
+	ctx := t.Context()
+	engine := NewEngine(tdb.DB, DefaultConfig())
+	configureConsumer(t, engine.Store(), "a-busy", "busy.changed")
+	configureConsumer(t, engine.Store(), "z-later", "later.changed")
+	appendEvent(t, engine.Store(), testEvent("busy", "1", "busy.changed"))
+	appendEvent(t, engine.Store(), testEvent("busy", "2", "busy.changed"))
+	later := appendEvent(t, engine.Store(), testEvent("later", "1", "later.changed"))
+	reconcile(t, engine.Store(), 3)
+
+	handled := []string{}
+	for _, key := range []string{"a-busy", "z-later"} {
+		consumerKey := key
+		if err := engine.RegisterHandler(consumerKey, HandlerFunc(func(_ context.Context, event Event) error {
+			handled = append(handled, consumerKey+":"+event.AggregateID)
+			return nil
+		})); err != nil {
+			t.Fatalf("RegisterHandler(%q) error = %v", consumerKey, err)
+		}
+	}
+	engine.now = func() time.Time { return time.Now().UTC().Add(time.Second) }
+
+	for range 2 {
+		worked, err := engine.processOne(ctx)
+		if err != nil {
+			t.Fatalf("processOne() error = %v", err)
+		}
+		if !worked {
+			t.Fatal("processOne() did not claim available work")
+		}
+	}
+
+	if len(handled) != 2 || handled[0] != "a-busy:1" || handled[1] != "z-later:1" {
+		t.Fatalf("handled = %v, want [a-busy:1 z-later:1]", handled)
+	}
+	var state string
+	if err := tdb.QueryRow(`
+		SELECT state FROM domain_event_deliveries
+		WHERE event_id = ? AND consumer_key = 'z-later'
+	`, later.ID).Scan(&state); err != nil {
+		t.Fatalf("load later consumer delivery: %v", err)
+	}
+	if state != string(StateCompleted) {
+		t.Fatalf("later consumer delivery state = %q, want %q", state, StateCompleted)
+	}
+}
+
 func TestEngineShutdownCanBeAwaitedAgainAfterTimeout(t *testing.T) {
 	tdb := testutils.CreateTestDB(t, true)
 	defer tdb.Close()
@@ -382,6 +543,7 @@ func TestEngineShutdownCanBeAwaitedAgainAfterTimeout(t *testing.T) {
 		LeaseDuration: time.Second, HandlerTimeout: 500 * time.Millisecond,
 		ReconcileBatch: 10, MaxAttempts: 2,
 		BaseRetryDelay: time.Millisecond, MaxRetryDelay: time.Second,
+		FullReconcileInterval: time.Hour,
 	}
 	engine := NewEngine(tdb.DB, config)
 	configureConsumer(t, engine.Store(), "blocking", "item.changed")
@@ -489,4 +651,11 @@ func assertRowCount(t *testing.T, db database.Database, table string, want int) 
 	if got != want {
 		t.Fatalf("%s row count = %d, want %d", table, got, want)
 	}
+}
+
+// HandlerFunc adapts a function to Handler.
+type HandlerFunc func(context.Context, Event) error
+
+func (f HandlerFunc) Handle(ctx context.Context, event Event) error {
+	return f(ctx, event)
 }

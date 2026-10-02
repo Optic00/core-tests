@@ -3,7 +3,6 @@ import {
   escapeHtml,
   safeRelativeRedirectPath,
   sanitizeHtml,
-  sanitizeMarkdownHtml,
   stripHtml,
 } from './sanitize';
 
@@ -105,42 +104,6 @@ describe('stripHtml', () => {
     expect(stripHtml('')).toBe('');
     expect(stripHtml(null as unknown as string)).toBe('');
     expect(stripHtml(undefined as unknown as string)).toBe('');
-  });
-});
-
-describe('sanitizeMarkdownHtml', () => {
-  it('removes an unsafe server response independently of Markdown parsing', () => {
-    const dirty =
-      '<p>safe</p><script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">bad</a>';
-    expect(sanitizeMarkdownHtml(dirty)).toBe('<p>safe</p><img src="x"><a>bad</a>');
-  });
-
-  it('keeps supported server-rendered Markdown', () => {
-    const rendered =
-      '<h2>Heading</h2><p><code>Promise&lt;Anything&gt;</code> <a href="page:185">plan</a></p>';
-    expect(sanitizeMarkdownHtml(rendered)).toBe(rendered);
-  });
-
-  it('allows raster data images but rejects SVG data images and data links', () => {
-    const png = 'data:image/png;base64,iVBORw0KGgo=';
-    expect(sanitizeMarkdownHtml(`<img src="${png}" alt="safe">`)).toBe(
-      `<img src="${png}" alt="safe">`
-    );
-    expect(sanitizeMarkdownHtml('<img src="data:image/svg+xml;base64,PHN2Zz4=" alt="x">')).toBe(
-      '<img alt="x">'
-    );
-    expect(sanitizeMarkdownHtml(`<a href="${png}">image</a>`)).toBe('<a>image</a>');
-  });
-
-  it('accepts only numeric page links and rejects external-looking relative links', () => {
-    expect(sanitizeMarkdownHtml('<a href="page:185">plan</a>')).toBe('<a href="page:185">plan</a>');
-    expect(sanitizeMarkdownHtml('<a href="page:javascript">bad page</a>')).toBe('<a>bad page</a>');
-    expect(sanitizeMarkdownHtml('<a href="//evil.example/path">bad host</a>')).toBe(
-      '<a>bad host</a>'
-    );
-    expect(sanitizeMarkdownHtml('<a href="\\evil.example/path">bad slash</a>')).toBe(
-      '<a>bad slash</a>'
-    );
   });
 });
 

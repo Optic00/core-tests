@@ -55,9 +55,3 @@ func WithAuthContext(r *http.Request, user *models.User) *http.Request {
 func ExecuteAuthenticatedRequest(t *testing.T, handler TestHandler, req *http.Request, user *models.User) *ResponseRecorder {
 	return ExecuteRequest(t, handler, WithAuthContext(req, user))
 }
-
-// CreateAuthenticatedJSONRequest creates a JSON request with auth context
-func CreateAuthenticatedJSONRequest(t *testing.T, method, url string, body interface{}, user *models.User) *http.Request {
-	req := CreateJSONRequest(t, method, url, body)
-	return WithAuthContext(req, user)
-}

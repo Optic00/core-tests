@@ -75,8 +75,8 @@ test.describe('Rich editor security + mentions', () => {
     const display = page.getByTestId('item-description-display');
     await expect(display).toBeVisible({ timeout: 15_000 });
     await expect(display).toContainText('<script>');
-    await expect(display.locator('script')).toHaveCount(0);
-    await expect(display.locator('img')).toHaveCount(0);
+    expect(await display.evaluate((node) => node.querySelectorAll('script').length)).toBe(0);
+    expect(await display.evaluate((node) => node.querySelectorAll('img').length)).toBe(0);
     expect(await page.evaluate(() => Reflect.has(window, '__markdownXSS'))).toBe(false);
   });
 
@@ -159,7 +159,7 @@ test.describe('Rich editor security + mentions', () => {
           .poll(
             async () =>
               (
-                await memberCtx.request.get(`/api/items/${item.id}`, {
+                await memberCtx.request.get(`/api/v2/items/${item.id}`, {
                   headers: SEC_FETCH,
                 })
               ).status(),
@@ -208,7 +208,7 @@ test.describe('Rich editor security + mentions', () => {
 
         const submitPromise = page.waitForResponse(
           (resp) =>
-            resp.url().includes(`/api/items/${item.id}/comments`) &&
+            resp.url().includes(`/api/v2/items/${item.id}/comments`) &&
             resp.request().method() === 'POST',
           { timeout: 15_000 }
         );

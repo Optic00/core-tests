@@ -1,5 +1,9 @@
-import { createItemViaAPI, createWorkspaceViaAPI, updateItemViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
+import { test, expect } from '../fixtures/errors';
+import {
+  createWorkspaceViaAPI,
+  createItemViaAPI,
+  updateItemViaAPI,
+} from '../fixtures/api-helpers';
 
 /**
  * End-to-end proof of the item-detail live-update stream (WI-484): a change made
@@ -34,14 +38,15 @@ test.describe('Item detail live updates via SSE (WI-484)', () => {
     const streamReady = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/items/${item.id}/events`) && response.status() === 200,
-      { timeout: 15_000 }
+      { timeout: 15_000 },
     );
     await page.goto(`/workspaces/${ws.id}/items/${item.id}`);
     await streamReady;
+    await expect(page.getByTestId('item-detail-ready')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('item-detail')).toHaveAttribute(
       'data-live-updates',
       'connected',
-      { timeout: 15_000 }
+      { timeout: 15_000 },
     );
     const title = page.getByTestId('item-title-edit');
     await expect(title).toHaveText(originalTitle);
@@ -75,11 +80,11 @@ test.describe('Item detail live updates via SSE (WI-484)', () => {
     await expect(page.getByTestId('item-detail')).toHaveAttribute(
       'data-live-updates',
       'connected',
-      { timeout: 15_000 }
+      { timeout: 15_000 },
     );
 
     const commentText = `Live comment ${stamp}`;
-    const resp = await request.post(`/api/items/${item.id}/comments`, {
+    const resp = await request.post(`/api/v2/items/${item.id}/comments`, {
       data: { content: commentText },
     });
     expect(resp.ok()).toBeTruthy();
@@ -114,16 +119,22 @@ test.describe('Item detail live updates via SSE (WI-484)', () => {
     const title = `Doomed ${stamp}`;
     const item = await createItemViaAPI(request, ws.id, { title });
 
+    const commentsReady = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/v2/items/${item.id}/comments`) && response.status() === 200,
+      { timeout: 15_000 },
+    );
     await page.goto(`/workspaces/${ws.id}/items/${item.id}`);
+    await commentsReady;
     const titleBtn = page.getByTestId('item-title-edit');
     await expect(titleBtn).toBeVisible();
     await expect(page.getByTestId('item-detail')).toHaveAttribute(
       'data-live-updates',
       'connected',
-      { timeout: 15_000 }
+      { timeout: 15_000 },
     );
 
-    const resp = await request.delete(`/api/items/${item.id}`);
+    const resp = await request.delete(`/api/v2/items/${item.id}`);
     expect(resp.ok()).toBeTruthy();
 
     // The open detail must not keep showing the deleted item: the `deleted`

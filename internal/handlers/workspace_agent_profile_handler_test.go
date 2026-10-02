@@ -162,7 +162,7 @@ func TestWorkspaceRunnerOnboardingIsAdminAndPoolScoped(t *testing.T) {
 		return testutils.ExecuteAuthenticatedRequest(t, handler.MintRunnerSetupToken, req, user)
 	}
 
-	mint(viewer, poolID, 1).AssertStatusCode(http.StatusForbidden)
+	mint(viewer, poolID, 1).AssertStatusCode(http.StatusNotFound)
 	mint(admin, foreignPoolID, 1).AssertStatusCode(http.StatusNotFound)
 	mint(admin, poolID, 721).AssertStatusCode(http.StatusBadRequest)
 
@@ -265,7 +265,7 @@ func TestWorkspaceAgentProfileHandlerTemplatesCreateAndActivateRequireAdmin(t *t
 		req.SetPathValue("workspaceId", workspacePath)
 		return testutils.ExecuteAuthenticatedRequest(t, handler.Templates, req, user)
 	}
-	templateRequest(viewer).AssertStatusCode(http.StatusForbidden)
+	templateRequest(viewer).AssertStatusCode(http.StatusNotFound)
 	adminTemplates := templateRequest(admin)
 	adminTemplates.AssertStatusCode(http.StatusOK)
 	var templates []llm.AgentTemplate
@@ -287,7 +287,7 @@ func TestWorkspaceAgentProfileHandlerTemplatesCreateAndActivateRequireAdmin(t *t
 		req.SetPathValue("workspaceId", workspacePath)
 		return testutils.ExecuteAuthenticatedRequest(t, handler.CreateProfile, req, user)
 	}
-	createRequest(viewer).AssertStatusCode(http.StatusForbidden)
+	createRequest(viewer).AssertStatusCode(http.StatusNotFound)
 	createdResponse := createRequest(admin)
 	createdResponse.AssertStatusCode(http.StatusCreated)
 	var created bindingResponse
@@ -312,7 +312,7 @@ func TestWorkspaceAgentProfileHandlerTemplatesCreateAndActivateRequireAdmin(t *t
 		req.SetPathValue("id", strconv.Itoa(created.ID))
 		return testutils.ExecuteAuthenticatedRequest(t, handler.TestProfile, req, user)
 	}
-	testRequest(viewer).AssertStatusCode(http.StatusForbidden)
+	testRequest(viewer).AssertStatusCode(http.StatusNotFound)
 	privateResponse := testRequest(admin)
 	privateResponse.AssertStatusCode(http.StatusOK)
 	var privateResult services.PrivateProfileTestResult
@@ -531,5 +531,5 @@ func TestWorkspaceAgentProfileCatalogIsMemberVisibleAndConfigurationSafe(t *test
 		t.Fatalf("viewer catalog leaked owner attribution: %s", viewerResponse.Body.String())
 	}
 
-	request(viewer, data.WorkspaceID+999).AssertStatusCode(http.StatusForbidden)
+	request(viewer, data.WorkspaceID+999).AssertStatusCode(http.StatusNotFound)
 }

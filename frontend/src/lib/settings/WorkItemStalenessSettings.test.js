@@ -29,8 +29,8 @@ vi.mock('../stores/workItemStalenessSettings.svelte.js', () => ({
 }));
 
 import { api } from '../api.js';
-import { successToast } from '../stores/toasts.svelte.js';
 import { workItemStalenessSettings } from '../stores/workItemStalenessSettings.svelte.js';
+import { successToast } from '../stores/toasts.svelte.js';
 import WorkItemStalenessSettings from './WorkItemStalenessSettings.svelte';
 
 describe('WorkItemStalenessSettings', () => {

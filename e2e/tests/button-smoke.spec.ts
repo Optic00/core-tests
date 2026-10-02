@@ -1,5 +1,5 @@
+import { test, expect } from '../fixtures/errors';
 import { externalPath } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/errors';
 import { generateWorkspace } from '../fixtures/test-data';
 import { WorkspacePage } from '../pages/workspace.page';
 
@@ -61,7 +61,7 @@ test.describe('Button smoke — page loads without console errors', () => {
     test(`${name} loads clean`, async ({ page, allowConsoleError }) => {
       allowEnvironmentalNoise(allowConsoleError);
       await page.goto(path);
-      await page.waitForLoadState('networkidle');
+
       if (settleSelector) {
         await page
           .locator(settleSelector)
@@ -89,10 +89,7 @@ test.describe('Button smoke — page loads without console errors', () => {
  * `body` ensures the handler fires. Falls back to clicking the backdrop.
  */
 async function closeModal(page: import('@playwright/test').Page) {
-  await page
-    .locator('body')
-    .press('Escape')
-    .catch(() => {});
+  await page.locator('body').press('Escape').catch(() => {});
   const detached = await page
     .locator(DIALOG)
     .waitFor({ state: 'detached', timeout: 2000 })
@@ -100,25 +97,18 @@ async function closeModal(page: import('@playwright/test').Page) {
     .catch(() => false);
   if (!detached) {
     // Backdrop click as a fallback — the backdrop sits behind the dialog content.
-    await page
-      .locator(DIALOG)
-      .first()
-      .press('Escape')
-      .catch(() => {});
-    await page
-      .locator(DIALOG)
-      .waitFor({ state: 'detached', timeout: 3000 })
-      .catch(() => {});
+    await page.locator(DIALOG).first().press('Escape').catch(() => {});
+    await page.locator(DIALOG).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
   }
 }
 
 test.describe('Button smoke — dialog triggers', () => {
-  test('workspaces: "Add Workspace" opens create modal', async ({ page, allowConsoleError }) => {
+  test('workspaces: create button opens create modal', async ({ page, allowConsoleError }) => {
     allowEnvironmentalNoise(allowConsoleError);
     await page.goto('/workspaces');
-    await page.waitForLoadState('networkidle');
 
-    await page.click('button:has-text("Add Workspace")');
+
+    await page.getByTestId('workspaces-create').click();
     await page.locator(DIALOG).waitFor({ state: 'visible', timeout: 5000 });
     await expect(page.getByPlaceholder('Workspace name')).toBeVisible();
 
@@ -128,7 +118,7 @@ test.describe('Button smoke — dialog triggers', () => {
   test('global create button opens create modal', async ({ page, allowConsoleError }) => {
     allowEnvironmentalNoise(allowConsoleError);
     await page.goto('/workspaces');
-    await page.waitForLoadState('networkidle');
+
 
     const globalCreate = page.locator('#global-create-button');
     await globalCreate.waitFor({ state: 'visible', timeout: 5000 });
@@ -138,13 +128,10 @@ test.describe('Button smoke — dialog triggers', () => {
     await closeModal(page);
   });
 
-  test('admin: sidebar nav buttons switch URL without errors', async ({
-    page,
-    allowConsoleError,
-  }) => {
+  test('admin: sidebar nav buttons switch URL without errors', async ({ page, allowConsoleError }) => {
     allowEnvironmentalNoise(allowConsoleError);
     await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
+
 
     // Core admin nav links every admin must see. These are required: a missing
     // link is a real regression, not something to silently skip over (the old
@@ -189,9 +176,7 @@ test.describe('Button smoke — workspace context buttons', () => {
 
     // Workspace detail should now be loaded. Try the common view tabs if present.
     for (const viewLabel of ['List', 'Board', 'Calendar']) {
-      const tab = page
-        .locator(`a:has-text("${viewLabel}"), button:has-text("${viewLabel}")`)
-        .first();
+      const tab = page.locator(`a:has-text("${viewLabel}"), button:has-text("${viewLabel}")`).first();
       if (await tab.isVisible().catch(() => false)) {
         await tab.click();
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
@@ -209,9 +194,9 @@ test.describe('Button smoke — workspace context buttons', () => {
     await workspacePage.clickWorkspace(workspaceName);
 
     await page.locator('#global-create-button').click();
-    await page.locator(DIALOG).waitFor({ state: 'visible', timeout: 5000 });
+    await expect(page.getByTestId('create-modal')).toBeVisible();
     // Title input should be reachable (Work Item form).
-    await expect(page.locator('#work-item-title')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('#work-item-title')).toBeVisible();
 
     await closeModal(page);
   });

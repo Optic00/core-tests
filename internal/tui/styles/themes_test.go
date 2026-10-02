@@ -4,6 +4,8 @@ package styles
 
 import (
 	"fmt"
+	"image/color"
+	"math"
 	"testing"
 )
 
@@ -40,4 +42,34 @@ func TestTerminalThemeDialogsUseBaseBackground(t *testing.T) {
 			t.Errorf("theme %q gives focused fields a non-selection background", theme.Name)
 		}
 	}
+}
+
+func TestFormTextRemainsReadableAcrossThemes(t *testing.T) {
+	for _, theme := range Themes() {
+		t.Run(theme.Name, func(t *testing.T) {
+			s := New(theme.Palette)
+			for name, pair := range map[string][2]color.Color{
+				"hint":          {s.Palette.FgMuted, s.Palette.BgOverlay},
+				"focused input": {s.Form.InputFocused.GetForeground(), s.Form.InputFocused.GetBackground()},
+			} {
+				a, b := textLuminance(pair[0]), textLuminance(pair[1])
+				contrast := (max(a, b) + 0.05) / (min(a, b) + 0.05)
+				if contrast < 4.5 {
+					t.Errorf("%s contrast = %.2f, want at least 4.5", name, contrast)
+				}
+			}
+		})
+	}
+}
+
+func textLuminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	linear := func(v uint32) float64 {
+		x := float64(v) / 65535
+		if x <= 0.04045 {
+			return x / 12.92
+		}
+		return math.Pow((x+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linear(r) + 0.7152*linear(g) + 0.0722*linear(b)
 }

@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { managerChannelPurpose, managerChannelStatusColor } from './managerChannelPresentation.js';
+import {
+  managerChannelPurpose,
+  managerChannelStatusColor,
+} from './managerChannelPresentation.js';
 
 describe('managerChannelPurpose', () => {
   test.each([
@@ -18,8 +21,16 @@ describe('managerChannelPurpose', () => {
       'channels.manager.deliversTo',
       { workspace: 'Service Desk' },
     ],
-    [{ type: 'smtp', config: '{}' }, 'channels.manager.outboundNotifications', {}],
-    [{ type: 'webhook', config: '{}' }, 'channels.manager.outboundEvents', {}],
+    [
+      { type: 'smtp', config: '{}' },
+      'channels.manager.outboundNotifications',
+      {},
+    ],
+    [
+      { type: 'webhook', config: '{}' },
+      'channels.manager.outboundEvents',
+      {},
+    ],
   ])('describes %s in manager language', (channel, key, params) => {
     expect(managerChannelPurpose(channel, 'Service Desk')).toEqual({ key, params });
   });

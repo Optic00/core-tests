@@ -1,5 +1,8 @@
-import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
+import { test, expect } from '../fixtures/context-path';
+import {
+  createItemViaAPI,
+  createWorkspaceViaAPI,
+} from '../fixtures/api-helpers';
 import { generateItem, generateWorkspace } from '../fixtures/test-data';
 
 /**
@@ -21,7 +24,10 @@ import { generateItem, generateWorkspace } from '../fixtures/test-data';
  * which fires on every document change regardless of input method.
  */
 test.describe('Mention picker — mobile / IME input (WI-431)', () => {
-  test('@ inserted via input event (no keyup) opens the picker', async ({ page, request }) => {
+  test('@ inserted via input event (no keyup) opens the picker', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(60_000);
 
     const suffix = `mob${Date.now()}`;
@@ -33,7 +39,9 @@ test.describe('Mention picker — mobile / IME input (WI-431)', () => {
     });
 
     await page.goto(`/workspaces/${ws.id}/items/${item.id}`);
-    await expect(page.locator('[data-testid="comments-section"]')).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.locator('[data-testid="comments-section"]')
+    ).toBeVisible({ timeout: 15_000 });
 
     const composer = page.getByTestId('comment-composer');
     await expect(composer).toHaveAttribute('data-ready', 'true', {
@@ -87,9 +95,9 @@ test.describe('Mention picker — mobile / IME input (WI-431)', () => {
 
     // The mobile PWA surface is route-gated (/m/items/:id), not viewport-gated.
     await page.goto(`/m/items/${item.id}`);
-    await expect(page.locator('[data-testid="mobile-item-detail"]')).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      page.locator('[data-testid="mobile-item-detail"]')
+    ).toBeVisible({ timeout: 15_000 });
 
     const composer = page.getByTestId('comment-composer');
     await expect(composer).toHaveAttribute('data-ready', 'true', {

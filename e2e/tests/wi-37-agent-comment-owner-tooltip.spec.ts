@@ -1,5 +1,8 @@
-import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { type APIRequestContext, expect, test } from '../fixtures/context-path';
+import {
+  createWorkspaceViaAPI,
+  createItemViaAPI,
+} from '../fixtures/api-helpers';
 
 /**
  * WI-37: "Agents in comments do not identify their owner"
@@ -29,7 +32,7 @@ async function createAgent(request: APIRequestContext, suffix: string) {
 async function mintAgentToken(
   request: APIRequestContext,
   agentId: number,
-  name: string
+  name: string,
 ): Promise<string> {
   const res = await request.post(`${BASE_URL}/api/api-tokens`, {
     headers: defaultHeaders,
@@ -52,11 +55,7 @@ test.describe('WI-37: agent comments expose owner via tooltip', () => {
     }
   });
 
-  test('comment authored by an agent surfaces the owner name', async ({
-    page,
-    request,
-    playwright,
-  }) => {
+  test('comment authored by an agent surfaces the owner name', async ({ page, request, playwright }) => {
     const agent = await createAgent(request, 'tooltip');
     agentId = agent.id;
     const agentToken = await mintAgentToken(request, agentId, `wi37-${Date.now()}`);
@@ -102,6 +101,8 @@ test.describe('WI-37: agent comments expose owner via tooltip', () => {
 
     await botBadge.hover();
     // The owner of the agent in this test is the e2e admin: "E2E Admin".
-    await expect(page.getByText(/AI agent owned by E2E Admin/i)).toBeVisible({ timeout: 5000 });
+    await expect(
+      page.getByText(/AI agent owned by E2E Admin/i),
+    ).toBeVisible({ timeout: 5000 });
   });
 });

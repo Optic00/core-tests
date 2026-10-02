@@ -64,8 +64,9 @@ func newMaskingTestEnv(t *testing.T) *maskingTestEnv {
 	customerID := exec(`INSERT INTO customer_organisations (name) VALUES ('Acme')`)
 	env.restrictedID = int(exec(`INSERT INTO time_projects (customer_id, name, status) VALUES (?, 'Restricted Project', 'Active')`, customerID))
 	env.openID = int(exec(`INSERT INTO time_projects (customer_id, name, status) VALUES (?, 'Open Project', 'Active')`, customerID))
-	// A manager row flips the project into restricted mode for everyone else.
+	// Members make the project private; the assigned manager retains access.
 	exec(`INSERT INTO time_project_managers (project_id, manager_type, manager_id) VALUES (?, 'user', ?)`, env.restrictedID, env.managerID)
+	exec(`INSERT INTO time_project_members (project_id, member_type, member_id) VALUES (?, 'user', ?)`, env.restrictedID, env.managerID)
 
 	return env
 }

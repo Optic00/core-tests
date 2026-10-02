@@ -147,15 +147,11 @@ func TestNotificationServiceShutdownDeadlineReportsUndrainedWork(t *testing.T) {
 	if err := service.CloseContext(ctx); err == nil {
 		t.Fatal("shutdown deadline returned nil")
 	}
-	workersDone := make(chan struct{})
-	go func() {
-		service.wg.Wait()
-		close(workersDone)
-	}()
-	select {
-	case <-workersDone:
-	case <-time.After(time.Second):
-		t.Fatal("notification worker did not stop after cancellation")
+	deadline := time.Now().Add(time.Second)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for time.Now().Before(deadline) && service.GetStats()["active_workers"] != 0 {
+		<-tick.C
 	}
 	if active := service.GetStats()["active_workers"]; active != 0 {
 		t.Fatalf("active workers after cancellation = %d", active)

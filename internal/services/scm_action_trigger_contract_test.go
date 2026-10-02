@@ -3,6 +3,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -72,7 +73,7 @@ func TestSCMActionTriggersRequireExplicitActor(t *testing.T) {
 				ID: actionID, WorkspaceID: data.WorkspaceID, Name: string(trigger),
 				IsEnabled: true, TriggerType: trigger,
 			}
-			err := service.executeActionForEvent(action, &models.ActionEvent{
+			err := service.executeActionForEvent(context.Background(), action, &models.ActionEvent{
 				EventType: trigger, WorkspaceID: data.WorkspaceID,
 				NewValues: map[string]any{"repo.workspace_repository_id": 17},
 			}, nil, "")

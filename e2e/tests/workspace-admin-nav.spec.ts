@@ -1,7 +1,7 @@
-import { expect, test } from '../fixtures/context-path';
-import { generateWorkspace } from '../fixtures/test-data';
-import { WorkspacePage } from '../pages/workspace.page';
-import { WorkspaceSettingsPage } from '../pages/workspace-settings.page';
+import { createWorkspaceViaAPI } from "../fixtures/api-helpers";
+import { expect, test } from "../fixtures/context-path";
+import { generateWorkspace } from "../fixtures/test-data";
+import { WorkspaceSettingsPage } from "../pages/workspace-settings.page";
 
 /**
  * Workspace admin navigation (folded sidebar).
@@ -12,85 +12,100 @@ import { WorkspaceSettingsPage } from '../pages/workspace-settings.page';
  * PageHeader. These tests pin that behavior.
  */
 
-// label → { module route segment, page-header heading }
-const MODULES: Array<{ id: string; heading: string }> = [
-  { id: 'general', heading: 'General' },
-  { id: 'categories', heading: 'Categories' },
-  { id: 'members', heading: 'Members' },
-  { id: 'configuration', heading: 'Configuration Sets' },
-  { id: 'source-control', heading: 'Source Control' },
-  { id: 'issue-sync', heading: 'Issue Sync' },
-  { id: 'recurrence', heading: 'Recurrence' },
-  { id: 'danger', heading: 'Remove Workspace' },
+const MODULES: Array<{ id: string }> = [
+	{ id: "general" },
+	{ id: "categories" },
+	{ id: "members" },
+	{ id: "configuration" },
+	{ id: "source-control" },
+	{ id: "issue-sync" },
+	{ id: "recurrence" },
+	{ id: "danger" },
 ];
 
-test.describe('Workspace admin folded sidebar', () => {
-  let settingsPage: WorkspaceSettingsPage;
-  let workspacePage: WorkspacePage;
-  let workspaceId: string;
+test.describe("Workspace admin folded sidebar", () => {
+	let settingsPage: WorkspaceSettingsPage;
+	let workspaceId: string;
 
-  test.beforeEach(async ({ page }) => {
-    settingsPage = new WorkspaceSettingsPage(page);
-    workspacePage = new WorkspacePage(page);
-    const ws = generateWorkspace();
-    await workspacePage.createWorkspace(ws);
-    workspaceId = await workspacePage.getWorkspaceId(ws.name);
-  });
+	test.beforeEach(async ({ page, request }) => {
+		settingsPage = new WorkspaceSettingsPage(page);
+		const workspace = await createWorkspaceViaAPI(request, generateWorkspace());
+		workspaceId = String(workspace.id);
+	});
 
-  test('swaps the sidebar for the admin nav with a back link and every module', async ({
-    page,
-  }) => {
-    await settingsPage.goto(workspaceId);
+	test.afterEach(async ({ request }) => {
+		const response = await request.delete(`/api/v2/workspaces/${workspaceId}`);
+		expect(response.status()).toBe(204);
+	});
 
-    // Folded admin sidebar + back link present; old horizontal tablist gone.
-    await expect(page.locator(settingsPage.adminNav)).toBeVisible({ timeout: 5000 });
-    await expect(page.locator(settingsPage.backLink)).toBeVisible();
-    await expect(page.locator('[role="tablist"]')).toHaveCount(0);
+	test("swaps the sidebar for the admin nav with a back link and every module", async ({
+		page,
+	}) => {
+		await settingsPage.goto(workspaceId);
 
-    // One nav link per module.
-    for (const m of MODULES) {
-      await expect(page.locator(`[data-testid="workspace-admin-nav-${m.id}"]`)).toBeVisible();
-    }
-  });
+		// Folded admin sidebar + back link present; old horizontal tablist gone.
+		await expect(page.getByTestId("workspace-admin-nav")).toBeVisible({
+			timeout: 5000,
+		});
+		await expect(page.getByTestId("workspace-back-link")).toBeVisible();
+		await expect(page.locator('[role="tablist"]')).toHaveCount(0);
 
-  test('each module routes to its own page with a header', async ({ page }) => {
-    await settingsPage.goto(workspaceId);
+		// One nav link per module.
+		for (const m of MODULES) {
+			await expect(
+				page.getByTestId(`workspace-admin-nav-${m.id}`),
+			).toBeVisible();
+		}
+	});
 
-    for (const m of MODULES) {
-      await page.locator(`[data-testid="workspace-admin-nav-${m.id}"]`).click();
-      await expect(page).toHaveURL(new RegExp(`/workspaces/${workspaceId}/settings/${m.id}$`));
-      await expect(page.getByRole('heading', { level: 1, name: m.heading })).toBeVisible({
-        timeout: 5000,
-      });
-    }
-  });
+	test("each module routes to its own page with a header", async ({ page }) => {
+		await settingsPage.goto(workspaceId);
 
-  test('back link returns to the workspace and restores the normal sidebar', async ({ page }) => {
-    await settingsPage.goto(workspaceId);
-    await expect(page.locator(settingsPage.adminNav)).toBeVisible({ timeout: 5000 });
+		for (const m of MODULES) {
+			await page.getByTestId(`workspace-admin-nav-${m.id}`).click();
+			await expect(page).toHaveURL(
+				new RegExp(`/workspaces/${workspaceId}/settings/${m.id}$`),
+			);
+			await expect(
+				page.getByTestId(`workspace-settings-module-${m.id}`),
+			).toBeVisible();
+		}
+	});
 
-    await page.locator(settingsPage.backLink).click();
-    // The workspace root redirects to its default view (e.g. /board), so just
-    // assert we left the settings area and the admin nav is gone.
-    await expect(page).toHaveURL(new RegExp(`/workspaces/${workspaceId}(/(?!settings)[^/]*)?$`));
-    await expect(page.locator(settingsPage.adminNav)).toHaveCount(0);
-  });
+	test("back link returns to the workspace and restores the normal sidebar", async ({
+		page,
+	}) => {
+		await settingsPage.goto(workspaceId);
+		await expect(page.getByTestId("workspace-admin-nav")).toBeVisible({
+			timeout: 5000,
+		});
 
-  test('collapsed sidebar shows the module icons and a back arrow', async ({ page }) => {
-    // Seed the collapsed state before the app mounts.
-    await page.addInitScript(() => {
-      localStorage.setItem('windshift-ws-sidebar-collapsed', 'true');
-    });
-    await settingsPage.goto(workspaceId);
+		await page.getByTestId("workspace-back-link").click();
+		// The workspace root redirects to its default view (e.g. /board), so just
+		// assert we left the settings area and the admin nav is gone.
+		await expect(page).toHaveURL(
+			new RegExp(`/workspaces/${workspaceId}(/(?!settings)[^/]*)?$`),
+		);
+		await expect(page.getByTestId("workspace-admin-nav")).toHaveCount(0);
+	});
 
-    // Back arrow (to the workspace) + an icon link per module, by href.
-    await expect(page.locator(`a[href="/workspaces/${workspaceId}"]`).first()).toBeVisible({
-      timeout: 5000,
-    });
-    for (const m of MODULES) {
-      await expect(
-        page.locator(`a[href="/workspaces/${workspaceId}/settings/${m.id}"]`)
-      ).toBeVisible();
-    }
-  });
+	test("collapsed sidebar shows the module icons and a back arrow", async ({
+		page,
+	}) => {
+		// Seed the collapsed state before the app mounts.
+		await page.addInitScript(() => {
+			localStorage.setItem("windshift-ws-sidebar-collapsed", "true");
+		});
+		await settingsPage.goto(workspaceId);
+
+		// Back arrow (to the workspace) + an icon link per module, by href.
+		await expect(page.getByTestId("workspace-back-link")).toBeVisible({
+			timeout: 5000,
+		});
+		for (const m of MODULES) {
+			await expect(
+				page.getByTestId(`workspace-admin-nav-${m.id}`),
+			).toBeVisible();
+		}
+	});
 });

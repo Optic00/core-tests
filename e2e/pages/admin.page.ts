@@ -46,7 +46,6 @@ export class AdminPage {
     await link.click();
     // Strict: the route must actually change to the link's destination.
     await this.page.waitForURL((url) => url.pathname === href, { timeout: 5000 });
-    await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   }
 
   /** Assert the browser is on the given admin sub-route. */

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildHierarchyDatePatches, projectHierarchyDates } from './roadmapHierarchyDates.js';
+import {
+  buildHierarchyDatePatches,
+  projectHierarchyDates,
+} from './roadmapHierarchyDates.js';
 
 function item(id, parentId, startDate, endDate) {
   return {
@@ -37,16 +40,13 @@ describe('projectHierarchyDates', () => {
   });
 
   it('rolls dates down by clamping only boundaries outside the parent', () => {
-    const projected = projectHierarchyDates(
-      [
-        item(1, null, '2026-08-10', '2026-08-20'),
-        item(2, 1, '2026-08-12', '2026-08-18'),
-        item(3, 1, '2026-08-05', '2026-08-15'),
-        item(4, 1, '2026-08-16', '2026-08-25'),
-        item(5, 1, '2026-08-25', '2026-08-28'),
-      ],
-      'rolldown'
-    );
+    const projected = projectHierarchyDates([
+      item(1, null, '2026-08-10', '2026-08-20'),
+      item(2, 1, '2026-08-12', '2026-08-18'),
+      item(3, 1, '2026-08-05', '2026-08-15'),
+      item(4, 1, '2026-08-16', '2026-08-25'),
+      item(5, 1, '2026-08-25', '2026-08-28'),
+    ], 'rolldown');
 
     expect(projected.get(2)).toMatchObject({
       startDate: '2026-08-12',

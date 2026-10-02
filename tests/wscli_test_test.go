@@ -128,7 +128,7 @@ func seedTestCase(t *testing.T, ts *TestServer, workspaceID int, title string) i
 func seedTestSet(t *testing.T, ts *TestServer, workspaceID int, name string) int {
 	t.Helper()
 	body := map[string]interface{}{"name": name, "description": "WSCLI test seed"}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/workspaces/"+strconv.Itoa(workspaceID)+"/test-sets", body)
+	resp := MakeAuthRequest(t, ts, http.MethodPost, "/workspaces/"+strconv.Itoa(workspaceID)+"/test-plans", body)
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusCreated)
 	var result map[string]interface{}
@@ -140,7 +140,7 @@ func attachCaseToSet(t *testing.T, ts *TestServer, workspaceID, setID, caseID in
 	t.Helper()
 	body := map[string]interface{}{"test_case_id": caseID}
 	resp := MakeAuthRequest(t, ts, http.MethodPost,
-		"/workspaces/"+strconv.Itoa(workspaceID)+"/test-sets/"+strconv.Itoa(setID)+"/test-cases", body)
+		"/workspaces/"+strconv.Itoa(workspaceID)+"/test-plans/"+strconv.Itoa(setID)+"/test-cases", body)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		AssertStatusCode(t, resp, http.StatusOK) // produce a clear failure

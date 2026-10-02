@@ -186,11 +186,9 @@ func TestQLFiltering(t *testing.T) {
 
 		// Create project (time tracking project)
 		projectData := map[string]interface{}{
-			"workspace_id": workspaceID,
-			"name":         "QL Test Project",
-			"key":          "QLPROJ",
-			"description":  "Test project for QL filtering",
-			"customer_id":  customerID,
+			"name":        "QL Test Project",
+			"description": "Test project for QL filtering",
+			"customer_id": customerID,
 		}
 
 		projResp := MakeAuthRequest(t, server, http.MethodPost, "/time/projects", projectData)
@@ -204,16 +202,14 @@ func TestQLFiltering(t *testing.T) {
 
 		// Create iteration (belongs to workspace, not project)
 		iterationData := map[string]interface{}{
-			"workspace_id": workspaceID,
-			"name":         "Sprint 1",
-			"description":  "Test iteration",
-			"start_date":   "2024-01-01",
-			"end_date":     "2024-01-31",
-			"status":       "active",
-			"is_global":    false,
+			"name":        "Sprint 1",
+			"description": "Test iteration",
+			"start_date":  "2024-01-01",
+			"end_date":    "2024-01-31",
+			"status":      "active",
 		}
 
-		iterResp := MakeAuthRequest(t, server, http.MethodPost, "/iterations", iterationData)
+		iterResp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/iterations", workspaceID), iterationData)
 		defer iterResp.Body.Close()
 
 		AssertStatusCode(t, iterResp, http.StatusCreated)
@@ -224,14 +220,13 @@ func TestQLFiltering(t *testing.T) {
 
 		// Create milestone (workspace-scoped)
 		milestoneData := map[string]interface{}{
-			"name":         "v1.0",
-			"description":  "Test milestone",
-			"target_date":  "2024-06-30",
-			"status":       "in-progress",
-			"workspace_id": workspaceID,
+			"name":        "v1.0",
+			"description": "Test milestone",
+			"target_date": "2024-06-30",
+			"status":      "in-progress",
 		}
 
-		msResp := MakeAuthRequest(t, server, http.MethodPost, "/milestones", milestoneData)
+		msResp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), milestoneData)
 		defer msResp.Body.Close()
 
 		AssertStatusCode(t, msResp, http.StatusCreated)

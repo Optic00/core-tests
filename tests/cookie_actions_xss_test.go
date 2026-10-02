@@ -29,7 +29,7 @@ func TestCookieAuth_ActionXSS(t *testing.T) {
 	}
 	bodyJSON, _ := json.Marshal(body)
 	resp := MakeAuthRequestRaw(t, ts, http.MethodPost,
-		fmt.Sprintf("/workspaces/%d/actions", wsID), string(bodyJSON))
+		fmt.Sprintf("/v2/workspaces/%d/actions", wsID), string(bodyJSON))
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)

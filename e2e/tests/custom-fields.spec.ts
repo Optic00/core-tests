@@ -29,6 +29,27 @@ test.describe('Custom Fields', () => {
   });
 
   test.describe('Create Custom Fields', () => {
+    test('filters field types in a scrollable combobox', async ({ page }) => {
+      await customFieldsPage.goto();
+      await customFieldsPage.clickCreateField();
+
+      const picker = customFieldsPage.fieldTypePicker();
+      await picker.click();
+
+      const optionList = page.getByTestId('picker-option-list');
+      await expect(optionList).toBeVisible();
+      expect(
+        await optionList.evaluate((element) => element.scrollHeight > element.clientHeight)
+      ).toBe(true);
+
+      await picker.fill('organisation');
+      await expect(page.getByTestId('custom-field-type-customerorganisation')).toBeVisible();
+      await expect(page.getByTestId('custom-field-type-text')).toHaveCount(0);
+
+      await page.getByTestId('custom-field-type-customerorganisation').click();
+      await expect(picker).toHaveValue('Customer Organisation');
+    });
+
     test('should create a text field', async () => {
       const data = generateCustomField('text');
       createdFieldNames.push(data.name);
@@ -153,7 +174,7 @@ test.describe('Custom Fields', () => {
   });
 
   test.describe('Edit Custom Fields', () => {
-    test('keeps the field type immutable after creation', async ({ page }) => {
+    test('keeps the field type immutable after creation', async () => {
       const data = generateCustomField('text', 'immutable-type');
       createdFieldNames.push(data.name);
 
@@ -161,12 +182,12 @@ test.describe('Custom Fields', () => {
       await customFieldsPage.createField({ name: data.name, type: 'text' });
       await customFieldsPage.openFieldForEdit(data.name);
 
-      await expect(page.getByTestId('custom-field-type-trigger')).toBeDisabled();
+      await expect(customFieldsPage.fieldTypePicker()).toBeDisabled();
     });
   });
 
   test.describe('Delete Custom Fields', () => {
-    test('should delete a custom field', async ({ request }) => {
+    test('should delete a custom field', async () => {
       // Create a field to delete
       const data = generateCustomField('text', 'delete-test');
 

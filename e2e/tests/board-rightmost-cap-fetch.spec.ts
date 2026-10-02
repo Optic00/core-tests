@@ -1,5 +1,5 @@
 import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { type APIRequestContext, expect, test } from '../fixtures/context-path';
+import { type APIRequestContext, expect, type Page, test } from '../fixtures/context-path';
 import { generateWorkspace } from '../fixtures/test-data';
 import { BoardPage } from '../pages/board.page';
 
@@ -31,7 +31,7 @@ async function listWorkspaceStatuses(
   request: APIRequestContext,
   workspaceId: number
 ): Promise<Array<{ id: number; name: string }>> {
-  const resp = await request.get(`/api/workspaces/${workspaceId}/statuses`, {
+  const resp = await request.get(`/api/v2/workspaces/${workspaceId}/statuses`, {
     headers: SEC_FETCH,
   });
   expect(resp.ok(), `list statuses failed (${resp.status()})`).toBeTruthy();
@@ -46,13 +46,19 @@ async function createItemWithStatus(
   statusId: number,
   description = ''
 ) {
-  const resp = await request.post(`${BASE_URL}/api/items`, {
+  const resp = await request.post(`${BASE_URL}/api/v2/items`, {
     headers: SEC_FETCH,
     data: { workspace_id: workspaceId, title, description, status_id: statusId },
   });
   expect(resp.ok(), `create item failed (${resp.status()})`).toBeTruthy();
   const body = await resp.json();
   return body.data ?? body;
+}
+
+function boardColumn(page: Page, statusId: number) {
+  return page
+    .getByTestId('board-column')
+    .filter({ has: page.getByTestId(`board-column-status-${statusId}`) });
 }
 
 test.describe('Board status-partitioned fetch', () => {
@@ -65,8 +71,8 @@ test.describe('Board status-partitioned fetch', () => {
     const openStatus = statuses.find((s) => s.name === 'Open') ?? statuses[0];
     expect(doneStatus.id).not.toBe(openStatus.id);
 
-    const configResp = await request.post(
-      `${BASE_URL}/api/collections/default/board-configuration?workspace_id=${workspaceId}`,
+    const configResp = await request.put(
+      `${BASE_URL}/api/v2/workspaces/${workspaceId}/board-configuration`,
       {
         headers: SEC_FETCH,
         data: { columns: [], show_rightmost_column_last_50: false },
@@ -102,16 +108,16 @@ test.describe('Board status-partitioned fetch', () => {
     }
 
     const unfinishedFetch = page.waitForRequest(
-      (r) => r.url().includes('/api/items?') && r.url().includes(`status_id_not=${doneStatus.id}`),
+      (r) => r.url().includes('/api/v2/items?') && r.url().includes(`status_id_not=${doneStatus.id}`),
       { timeout: 15000 }
     );
     const completedFetch = page.waitForRequest(
       (r) => {
-        if (!r.url().includes('/api/items?')) return false;
+        if (!r.url().includes('/api/v2/items?')) return false;
         const params = new URL(r.url()).searchParams;
         return (
           params.get('status_id') === String(doneStatus.id) &&
-          params.get('limit') === '100' &&
+          params.get('page_size') === '100' &&
           params.get('page') === '1'
         );
       },
@@ -122,16 +128,16 @@ test.describe('Board status-partitioned fetch', () => {
     await boardPage.goto(String(workspaceId));
     await Promise.all([unfinishedFetch, completedFetch]);
 
-    const openColumn = page.locator(`[data-status-column][data-status-id="${openStatus.id}"]`);
-    await expect(openColumn.locator('.board-card')).toHaveCount(UNBOUNDED_OPEN_ITEMS);
+    const openColumn = boardColumn(page, openStatus.id);
+    await expect(openColumn.getByTestId(/^board-item-/)).toHaveCount(UNBOUNDED_OPEN_ITEMS);
 
-    const doneColumn = page.locator(`[data-status-column][data-status-id="${doneStatus.id}"]`);
+    const doneColumn = boardColumn(page, doneStatus.id);
     await expect(doneColumn).toContainText(`100 of ${UNBOUNDED_DONE_ITEMS} Item`);
-    await expect(doneColumn.locator('.board-card')).toHaveCount(100);
+    await expect(doneColumn.getByTestId(/^board-item-/)).toHaveCount(100);
 
     const nextCompletedPage = page.waitForRequest(
       (r) => {
-        if (!r.url().includes('/api/items?')) return false;
+        if (!r.url().includes('/api/v2/items?')) return false;
         const params = new URL(r.url()).searchParams;
         return params.get('status_id') === String(doneStatus.id) && params.get('page') === '2';
       },
@@ -140,8 +146,8 @@ test.describe('Board status-partitioned fetch', () => {
     await page.getByTestId('board-load-more').click();
     await nextCompletedPage;
 
-    await expect(doneColumn.locator('.board-card')).toHaveCount(UNBOUNDED_DONE_ITEMS);
-    await expect(openColumn.locator('.board-card')).toHaveCount(UNBOUNDED_OPEN_ITEMS);
+    await expect(doneColumn.getByTestId(/^board-item-/)).toHaveCount(UNBOUNDED_DONE_ITEMS);
+    await expect(openColumn.getByTestId(/^board-item-/)).toHaveCount(UNBOUNDED_OPEN_ITEMS);
     await expect(page.getByTestId('board-load-more')).toHaveCount(0);
   });
 
@@ -160,8 +166,8 @@ test.describe('Board status-partitioned fetch', () => {
     // Enable the rightmost-column cap with no explicit columns — the board
     // falls back to one column per status, so the rightmost column is the
     // Done status.
-    const configResp = await request.post(
-      `${BASE_URL}/api/collections/default/board-configuration?workspace_id=${workspaceId}`,
+    const configResp = await request.put(
+      `${BASE_URL}/api/v2/workspaces/${workspaceId}/board-configuration`,
       {
         headers: SEC_FETCH,
         data: { columns: [], show_rightmost_column_last_50: true },
@@ -198,14 +204,14 @@ test.describe('Board status-partitioned fetch', () => {
     // The split must be observable on the wire: a main fetch excluding the
     // rightmost statuses and a capped fetch for just those statuses.
     const mainFetch = page.waitForRequest(
-      (r) => r.url().includes('/api/items?') && r.url().includes(`status_id_not=${doneStatus.id}`),
+      (r) => r.url().includes('/api/v2/items?') && r.url().includes(`status_id_not=${doneStatus.id}`),
       { timeout: 15000 }
     );
     const capFetch = page.waitForRequest(
       (r) =>
-        r.url().includes('/api/items?') &&
+        r.url().includes('/api/v2/items?') &&
         new URL(r.url()).searchParams.get('status_id') === String(doneStatus.id) &&
-        new URL(r.url()).searchParams.get('limit') === '50',
+        new URL(r.url()).searchParams.get('page_size') === '50',
       { timeout: 15000 }
     );
 
@@ -214,23 +220,23 @@ test.describe('Board status-partitioned fetch', () => {
     await Promise.all([mainFetch, capFetch]);
 
     // Rendered counts: 50 cards shown, server-side total in the labels.
-    const doneColumn = page.locator(`[data-status-column][data-status-id="${doneStatus.id}"]`);
+    const doneColumn = boardColumn(page, doneStatus.id);
     await expect(doneColumn).toContainText(`50 of ${DONE_ITEMS} Item`);
     await expect(doneColumn).toContainText(
       `Showing latest 50 of ${DONE_ITEMS} items in this column.`
     );
-    await expect(doneColumn.locator('.board-card')).toHaveCount(50);
+    await expect(doneColumn.getByTestId(/^board-item-/)).toHaveCount(50);
     await expect(page.getByTestId(`board-item-${hiddenSearchTarget.id}`)).toHaveCount(0);
 
-    const openColumn = page.locator(`[data-status-column][data-status-id="${openStatus.id}"]`);
-    await expect(openColumn.locator('.board-card')).toHaveCount(OPEN_ITEMS);
+    const openColumn = boardColumn(page, openStatus.id);
+    await expect(openColumn.getByTestId(/^board-item-/)).toHaveCount(OPEN_ITEMS);
 
     // Everything that can render is loaded — no Load More for hidden
     // completed items.
-    await expect(page.locator('[data-testid="board-load-more"]')).toHaveCount(0);
+    await expect(page.getByTestId('board-load-more')).toHaveCount(0);
 
     const scopedSearchRequest = page.waitForRequest((candidate) => {
-      if (!candidate.url().includes('/api/items?')) return false;
+      if (!candidate.url().includes('/api/v2/items?')) return false;
       return new URL(candidate.url()).searchParams.get('search') === descriptionNeedle;
     });
     await page.getByTestId('board-search-input').fill(descriptionNeedle);
@@ -244,6 +250,6 @@ test.describe('Board status-partitioned fetch', () => {
 
     await page.getByTestId('board-search-input').fill('');
     await expect(page.getByTestId(`board-item-${hiddenSearchTarget.id}`)).toHaveCount(0);
-    await expect(doneColumn.locator('.board-card')).toHaveCount(50);
+    await expect(doneColumn.getByTestId(/^board-item-/)).toHaveCount(50);
   });
 });

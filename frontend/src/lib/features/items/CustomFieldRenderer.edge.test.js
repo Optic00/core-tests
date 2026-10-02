@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/svelte';
-import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { describe, expect, test, vi } from 'vitest';
 
 // Mock api + i18n consistently with the main renderer test file. The two
 // test files run in isolation so duplicating the mock setup is fine.
@@ -10,12 +10,6 @@ vi.mock('../../stores/i18n.svelte.js', () => ({
   t: (key, params) => (params?.field ? `setField:${params.field}` : key),
   i18n: { locale: 'en-US' },
 }));
-
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({ finished: Promise.resolve(), cancel: () => {} });
-  }
-});
 
 import CustomFieldRenderer from './CustomFieldRenderer.svelte';
 
@@ -257,5 +251,55 @@ describe('duplicate option labels with different ids', () => {
     // the display. This isn't a bug per se — it's a config issue — but
     // it's surprising behavior worth pinning.
     expect(screen.getByText('Open')).toBeInTheDocument();
+  });
+});
+
+// Self-editing list cells commit on blur. A blur also fires when the user
+// closes the editor without changing anything, so the commit guard must
+// compare strings on both sides — a stored number 5 vs the input's "5"
+// otherwise counts as a change and fires a no-op save on every untouched
+// blur.
+describe('self-editing free-form cell', () => {
+  test('blurring an untouched number cell does not fire onChange', async () => {
+    const onChange = vi.fn();
+    const { container } = render(CustomFieldRenderer, {
+      props: {
+        field: { field_type: 'number', name: 'Estimate', id: 31 },
+        value: 5,
+        readonly: true,
+        selfEditing: true,
+        onStartEdit: null,
+        onChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const input = container.querySelector('input[data-testid="custom-field-input-31"]');
+    expect(input).not.toBeNull();
+    expect(input.value).toBe('5');
+
+    await fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test('a real edit still commits on blur', async () => {
+    const onChange = vi.fn();
+    const { container } = render(CustomFieldRenderer, {
+      props: {
+        field: { field_type: 'number', name: 'Estimate', id: 31 },
+        value: 5,
+        readonly: true,
+        selfEditing: true,
+        onStartEdit: null,
+        onChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const input = container.querySelector('input[data-testid="custom-field-input-31"]');
+    await fireEvent.input(input, { target: { value: '7' } });
+    await fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenCalledWith('7');
   });
 });

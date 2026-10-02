@@ -30,12 +30,41 @@ func newLinkTestDB(t *testing.T) database.Database {
 		`CREATE TABLE test_cases (id INTEGER PRIMARY KEY, workspace_id INTEGER NOT NULL, title TEXT)`,
 		`CREATE TABLE asset_management_sets (id INTEGER PRIMARY KEY, name TEXT)`,
 		`CREATE TABLE assets (id INTEGER PRIMARY KEY, set_id INTEGER NOT NULL, title TEXT)`,
+		`CREATE TABLE pages (id INTEGER PRIMARY KEY, workspace_id INTEGER NOT NULL, title TEXT)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)
 		}
 	}
 	return db
+}
+
+func TestItemLinkService_NotificationReferenceAccess(t *testing.T) {
+	db := newLinkTestDB(t)
+	mustLinkExec(t, db, "INSERT INTO items (id, workspace_id) VALUES (10, 100)")
+	mustLinkExec(t, db, "INSERT INTO test_cases (id, workspace_id) VALUES (20, 200)")
+	mustLinkExec(t, db, "INSERT INTO assets (id, set_id) VALUES (30, 300)")
+	mustLinkExec(t, db, "INSERT INTO pages (id, workspace_id) VALUES (40, 400)")
+	service := NewItemLinkService(db)
+
+	for _, test := range []struct {
+		entityType     string
+		entityID       int
+		wantWorkspace  int
+		wantPermission string
+	}{
+		{"item", 10, 100, models.PermissionItemView},
+		{"test_case", 20, 200, models.PermissionTestView},
+		{"page", 40, 400, models.PermissionPageView},
+		{"asset", 30, 0, AssetPermissionKeyView},
+	} {
+		t.Run(test.entityType, func(t *testing.T) {
+			workspaceID, permission := service.notificationReferenceAccess(test.entityType, test.entityID)
+			if workspaceID != test.wantWorkspace || permission != test.wantPermission {
+				t.Fatalf("reference access = (%d, %q), want (%d, %q)", workspaceID, permission, test.wantWorkspace, test.wantPermission)
+			}
+		})
+	}
 }
 
 func mustLinkExec(t *testing.T, db database.Database, q string, args ...interface{}) {

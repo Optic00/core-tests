@@ -3,7 +3,6 @@
 package services
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -248,12 +247,12 @@ func TestPermissionServiceBasicOperations(t *testing.T) {
 		userID64 := fixtureUserID(t, db, "expire@test.com")
 		userID := int(userID64)
 
-		// Build the effective snapshot so the following checks exercise expiry.
-		cached, err := permService.effectivePermissionSnapshot(userID)
+		// Check permissions (this will cache the result)
+		isAdmin, err := permService.IsSystemAdmin(userID)
 		if err != nil {
-			t.Fatalf("Build permission snapshot: %v", err)
+			t.Fatalf("Error checking system admin for cache test: %v", err)
 		}
-		if cached.IsSystemAdmin {
+		if isAdmin {
 			t.Error("User should not be admin initially")
 		}
 
@@ -265,35 +264,23 @@ func TestPermissionServiceBasicOperations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to grant system admin permission: %v", err)
 		}
-		isAdminWithinTTL, err := permService.IsSystemAdmin(userID)
-		if err != nil {
-			t.Fatalf("Check cached system admin permission: %v", err)
-		}
-		if isAdminWithinTTL {
-			t.Fatal("Permission snapshot changed before expiry")
-		}
 
-		cacheKey := permService.getCacheKey(userID)
-		entry, err := permService.cache.Get(cacheKey)
-		if err != nil {
-			t.Fatalf("Read permission cache entry: %v", err)
-		}
-		if err := json.Unmarshal(entry, cached); err != nil {
-			t.Fatalf("Decode permission cache entry: %v", err)
-		}
-		cached.ExpiresAt = time.Now().Add(-time.Second)
-		expiredEntry, err := json.Marshal(cached)
-		if err != nil {
-			t.Fatalf("Encode expired permission cache entry: %v", err)
-		}
-		if err := permService.cache.Set(cacheKey, expiredEntry); err != nil {
-			t.Fatalf("Store expired permission cache entry: %v", err)
-		}
-
-		// Check again - should get updated value since cache expired.
-		isAdminAfter, err := permService.IsSystemAdmin(userID)
-		if err != nil {
-			t.Fatalf("Error checking system admin after cache expiry: %v", err)
+		// Poll until the check returns the fresh value, which proves the
+		// cached entry expired (TTL is 1 second in test config).
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		deadline := time.Now().Add(5 * time.Second)
+		var isAdminAfter bool
+		for {
+			var err error
+			isAdminAfter, err = permService.IsSystemAdmin(userID)
+			if err != nil {
+				t.Fatalf("Error checking system admin after cache expiry: %v", err)
+			}
+			if isAdminAfter || time.Now().After(deadline) {
+				break
+			}
+			<-tick.C
 		}
 		if !isAdminAfter {
 			t.Error("User should be admin after cache expiry and permission grant")

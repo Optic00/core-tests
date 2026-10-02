@@ -22,6 +22,10 @@ describe('background sync availability', () => {
     expect(isExpectedBackgroundSyncError({ name: 'AbortError' })).toBe(true);
     expect(isExpectedBackgroundSyncError({ code: 'NETWORK_ERROR' })).toBe(true);
     expect(isExpectedBackgroundSyncError({ code: 'REQUEST_TIMEOUT' })).toBe(true);
+    expect(isExpectedBackgroundSyncError(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isExpectedBackgroundSyncError(new TypeError('Cannot read properties of undefined'))).toBe(
+      false
+    );
     expect(isExpectedBackgroundSyncError(new Error('server bug'))).toBe(false);
   });
 
@@ -49,5 +53,40 @@ describe('background sync availability', () => {
     stop();
     windowRef.dispatchEvent(new Event('online'));
     expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores spurious online/visibility events when never suspended', () => {
+    const windowRef = new EventTarget();
+    const documentRef = new EventTarget();
+    const navigatorRef = { onLine: true };
+    Object.assign(documentRef, { hidden: false, visibilityState: 'visible' });
+    const callback = vi.fn();
+
+    const stop = onBackgroundSyncAvailable(callback, {
+      document: documentRef,
+      navigator: navigatorRef,
+      window: windowRef,
+    });
+
+    // Browsers deliver online/visibility blips for pages that were never
+    // hidden or offline — those must not trigger a full data refresh.
+    windowRef.dispatchEvent(new Event('online'));
+    documentRef.dispatchEvent(new Event('visibilitychange'));
+    windowRef.dispatchEvent(new Event('online'));
+    expect(callback).not.toHaveBeenCalled();
+
+    // An actual suspension still recovers exactly once.
+    navigatorRef.onLine = false;
+    windowRef.dispatchEvent(new Event('offline'));
+    navigatorRef.onLine = true;
+    Object.assign(documentRef, { hidden: true, visibilityState: 'hidden' });
+    windowRef.dispatchEvent(new Event('online'));
+    expect(callback).not.toHaveBeenCalled();
+
+    Object.assign(documentRef, { hidden: false, visibilityState: 'visible' });
+    documentRef.dispatchEvent(new Event('visibilitychange'));
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    stop();
   });
 });

@@ -6,7 +6,7 @@ import (
 )
 
 // TestEnumerateRegisteredRoutes_Smoke is a sanity check that the AST walker
-// is actually finding routes from both public Core surfaces. It's not exhaustive
+// is actually finding routes from all three surfaces. It's not exhaustive
 // — TestRouteClassification and TestAnonymousBaseline are the real
 // consumers — but it guards against silent zero-result regressions (a
 // renamed selector or a missing routes directory would otherwise pass
@@ -21,8 +21,9 @@ func TestEnumerateRegisteredRoutes_Smoke(t *testing.T) {
 	// that silently kills one prefix (e.g. by renaming the route group var)
 	// gets caught.
 	want := []struct{ method, path string }{
-		{"GET", "/api/items/{id}"},         // legacy /api surface, items routes file
-		{"GET", "/rest/api/v1/items/{id}"}, // v1 bearer surface
+		{"GET", "/api/workspaces/personal"}, // retained session-only surface
+		{"GET", "/rest/api/v1/items/{id}"},  // v1 bearer surface
+		{"GET", "/scim/v2/Users"},           // SCIM surface
 	}
 	for _, w := range want {
 		if !containsRoute(routes, w.method, w.path) {

@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,122 @@ import (
 
 	"windshift/internal/email"
 	"windshift/internal/models"
+	"windshift/internal/services"
 	"windshift/internal/sso"
 	"windshift/internal/testutils"
 )
+
+func TestEmailSchedulerDefersUIDUntilTrackingClaimRecovers(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	t.Cleanup(func() { _ = tdb.Close() })
+	data := tdb.SeedTestData(t)
+	db := tdb.GetDatabase()
+	ctx := context.Background()
+	var itemTypeID int
+	if err := db.QueryRowContext(ctx, `SELECT id FROM item_types WHERE is_default = true ORDER BY id LIMIT 1`).Scan(&itemTypeID); err != nil {
+		t.Fatalf("load default item type: %v", err)
+	}
+
+	configJSON, err := json.Marshal(models.ChannelConfig{EmailWorkspaceID: data.WorkspaceID, EmailItemTypeID: &itemTypeID})
+	if err != nil {
+		t.Fatalf("marshal channel config: %v", err)
+	}
+	var channelID int
+	if err := db.QueryRowContext(ctx, `
+		INSERT INTO channels (name, type, direction, status, config)
+		VALUES ('Claim recovery', 'email', 'inbound', 'enabled', ?)
+		RETURNING id
+	`, string(configJSON)).Scan(&channelID); err != nil {
+		t.Fatalf("insert channel: %v", err)
+	}
+	if _, err := db.ExecWriteContext(ctx, `INSERT INTO email_channel_state (channel_id, last_uid) VALUES (?, 0)`, channelID); err != nil {
+		t.Fatalf("insert channel state: %v", err)
+	}
+	const messageID = "claim-recovery@example.com"
+	if _, err := db.ExecWriteContext(ctx, `
+		INSERT INTO email_message_tracking
+			(channel_id, message_id, dedup_key, from_email, direction, processed_at)
+		VALUES (?, ?, ?, 'customer@example.com', 'inbound', CURRENT_TIMESTAMP)
+	`, channelID, messageID, messageID); err != nil {
+		t.Fatalf("insert unfinished tracking claim: %v", err)
+	}
+
+	message := &email.FetchedMessage{
+		UID: 1,
+		Envelope: &imap.Envelope{
+			Date: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Subject: "Need help",
+			MessageID: "<" + messageID + ">", From: []imap.Address{{Mailbox: "customer", Host: "example.com"}},
+		},
+		Raw: []byte("From: customer@example.com\r\nSubject: Need help\r\nMessage-ID: <" + messageID + ">\r\n\r\nPlease help\r\n"),
+	}
+	enc := sso.NewSecretEncryption("test-server-secret-with-sufficient-length-for-derivation")
+	es := NewEmailScheduler(db, email.NewCredentialManager(db, enc), t.TempDir())
+	es.SetCommentService(services.NewCommentService(db))
+	es.providerForChannel = func(context.Context, int) (email.Provider, *models.ChannelConfig, error) {
+		return &fakeProvider{client: &fakeIMAPClient{uidValidity: 7, messages: []*email.FetchedMessage{message}}},
+			&models.ChannelConfig{EmailWorkspaceID: data.WorkspaceID, EmailItemTypeID: &itemTypeID, EmailMailbox: "INBOX"}, nil
+	}
+	channel := channelInfo{ID: channelID, Name: "Claim recovery", Config: string(configJSON)}
+
+	if ok := es.processChannel(ctx, channel); !ok {
+		t.Fatal("live tracking claim should defer without marking the channel unhealthy")
+	}
+	state, err := es.getOrCreateChannelState(ctx, channelID)
+	if err != nil {
+		t.Fatalf("read deferred state: %v", err)
+	}
+	if state.LastUID != 0 || state.FailedMessageCount != 0 {
+		t.Fatalf("deferred state = last_uid:%d failed_count:%d, want 0/0", state.LastUID, state.FailedMessageCount)
+	}
+	var itemCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items WHERE channel_id = ?`, channelID).Scan(&itemCount); err != nil {
+		t.Fatalf("count deferred items: %v", err)
+	}
+	if itemCount != 0 {
+		t.Fatalf("items before stale recovery = %d, want 0", itemCount)
+	}
+
+	if _, err := db.ExecWriteContext(ctx, `
+		UPDATE email_message_tracking SET processed_at = ?
+		WHERE channel_id = ? AND dedup_key = ?
+	`, time.Now().Add(-6*time.Minute), channelID, messageID); err != nil {
+		t.Fatalf("age tracking claim: %v", err)
+	}
+	if ok := es.processChannel(ctx, channel); !ok {
+		t.Fatal("stale tracking claim did not recover")
+	}
+	state, err = es.getOrCreateChannelState(ctx, channelID)
+	if err != nil {
+		t.Fatalf("read recovered state: %v", err)
+	}
+	if state.LastUID != 1 {
+		t.Fatalf("recovered last_uid = %d, want 1", state.LastUID)
+	}
+	var completedTracking int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM email_message_tracking
+		WHERE channel_id = ? AND dedup_key = ? AND item_id IS NOT NULL
+	`, channelID, messageID).Scan(&completedTracking); err != nil {
+		t.Fatalf("count completed tracking: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items WHERE channel_id = ?`, channelID).Scan(&itemCount); err != nil {
+		t.Fatalf("count recovered items: %v", err)
+	}
+	if itemCount != 1 || completedTracking != 1 {
+		t.Fatalf("recovery counts = items:%d completed_tracking:%d, want 1/1", itemCount, completedTracking)
+	}
+
+	if ok := es.processChannel(ctx, channel); !ok {
+		t.Fatal("completed deduplication poll failed")
+	}
+	var finalItemCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items WHERE channel_id = ?`, channelID).Scan(&finalItemCount); err != nil {
+		t.Fatalf("count final items: %v", err)
+	}
+	if finalItemCount != 1 {
+		t.Fatalf("completed deduplication created %d items, want 1", finalItemCount)
+	}
+}
 
 // fakeIMAPClient is an in-memory email.IMAPClient that serves a fixed set of
 // messages (those with UID greater than the requested watermark). It lets the

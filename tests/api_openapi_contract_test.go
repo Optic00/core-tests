@@ -151,7 +151,17 @@ func TestOperationalOpenAPIContract(t *testing.T) {
 	}
 }
 
-// loadOpenAPISpec reads core/api/openapi.yaml relative to the on-disk location
+func TestAPIOpenAPISpecOmitsRetiredYAMLEndpoint(t *testing.T) {
+	doc := loadOpenAPISpec(t)
+	if doc.Paths.Find("/openapi.yaml") != nil {
+		t.Fatal("retired YAML endpoint remains in the public contract")
+	}
+	if doc.Paths.Find("/openapi.json") == nil {
+		t.Fatal("JSON discovery endpoint is missing from the public contract")
+	}
+}
+
+// loadOpenAPISpec reads core/api/openapi.json relative to the on-disk location
 // of this test file. Uses runtime.Caller so it works whether the test is run
 // from core-tests/tests/ directly or from core/tests/ via overlay.sh.
 func loadOpenAPISpec(t *testing.T) *openapi3.T {
@@ -161,13 +171,13 @@ func loadOpenAPISpec(t *testing.T) *openapi3.T {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	specPath := filepath.Join(filepath.Dir(thisFile), "..", "api", "openapi.yaml")
+	specPath := filepath.Join(filepath.Dir(thisFile), "..", "api", "openapi.json")
 	// The overlay copy places this file at core/tests/, with the spec at
-	// core/api/openapi.yaml. The original lives at core-tests/tests/, with
-	// the spec at ../core/api/openapi.yaml. Try the obvious sibling first,
+	// core/api/openapi.json. The original lives at core-tests/tests/, with
+	// the spec at ../core/api/openapi.json. Try the obvious sibling first,
 	// then fall back to the overlay layout.
 	if _, err := openapi3.NewLoader().LoadFromFile(specPath); err != nil {
-		alt := filepath.Join(filepath.Dir(thisFile), "..", "..", "core", "api", "openapi.yaml")
+		alt := filepath.Join(filepath.Dir(thisFile), "..", "..", "core", "api", "openapi.json")
 		if _, err2 := openapi3.NewLoader().LoadFromFile(alt); err2 == nil {
 			specPath = alt
 		}
@@ -270,7 +280,7 @@ func assertEveryRegisteredRouteInSpec(t *testing.T, doc *openapi3.T) {
 
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		t.Fatalf("router.go declares routes that are not documented in api/openapi.yaml — add swag annotations and run `make openapi`:\n  %s",
+		t.Fatalf("router.go declares routes that are not documented in api/openapi.json — add swag annotations and run `make openapi`:\n  %s",
 			strings.Join(missing, "\n  "))
 	}
 }

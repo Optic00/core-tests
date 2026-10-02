@@ -26,10 +26,15 @@ func TestOnCallScheduleAdministrationEmitsAudit(t *testing.T) {
 
 	repo := repository.NewOnCallRepository(tdb.GetDatabase())
 	permService, _, _ := createTestServices(t, *tdb)
+	itemRepo := repository.NewItemRepository(tdb.GetDatabase())
+	teamRepo := repository.NewTeamRepository(tdb.GetDatabase())
+	onCallService := services.NewOnCallService(tdb.GetDatabase(), repo, repository.NewLeaveRepository(tdb.GetDatabase()))
 	handler := NewOnCallHandler(
 		repo,
-		repository.NewTeamRepository(tdb.GetDatabase()),
-		services.NewOnCallService(tdb.GetDatabase(), repo, repository.NewLeaveRepository(tdb.GetDatabase())),
+		teamRepo,
+		itemRepo,
+		onCallService,
+		services.NewIncidentService(tdb.GetDatabase(), repo, itemRepo, onCallService, teamRepo, nil),
 		permService,
 		logger.NewAuditor(tdb.GetDatabase()),
 	)

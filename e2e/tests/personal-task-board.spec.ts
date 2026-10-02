@@ -23,8 +23,8 @@ test('maps a personal task to board endpoints and opens its dedicated modal', as
     name: `Personal board ${stamp}`,
     ql_query: `title ~ "${stamp}"`,
   });
-  const configurationResponse = await request.post(
-    `/api/collections/${collection.id}/board-configuration`,
+  const configurationResponse = await request.put(
+    `/api/v2/collections/${collection.id}/board-configuration`,
     {
       headers: SEC_FETCH,
       data: {
@@ -69,7 +69,7 @@ test('maps a personal task to board endpoints and opens its dedicated modal', as
   const transitionResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      response.url().endsWith(`/api/items/${item.id}/transition`)
+      response.url().endsWith(`/api/v2/items/${item.id}/transition`)
   );
   await page.getByTestId('personal-task-status-toggle').click();
   expect((await transitionResponse).ok()).toBeTruthy();

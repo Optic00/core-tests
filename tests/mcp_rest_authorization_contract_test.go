@@ -254,12 +254,12 @@ func TestMCPAndRESTV1_TimeProjectAuthorizationContract(t *testing.T) {
 
 	for endpoint, body := range map[string]map[string]interface{}{
 		fmt.Sprintf("/time/projects/%d/managers", projectID): {
-			"manager_type": "user",
-			"manager_id":   allowedID,
+			"principal_type": "user",
+			"principal_id":   allowedID,
 		},
 		fmt.Sprintf("/time/projects/%d/members", projectID): {
-			"member_type": "user",
-			"member_id":   allowedID,
+			"principal_type": "user",
+			"principal_id":   allowedID,
 		},
 	} {
 		response := MakeAuthRequest(t, server, http.MethodPost, endpoint, body)

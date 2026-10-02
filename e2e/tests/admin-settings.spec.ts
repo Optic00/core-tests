@@ -79,9 +79,7 @@ test.describe('Admin Settings', () => {
       }
     });
 
-    test('keeps the centralized service user grant form within its panel when zoomed', async ({
-      page,
-    }) => {
+    test('keeps the centralized service user grant form within its panel when zoomed', async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 900 });
       await page.goto('/admin/security');
 

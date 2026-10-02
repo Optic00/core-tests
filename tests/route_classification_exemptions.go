@@ -34,6 +34,42 @@ type RouteClassificationExemption struct {
 // add to this list only when the route genuinely doesn't fit any policy
 // class.
 var RouteClassificationExemptions = []RouteClassificationExemption{
+	{Method: "GET", Path: "/api/v2/admin/audit-logs", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/audit-logs", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/admin/audit-logs/since", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/audit-logs/since", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/admin/api-tokens", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/api-tokens", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "DELETE", Path: "/api/v2/admin/api-tokens/{token_id}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "DELETE", Path: "/rest/api/v2/admin/api-tokens/{token_id}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/admin/object-translations/definitions", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/object-translations/definitions", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/admin/object-translations/orphans", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/object-translations/orphans", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/admin/object-translations/canonical-differences", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/object-translations/canonical-differences", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/admin/object-translations/{object_type}/{object_id}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/rest/api/v2/admin/object-translations/{object_type}/{object_id}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "POST", Path: "/api/v2/admin/object-translations/resolve", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "POST", Path: "/rest/api/v2/admin/object-translations/resolve", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "PUT", Path: "/api/v2/admin/object-translations/{object_type}/{object_id}/{field}/{locale}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "PUT", Path: "/rest/api/v2/admin/object-translations/{object_type}/{object_id}/{field}/{locale}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "DELETE", Path: "/api/v2/admin/object-translations/{object_type}/{object_id}/{field}/{locale}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "DELETE", Path: "/rest/api/v2/admin/object-translations/{object_type}/{object_id}/{field}/{locale}", Reason: "System-admin and per-operation bearer scope denials are covered by TestAdminBearerEndpointDenials; persistence and audit contracts by TestV2AdminBearerTranslations and TestV2AdminBearerTokensAndAudit."},
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/milestones/{milestone_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "PATCH", Path: "/api/v2/workspaces/{workspace_id}/milestones/{milestone_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "DELETE", Path: "/api/v2/workspaces/{workspace_id}/milestones/{milestone_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "GET", Path: "/api/v2/workspaces/{workspace_id}/iterations/{iteration_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "PATCH", Path: "/api/v2/workspaces/{workspace_id}/iterations/{iteration_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "DELETE", Path: "/api/v2/workspaces/{workspace_id}/iterations/{iteration_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/milestones/{milestone_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "PATCH", Path: "/rest/api/v2/workspaces/{workspace_id}/milestones/{milestone_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "DELETE", Path: "/rest/api/v2/workspaces/{workspace_id}/milestones/{milestone_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "GET", Path: "/rest/api/v2/workspaces/{workspace_id}/iterations/{iteration_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "PATCH", Path: "/rest/api/v2/workspaces/{workspace_id}/iterations/{iteration_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "DELETE", Path: "/rest/api/v2/workspaces/{workspace_id}/iterations/{iteration_id}", Reason: "workspace ownership, item token scopes, and separate global authority covered by TestV2WorkspacePlanningItemScopes"},
+	{Method: "GET", Path: "/api/v2/query-language/catalog", Reason: "authenticated completion metadata with no workspace-specific authorization target"},
+	{Method: "GET", Path: "/api/v2/query-language/values", Reason: "multi-workspace completion search returns only caller-visible catalog values rather than exposing one workspace-scoped resource"},
 	// Multi-workspace filtered list endpoints. These do not return 404 on
 	// permission denial — they return 200 with a result list filtered by
 	// the caller's workspace memberships. The matrix's exact-status model
@@ -41,10 +77,10 @@ var RouteClassificationExemptions = []RouteClassificationExemption{
 	// tests (TestItemListFiltering in permission_isolation_test.go) and
 	// E2E specs (permissions-cross-workspace.spec.ts) instead.
 	{Method: "GET", Path: "/api/items", Reason: "multi-workspace filtered list — 200 with filtered results, not 404"},
-	{Method: "GET", Path: "/api/items/search", Reason: "multi-workspace filtered search — same semantics as GET /api/items"},
+	{Method: "GET", Path: "/api/v2/items/search", Reason: "multi-workspace filtered search; exact filtered results and totals covered by TestV2ItemSearch"},
 	{Method: "GET", Path: "/api/items/backlog", Reason: "multi-workspace filtered backlog — same semantics as GET /api/items"},
 	{Method: "GET", Path: "/api/items/changes", Reason: "multi-workspace delta polling — returns filtered changed IDs/watermark, not per-item 404"},
-	{Method: "GET", Path: "/api/items/batch", Reason: "multi-workspace filtered bulk fetch — 200 with inaccessible ids omitted, not per-item 404"},
+	{Method: "POST", Path: "/api/items/batch", Reason: "multi-workspace filtered bulk fetch — 200 with inaccessible ids omitted, not per-item 404"},
 
 	// Authenticated-only endpoint (no workspace permission gate). Returns
 	// global cache statistics; behavior is auth-or-401 with no per-actor
@@ -89,6 +125,14 @@ var RouteClassificationExemptions = []RouteClassificationExemption{
 	// /api/attachments — DELETE consumes the fixture; needs per-actor
 	// refresh before being exercised. Classification intent is workspace.item.edit.
 	{Method: "DELETE", Path: "/api/attachments/{attachmentId}", Reason: "destructive (workspace.item.edit intent) — needs per-actor fixture refresh"},
+
+	// Incident responder actions gate on team membership ("responder-ship"),
+	// not item workspace permission: the 3am responder may have no rights in
+	// the item's workspace. Exact allow/deny contracts are covered by
+	// TestItemIncidentLifecycleAuthorization.
+	{Method: "POST", Path: "/api/items/{id}/incident/acknowledge", Reason: "responder-ship gate (team membership/admin or teams.manage), independent of item workspace permission — covered by TestItemIncidentLifecycleAuthorization"},
+	{Method: "POST", Path: "/api/items/{id}/incident/unacknowledge", Reason: "responder-ship gate (team membership/admin or teams.manage), independent of item workspace permission — covered by TestItemIncidentLifecycleAuthorization"},
+	{Method: "POST", Path: "/api/items/{id}/incident/resolve", Reason: "responder-ship gate (team membership/admin or teams.manage), independent of item workspace permission — covered by TestItemIncidentLifecycleAuthorization"},
 
 	// /api/links — DELETE consumes the link fixture; same as attachments.
 	{Method: "DELETE", Path: "/api/links/{linkId}", Reason: "destructive (workspace.item.edit intent) — needs per-actor fixture refresh"},

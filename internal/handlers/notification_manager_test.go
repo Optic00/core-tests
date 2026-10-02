@@ -3,13 +3,13 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"windshift/internal/database"
 	"windshift/internal/models"
+	"windshift/internal/testutils"
 )
 
 type recordingPushDispatcher struct {
@@ -32,44 +32,19 @@ func (d *recordingPushDispatcher) Close(context.Context) error { return nil }
 
 func newNotificationManagerTestDB(t *testing.T) database.Database {
 	t.Helper()
-	db, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "notifications.db"))
-	if err != nil {
-		t.Fatalf("new SQLite database: %v", err)
-	}
-	statements := []string{
-		`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
-		`CREATE TABLE notifications (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			title TEXT NOT NULL,
-			message TEXT NOT NULL,
-			type TEXT NOT NULL DEFAULT 'info',
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-			read BOOLEAN DEFAULT false,
-			seen_at DATETIME,
-			sent_at DATETIME,
-			last_send_failed BOOLEAN DEFAULT FALSE,
-			avatar TEXT,
-			action_url TEXT,
-			metadata TEXT,
-			authorization_scope TEXT NOT NULL DEFAULT 'legacy',
-			workspace_id INTEGER,
-			item_id INTEGER,
-			source_type TEXT,
-			source_id INTEGER,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		)`,
-		`INSERT INTO users (id) VALUES (1), (2), (3)`,
-	}
-	for _, statement := range statements {
-		if _, err := db.ExecWrite(statement); err != nil {
-			_ = db.Close()
-			t.Fatalf("initialize notification database: %v", err)
+	tdb := testutils.CreateTestDB(t, true)
+	db := tdb.GetDatabase()
+	for id := 1; id <= 3; id++ {
+		if _, err := db.ExecWrite(`
+			INSERT INTO users (id, email, username, first_name, last_name)
+			VALUES (?, ?, ?, 'Notification', 'Test')
+			ON CONFLICT(id) DO NOTHING
+		`, id, fmt.Sprintf("notification-manager-%d@example.com", id), fmt.Sprintf("notification-manager-%d", id)); err != nil {
+			_ = tdb.Close()
+			t.Fatalf("insert notification user %d: %v", id, err)
 		}
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = tdb.Close() })
 	return db
 }
 
@@ -124,6 +99,25 @@ func TestNotificationManagerBulkInsertAndCompactCache(t *testing.T) {
 	if count != 1000 {
 		t.Fatalf("database count = %d, want 1000", count)
 	}
+	var persisted models.Notification
+	var deliveryState string
+	var deliveryAttempts int
+	if err := db.QueryRow(`
+		SELECT user_id, title, message, type, read, action_url, authorization_scope,
+		       email_delivery_state, email_delivery_attempts
+		FROM notifications WHERE id = ?
+	`, stored[0].ID).Scan(
+		&persisted.UserID, &persisted.Title, &persisted.Message, &persisted.Type,
+		&persisted.Read, &persisted.ActionURL, &persisted.AuthorizationScope,
+		&deliveryState, &deliveryAttempts,
+	); err != nil {
+		t.Fatalf("read persisted notification: %v", err)
+	}
+	if persisted.UserID != 1 || persisted.Title != "Notification 0" || persisted.Message != "bounded payload" ||
+		persisted.Type != "info" || persisted.Read || persisted.ActionURL != "/workspaces/1/items/1" ||
+		persisted.AuthorizationScope != models.NotificationScopeSystem || deliveryState != "pending" || deliveryAttempts != 0 {
+		t.Fatalf("persisted notification = %+v delivery_state:%s attempts:%d", persisted, deliveryState, deliveryAttempts)
+	}
 	cache, ok := manager.cacheSnapshot(1)
 	if !ok || len(cache.Notifications) != notificationCachePageSize || cache.Complete {
 		t.Fatalf("cache snapshot = ok:%v len:%d complete:%v", ok, len(cache.Notifications), cache.Complete)
@@ -146,6 +140,25 @@ func TestNotificationManagerBulkInsertAndCompactCache(t *testing.T) {
 	}
 }
 
+func TestNotificationManagerBulkInsertRollsBackWholeBatch(t *testing.T) {
+	db := newNotificationManagerTestDB(t)
+	manager := newNotificationManagerForTest(t, db)
+	batch := []models.Notification{
+		testNotifications(1, 1)[0],
+		testNotifications(999999, 1)[0],
+	}
+	if _, err := manager.AddNotifications(batch); err == nil {
+		t.Fatal("bulk insert with missing recipient succeeded")
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE user_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count rolled-back notifications: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("notifications after failed batch = %d, want 0", count)
+	}
+}
+
 func TestNotificationManagerSlowUserDoesNotBlockAnotherUser(t *testing.T) {
 	db := newNotificationManagerTestDB(t)
 	manager := newNotificationManagerForTest(t, db)
@@ -153,13 +166,18 @@ func TestNotificationManagerSlowUserDoesNotBlockAnotherUser(t *testing.T) {
 	blockedLock := manager.userLock(1)
 	blockedLock.Lock()
 	blockedDone := make(chan error, 1)
-	started := make(chan struct{})
+	waiting := make(chan struct{})
+	var waitingOnce sync.Once
+	manager.beforeUserLock = func(userID int) {
+		if userID == 1 {
+			waitingOnce.Do(func() { close(waiting) })
+		}
+	}
 	go func() {
-		close(started)
 		_, err := manager.AddNotification(testNotifications(1, 1)[0])
 		blockedDone <- err
 	}()
-	<-started
+	<-waiting
 
 	otherDone := make(chan error, 1)
 	go func() {

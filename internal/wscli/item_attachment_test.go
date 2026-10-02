@@ -24,9 +24,8 @@ func seedFile(t *testing.T, dir, name, contents string) string {
 	return path
 }
 
-// UploadItemAttachment must hit the v1 item route, send a bearer token, put
-// the bytes in a `file` part under the base filename, and decode the shared
-// {success,message,attachment} envelope.
+// UploadItemAttachment must hit the v2 item route, send a bearer token, put
+// the bytes in a `file` part under the base filename, and decode a data document.
 func TestClient_UploadItemAttachment_HappyPath(t *testing.T) {
 	var gotPath, gotAuth, gotFilename string
 	var gotBytes []byte
@@ -58,10 +57,8 @@ func TestClient_UploadItemAttachment_HappyPath(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"message": "Attachment uploaded",
-			"attachment": Attachment{
+		_ = json.NewEncoder(w).Encode(DataDocument[Attachment]{
+			Data: Attachment{
 				ID:               77,
 				Filename:         "stored-abc.png",
 				OriginalFilename: gotFilename,
@@ -76,7 +73,7 @@ func TestClient_UploadItemAttachment_HappyPath(t *testing.T) {
 		t.Fatalf("UploadItemAttachment: %v", err)
 	}
 
-	if gotPath != "/rest/api/v1/items/1181/attachments" {
+	if gotPath != "/rest/api/v2/items/1181/attachments" {
 		t.Errorf("upload path: %q", gotPath)
 	}
 	if gotAuth != "Bearer ws_test_token" {
@@ -93,16 +90,13 @@ func TestClient_UploadItemAttachment_HappyPath(t *testing.T) {
 	}
 }
 
-// A v1-shaped error body must come back as an *APIError carrying the status,
+// A v2 error document must come back as an *APIError carrying the status,
 // so translateItemAttachmentError can recognise a 404.
 func TestClient_UploadItemAttachment_APIErrorEnvelope(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"code":    "ITEM_NOT_FOUND",
-			"message": "Item not found",
-		})
+		_, _ = w.Write([]byte(`{"error":{"code":"not_found","message":"Item not found"},"request_id":"req_test"}`))
 	})
 
 	_, err := c.UploadItemAttachment(9999, "x.png", strings.NewReader("data"))
@@ -120,7 +114,7 @@ func TestClient_UploadItemAttachment_APIErrorEnvelope(t *testing.T) {
 func TestClient_UploadItemAttachment_MissingAttachmentID(t *testing.T) {
 	c, _ := newTestPageClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"message":"ok"}`))
+		_, _ = w.Write([]byte(`{"data":{}}`))
 	})
 
 	if _, err := c.UploadItemAttachment(1, "x.png", strings.NewReader("data")); err == nil {
@@ -250,7 +244,7 @@ func TestMultipartEnvelopeSize(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		seen = int64(len(body))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"attachment":{"id":1}}`))
+		_, _ = w.Write([]byte(`{"data":{"id":1}}`))
 	})
 	if _, err := c.UploadItemAttachment(1, filename, strings.NewReader(payload)); err != nil {
 		t.Fatalf("upload: %v", err)

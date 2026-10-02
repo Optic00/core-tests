@@ -19,6 +19,13 @@ import (
 	"windshift/internal/testutils"
 )
 
+// handlerFunc adapts a function to events.Handler for inline registrations.
+type handlerFunc func(context.Context, events.Event) error
+
+func (f handlerFunc) Handle(ctx context.Context, event events.Event) error {
+	return f(ctx, event)
+}
+
 func TestLogbookIngestionCommitsReadyStateChunksAndEventsTogether(t *testing.T) {
 	tdb := newLogbookPostgresTestDB(t)
 	db := tdb.GetDatabase()
@@ -330,7 +337,7 @@ func TestLogbookDurableEngineShutdownIsBounded(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	engine := events.NewEngine(db, logbookEventEngineTestConfig())
-	if err := engine.RegisterHandler(consumerKey, events.HandlerFunc(func(context.Context, events.Event) error {
+	if err := engine.RegisterHandler(consumerKey, handlerFunc(func(context.Context, events.Event) error {
 		close(started)
 		<-release
 		return nil

@@ -53,7 +53,9 @@ test.describe('Page labels — workspace-scoped, attach to pages', () => {
     // (workspace has no labels yet); on a Playwright auto-retry the label
     // already exists, so we click the existing row instead — both branches
     // result in the same final state: label attached to this page.
-    await picker.locator('[data-testid="page-label-picker-search"]').fill('design');
+    await picker
+      .locator('[data-testid="page-label-picker-search"]')
+      .fill('design');
     const createBtn = picker.locator('[data-testid="page-label-picker-create"]');
     const existingRow = picker
       .locator('[data-testid="page-label-picker-row"]')
@@ -64,9 +66,9 @@ test.describe('Page labels — workspace-scoped, attach to pages', () => {
     const attachResponse = page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        res.url().endsWith(`/api/workspaces/${workspaceId}/pages/${pageId}/labels`) &&
+        res.url().endsWith(`/api/v2/workspaces/${workspaceId}/pages/${pageId}/labels`) &&
         res.ok(),
-      { timeout: 5000 }
+      { timeout: 5000 },
     );
     if (await createBtn.isVisible()) {
       await createBtn.click();
@@ -80,7 +82,9 @@ test.describe('Page labels — workspace-scoped, attach to pages', () => {
     await expect(chip).toContainText('design');
   });
 
-  test('sidebar filter narrows tree to labeled pages and ancestors', async ({ page }) => {
+  test('sidebar filter narrows tree to labeled pages and ancestors', async ({
+    page,
+  }) => {
     // Seed two more pages — one labeled, one not.
     const parent = await knowledge.createRootPage(workspaceId, 'Parent');
     const labeled = await knowledge.createChildPage(workspaceId, 'Labeled child');
@@ -93,9 +97,9 @@ test.describe('Page labels — workspace-scoped, attach to pages', () => {
     const childAttachResponse = page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        res.url().endsWith(`/api/workspaces/${workspaceId}/pages/${labeled}/labels`) &&
+        res.url().endsWith(`/api/v2/workspaces/${workspaceId}/pages/${labeled}/labels`) &&
         res.ok(),
-      { timeout: 5000 }
+      { timeout: 5000 },
     );
     await picker
       .locator('[data-testid="page-label-picker-row"]')
@@ -133,7 +137,9 @@ test.describe('Page labels — workspace-scoped, attach to pages', () => {
     await expect(knowledge.treeItem(unlabeled)).toBeVisible();
   });
 
-  test('detach label removes the chip + drops the sidebar match', async ({ page }) => {
+  test('detach label removes the chip + drops the sidebar match', async ({
+    page,
+  }) => {
     // Navigate to /pages first so the tree is rendered regardless of where
     // the previous test left the URL.
     await knowledge.gotoIndex(workspaceId);
@@ -150,9 +156,9 @@ test.describe('Page labels — workspace-scoped, attach to pages', () => {
     const detachResponse = page.waitForResponse(
       (res) =>
         res.request().method() === 'DELETE' &&
-        /\/api\/workspaces\/\d+\/pages\/\d+\/labels\/\d+$/.test(res.url()) &&
+        /\/api\/v2\/workspaces\/\d+\/pages\/\d+\/labels\/\d+$/.test(res.url()) &&
         res.ok(),
-      { timeout: 5000 }
+      { timeout: 5000 },
     );
     await chip.locator('[data-testid="page-label-chip-remove"]').click();
     await detachResponse;

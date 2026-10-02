@@ -427,10 +427,8 @@ func TestWSCLI_Task_Edit(t *testing.T) {
 	out, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var got struct {
-		Title    string `json:"title"`
-		Assignee struct {
-			ID int `json:"id"`
-		} `json:"assignee"`
+		Title      string `json:"title"`
+		AssigneeID *int   `json:"assignee_id"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
@@ -438,8 +436,8 @@ func TestWSCLI_Task_Edit(t *testing.T) {
 	if got.Title != "renamed via edit" {
 		t.Fatalf("title not updated, got %q", got.Title)
 	}
-	if got.Assignee.ID != w.Users.Alice.ID {
-		t.Fatalf("assignee not updated, got %d want %d", got.Assignee.ID, w.Users.Alice.ID)
+	if got.AssigneeID == nil || *got.AssigneeID != w.Users.Alice.ID {
+		t.Fatalf("assignee not updated, got %v want %d", got.AssigneeID, w.Users.Alice.ID)
 	}
 }
 
@@ -460,15 +458,13 @@ func TestWSCLI_Task_Move(t *testing.T) {
 	out, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var got struct {
-		Status struct {
-			ID int `json:"id"`
-		} `json:"status"`
+		StatusID *int `json:"status_id"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
 	}
-	if got.Status.ID != w.Statuses.InProgress {
-		t.Fatalf("status not transitioned: got %d want %d", got.Status.ID, w.Statuses.InProgress)
+	if got.StatusID == nil || *got.StatusID != w.Statuses.InProgress {
+		t.Fatalf("status not transitioned: got %v want %d", got.StatusID, w.Statuses.InProgress)
 	}
 }
 
@@ -654,9 +650,7 @@ func TestWSCLI_Task_Edit_TypeByName(t *testing.T) {
 	out, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var current struct {
-		ItemType struct {
-			ID int `json:"id"`
-		} `json:"item_type"`
+		ItemTypeID *int `json:"item_type_id"`
 	}
 	if err := json.Unmarshal(out, &current); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
@@ -666,7 +660,7 @@ func TestWSCLI_Task_Edit_TypeByName(t *testing.T) {
 	var wantID int
 	for name, id := range GetItemTypes(t, ts, configSetID) {
 		// A parentless item cannot be changed to the generic Sub-task type.
-		if id != current.ItemType.ID && name != "Sub-task" {
+		if (current.ItemTypeID == nil || id != *current.ItemTypeID) && name != "Sub-task" {
 			wantName, wantID = name, id
 			break
 		}
@@ -681,16 +675,14 @@ func TestWSCLI_Task_Edit_TypeByName(t *testing.T) {
 	out, stderr, code = runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var got struct {
-		ItemType struct {
-			ID   int    `json:"id"`
-			Name string `json:"name"`
-		} `json:"item_type"`
+		ItemTypeID   *int   `json:"item_type_id"`
+		ItemTypeName string `json:"item_type_name"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\nraw=%s", err, string(out))
 	}
-	if got.ItemType.ID != wantID {
-		t.Fatalf("item type not changed: got %d (%s) want %d (%s)", got.ItemType.ID, got.ItemType.Name, wantID, wantName)
+	if got.ItemTypeID == nil || *got.ItemTypeID != wantID {
+		t.Fatalf("item type not changed: got %v (%s) want %d (%s)", got.ItemTypeID, got.ItemTypeName, wantID, wantName)
 	}
 
 	// Unknown names fail with the available catalog in the message.

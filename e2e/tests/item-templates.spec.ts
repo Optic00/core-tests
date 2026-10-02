@@ -1,9 +1,9 @@
+import { expect, test } from '../fixtures/context-path';
 import {
   createTemplateViaAPI,
   createWorkspaceViaAPI,
   listItemTypesViaAPI,
 } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
 import { generateWorkspace } from '../fixtures/test-data';
 import { ItemPage } from '../pages/item.page';
 
@@ -122,4 +122,5 @@ test.describe('Work item templates (WI-438)', () => {
     await expect(page.getByTestId('item-template-list')).toContainText('admin-editor-template');
     await expect(page.getByTestId('item-template-save')).toBeHidden();
   });
+
 });

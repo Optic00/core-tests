@@ -39,7 +39,9 @@ test.describe('Page tree — reveal active page', () => {
     knowledge = new KnowledgePage(page);
   });
 
-  test('deep link to a nested page expands its ancestor chain', async ({ page }) => {
+  test('deep link to a nested page expands its ancestor chain', async ({
+    page,
+  }) => {
     // Three-level chain: Parent → Child → Grandchild. Each createChildPage
     // nests under the currently open page.
     parentId = await knowledge.createRootPage(workspaceId, 'Parent');
@@ -55,20 +57,34 @@ test.describe('Page tree — reveal active page', () => {
     // The full ancestor chain is expanded and the target row is visible
     // and highlighted.
     await expect(knowledge.treeItem(grandchildId)).toBeVisible();
-    await expect(knowledge.treeItem(parentId)).toHaveAttribute('data-expanded', 'true');
-    await expect(knowledge.treeItem(childId)).toHaveAttribute('data-expanded', 'true');
+    await expect(knowledge.treeItem(parentId)).toHaveAttribute(
+      'data-expanded',
+      'true',
+    );
+    await expect(knowledge.treeItem(childId)).toHaveAttribute(
+      'data-expanded',
+      'true',
+    );
     await expect(knowledge.treeItem(grandchildId)).toHaveClass(/active/);
   });
 
-  test('manual collapse while on the page is respected, not re-expanded', async ({ page }) => {
+  test('manual collapse while on the page is respected, not re-expanded', async ({
+    page,
+  }) => {
     await knowledge.gotoPage(workspaceId, grandchildId);
     await expect(knowledge.treeItem(grandchildId)).toBeVisible();
 
     // Collapse the top of the chain while the grandchild stays active.
-    await knowledge.treeItem(parentId).locator('[data-testid="page-tree-chevron"]').click();
+    await knowledge
+      .treeItem(parentId)
+      .locator('[data-testid="page-tree-chevron"]')
+      .click();
 
     // The reveal effect must not fight the user: the subtree stays closed.
     await expect(knowledge.treeItem(grandchildId)).toBeHidden();
-    await expect(knowledge.treeItem(parentId)).toHaveAttribute('data-expanded', 'false');
+    await expect(knowledge.treeItem(parentId)).toHaveAttribute(
+      'data-expanded',
+      'false',
+    );
   });
 });

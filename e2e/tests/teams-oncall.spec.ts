@@ -1,16 +1,15 @@
-import { createUserViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { createUserViaAPI } from '../fixtures/api-helpers';
 import { generateSchedule, generateTeam, generateUser } from '../fixtures/test-data';
-import { TeamOnCallPage } from '../pages/team-oncall.page';
 import { TeamsPage } from '../pages/teams.page';
+import { TeamOnCallPage } from '../pages/team-oncall.page';
 
 /**
  * On-call schedule flows for the Teams feature.
  *
- * Backend status: incident creation + escalation policy dispatch are NOT
- * wired into notification_service yet (see plan / project memory). These
- * tests exercise the configuration UX only — schedules, layers, and
- * overrides — which are fully wired end-to-end.
+ * These tests exercise the schedule/layer/override configuration UX. The
+ * incident lifecycle and escalation paging are covered separately by
+ * item-incident-lifecycle.spec.ts.
  */
 
 test.describe('Team On-Call Schedules', () => {
@@ -125,18 +124,14 @@ test.describe('Team On-Call Schedules', () => {
     // as "first last" full names, not usernames.
     const row = oncall.overrideRow(schedule.name).first();
     await expect(row).toBeVisible({ timeout: 10000 });
-    await expect(row.locator('[data-testid="override-replaced"]')).toContainText(
-      replaced.last_name
-    );
-    await expect(row.locator('[data-testid="override-replacement"]')).toContainText(
-      replacement.last_name
-    );
+    await expect(row.locator('[data-testid="override-replaced"]')).toContainText(replaced.last_name);
+    await expect(row.locator('[data-testid="override-replacement"]')).toContainText(replacement.last_name);
     await expect(row.locator('[data-testid="override-window"]')).not.toBeEmpty();
   });
 
   test('deep-link to /teams/:id/on-call works', async ({ page }) => {
     await page.goto(`/teams/${teamId}/on-call`);
-    await page.waitForLoadState('networkidle');
+
     await expect(page.locator('[data-testid="team-detail"]')).toBeVisible();
   });
 });

@@ -47,7 +47,7 @@ import OverdueItemsWidget from './OverdueItemsWidget.svelte';
 import UpcomingDeadlinesWidget from './UpcomingDeadlinesWidget.svelte';
 
 beforeEach(() => {
-  mocks.getItems.mockResolvedValue({ items: [] });
+  mocks.getItems.mockResolvedValue({ data: [] });
   mocks.getIterations.mockResolvedValue([]);
   mocks.getMilestones.mockResolvedValue([]);
   mocks.getStatuses.mockResolvedValue([{ id: 9, category_name: 'Closed', is_completed: true }]);
@@ -56,7 +56,7 @@ beforeEach(() => {
 describe('workspace dashboard item filters', () => {
   it('requests only incomplete items for My Tasks and renders the result', async () => {
     mocks.getItems.mockResolvedValue({
-      items: [
+      data: [
         {
           id: 21,
           title: 'Prepare 0.8.7',

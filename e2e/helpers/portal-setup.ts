@@ -1,5 +1,5 @@
+import { expect, type APIRequestContext, type Page } from '../fixtures/context-path';
 import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { type APIRequestContext, expect, type Page } from '../fixtures/context-path';
 import { generateWorkspace } from '../fixtures/test-data';
 
 /**
@@ -136,20 +136,8 @@ export async function createSimpleRequestType(
 ): Promise<RequestTypeHandle> {
   const rt = await createRequestType(request, channelId, opts.name);
   await setRequestTypeFields(request, channelId, rt.id, [
-    {
-      field_identifier: 'title',
-      field_type: 'default',
-      display_order: 0,
-      is_required: true,
-      step_number: 1,
-    },
-    {
-      field_identifier: 'description',
-      field_type: 'default',
-      display_order: 1,
-      is_required: false,
-      step_number: 1,
-    },
+    { field_identifier: 'title', field_type: 'default', display_order: 0, is_required: true, step_number: 1 },
+    { field_identifier: 'description', field_type: 'default', display_order: 1, is_required: false, step_number: 1 },
   ]);
   return rt;
 }
@@ -170,20 +158,8 @@ export async function createTwoStepRequestType(
 ): Promise<RequestTypeHandle> {
   const rt = await createRequestType(request, channelId, opts.name);
   await setRequestTypeFields(request, channelId, rt.id, [
-    {
-      field_identifier: 'title',
-      field_type: 'default',
-      display_order: 0,
-      is_required: true,
-      step_number: 1,
-    },
-    {
-      field_identifier: 'description',
-      field_type: 'default',
-      display_order: 1,
-      is_required: false,
-      step_number: 2,
-    },
+    { field_identifier: 'title', field_type: 'default', display_order: 0, is_required: true, step_number: 1 },
+    { field_identifier: 'description', field_type: 'default', display_order: 1, is_required: false, step_number: 2 },
   ]);
   return rt;
 }
@@ -222,13 +198,10 @@ async function setRequestTypeFields(
   requestTypeId: number,
   fields: RequestTypeFieldInput[]
 ): Promise<void> {
-  const resp = await request.put(
-    `/api/channels/${channelId}/request-types/${requestTypeId}/fields`,
-    {
-      headers: SEC_FETCH,
-      data: fields,
-    }
-  );
+  const resp = await request.put(`/api/channels/${channelId}/request-types/${requestTypeId}/fields`, {
+    headers: SEC_FETCH,
+    data: fields,
+  });
   expect(resp.ok(), `set request type fields: ${resp.status()} ${await resp.text()}`).toBeTruthy();
 }
 
@@ -271,8 +244,8 @@ export async function signInViaMagicLink(page: Page, opts: SignInOptions): Promi
     timeoutMs: 5000,
   });
   const linkMatch = msg.Text.match(/(https?:\/\/\S+\/portal\/\S+\/verify#token=[^\s>]+)/);
-  if (!linkMatch) throw new Error(`magic-link URL not found in body: ${msg.Text.slice(0, 200)}`);
-  let link = linkMatch[1];
+  expect(linkMatch, `magic-link URL not found in body: ${msg.Text.slice(0, 200)}`).toBeTruthy();
+  let link = linkMatch![1];
   // Normalise origin so the test can run against any port (keep the path,
   // which already includes any context-path prefix).
   link = link.replace(/^https?:\/\/[^/]+/, BASE_ORIGIN);

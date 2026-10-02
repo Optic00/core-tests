@@ -14,8 +14,6 @@ export interface TestItem {
   description: string;
   workspace_id?: number;
   parent_id?: number;
-  status?: string;
-  priority?: string;
 }
 
 export interface TestUser {
@@ -92,8 +90,6 @@ export function generateItem(workspaceId: number, suffix?: string): TestItem {
     title: `E2E Test Item ${uniqueSuffix}`,
     description: `Test item created by E2E tests at ${new Date().toISOString()}`,
     workspace_id: workspaceId,
-    status: 'open',
-    priority: 'medium',
   };
 }
 

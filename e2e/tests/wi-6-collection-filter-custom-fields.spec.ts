@@ -1,9 +1,9 @@
+import { expect, test } from '../fixtures/context-path';
 import {
   createCollectionViaAPI,
   createCustomFieldViaAPI,
   deleteCustomFieldViaAPI,
 } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
 
 /**
  * WI-6: "Collection Filters do not show up when the query involves custom fields"
@@ -62,10 +62,7 @@ test.describe('WI-6: collection filter sidebar', () => {
     }
   });
 
-  test('collection with custom-field QL keeps builder filters active', async ({
-    page,
-    request,
-  }) => {
+  test('collection with custom-field QL keeps builder filters active', async ({ page, request }) => {
     const collection = await createCollectionViaAPI(request, {
       name: `WI-6 cf ${Date.now()}`,
       ql_query: `cf_${customFieldName} = "foo"`,
@@ -76,17 +73,16 @@ test.describe('WI-6: collection filter sidebar', () => {
     // Wait until the QL bar resolves to either raw or builder mode — proves
     // loadCollectionById completed and the store's rawMode is settled.
     await expect(
-      page.getByTestId('ql-reset-to-builder').or(page.getByTestId('ql-enter-raw-mode'))
+      page.getByTestId('ql-reset-to-builder').or(
+        page.getByTestId('ql-enter-raw-mode'),
+      ),
     ).toBeVisible({ timeout: 15000 });
 
     // The builder must stay interactive for a custom-field query (the WI-6 bug).
     await expectBuilderInteractive(page);
   });
 
-  test('collection with standard-field QL keeps builder filters active', async ({
-    page,
-    request,
-  }) => {
+  test('collection with standard-field QL keeps builder filters active', async ({ page, request }) => {
     // Control case: same flow, but the QL does NOT reference a custom field.
     // Distinguishes "bug specific to custom fields" from "any QL-only collection
     // disables the builder".
@@ -98,7 +94,9 @@ test.describe('WI-6: collection filter sidebar', () => {
     await page.goto(`/collections/${collection.id}`);
 
     await expect(
-      page.getByTestId('ql-reset-to-builder').or(page.getByTestId('ql-enter-raw-mode'))
+      page.getByTestId('ql-reset-to-builder').or(
+        page.getByTestId('ql-enter-raw-mode'),
+      ),
     ).toBeVisible({ timeout: 15000 });
 
     // Control case: a standard-field QL-only collection must also stay in

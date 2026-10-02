@@ -340,3 +340,38 @@ func TestPublicFormAttachmentStorageFailureRollsBackAndRetryCreatesOneItem(t *te
 		t.Fatalf("attachment count after retry = %d, want 1", got)
 	}
 }
+
+// TestPublicFormMultipartSubmissionRecordsAttachmentHistory verifies WI-1538
+// on the public-form surface: every persisted upload leaves an item_history
+// row, attributed to the system for anonymous submitters (no user or portal
+// customer reference exists).
+func TestPublicFormMultipartSubmissionRecordsAttachmentHistory(t *testing.T) {
+	fixture := newPublicFormAttachmentFixture(t, t.TempDir(), true)
+
+	recorder := fixture.submit(t, "evidence.txt", []byte("public form evidence\n"))
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var fieldName string
+	var userID, actorCustomerID sql.NullInt64
+	var actorKind, newValue string
+	if err := fixture.db.QueryRow(`
+		SELECT field_name, user_id, actor_kind, actor_portal_customer_id, new_value
+		FROM item_history WHERE field_name = 'attachment_uploaded'
+	`).Scan(&fieldName, &userID, &actorKind, &actorCustomerID, &newValue); err != nil {
+		t.Fatalf("read attachment upload history row: %v", err)
+	}
+	if userID.Valid {
+		t.Fatalf("history user_id = %d, want NULL for an anonymous submission", userID.Int64)
+	}
+	if actorCustomerID.Valid {
+		t.Fatalf("actor_portal_customer_id = %d, want NULL for an anonymous submission", actorCustomerID.Int64)
+	}
+	if actorKind != "system" {
+		t.Fatalf("actor_kind = %q, want system", actorKind)
+	}
+	if !strings.HasPrefix(newValue, "attachment:") || !strings.HasSuffix(newValue, ":evidence.txt") {
+		t.Fatalf("new_value = %q, want attachment:<id>:evidence.txt", newValue)
+	}
+}

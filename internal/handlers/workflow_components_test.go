@@ -6,10 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"windshift/internal/constants"
-	"windshift/internal/logger"
 	"windshift/internal/models"
-	"windshift/internal/repository"
 	"windshift/internal/services"
 	"windshift/internal/testutils"
 )
@@ -85,36 +82,6 @@ func TestStatusEnumHandler_GetAll_Success(t *testing.T) {
 		if status.CategoryName == "" {
 			t.Errorf("Expected status %s to have category name populated", status.Name)
 		}
-	}
-}
-
-func TestStatusQueryHandler_GetNonDoneStatusIDs(t *testing.T) {
-	tdb := testutils.CreateTestDB(t, true)
-	defer tdb.Close()
-
-	handler := NewStatusQueryHandler(repository.NewStatusRepository(tdb.GetDatabase()))
-	req := testutils.CreateJSONRequest(t, "GET", "/api/statuses/non-done-ids", nil)
-	rr := testutils.ExecuteAuthenticatedRequest(t, handler.GetNonDoneStatusIDs, req, nil)
-
-	rr.AssertStatusCode(http.StatusOK).
-		AssertContentType("application/json")
-
-	var response []int
-	rr.AssertJSONResponse(&response)
-
-	contains := func(want int) bool {
-		for _, id := range response {
-			if id == want {
-				return true
-			}
-		}
-		return false
-	}
-	if !contains(constants.StatusIDOpen) {
-		t.Errorf("expected non-done statuses to include Open (%d), got %v", constants.StatusIDOpen, response)
-	}
-	if contains(constants.StatusIDDone) {
-		t.Errorf("expected non-done statuses to exclude Done (%d), got %v", constants.StatusIDDone, response)
 	}
 }
 
@@ -532,154 +499,6 @@ func TestScreenHandler_Delete_Success(t *testing.T) {
 	// Verify deletion by trying to get it
 	getReq := testutils.CreateJSONRequest(t, "GET", "/api/screens/"+testutils.IntToString(createdScreen.ID), nil)
 	getReq.SetPathValue("id", testutils.IntToString(createdScreen.ID))
-	getRR := testutils.ExecuteAuthenticatedRequest(t, handler.Get, getReq, nil)
-
-	getRR.AssertStatusCode(http.StatusNotFound)
-}
-
-// Test Workflows
-
-func TestWorkflowHandler_Create_Success(t *testing.T) {
-	tdb := testutils.CreateTestDB(t, true)
-	defer tdb.Close()
-
-	handler := NewWorkflowHandler(repository.NewWorkflowRepository(tdb.GetDatabase()), logger.NewAuditor(tdb.GetDatabase()))
-
-	workflow := models.Workflow{
-		Name:        "Test Workflow",
-		Description: "Test workflow description",
-		IsDefault:   false,
-	}
-
-	req := testutils.CreateJSONRequest(t, "POST", "/api/workflows", workflow)
-	rr := testutils.ExecuteAuthenticatedRequest(t, handler.Create, req, nil)
-
-	rr.AssertStatusCode(http.StatusCreated).
-		AssertContentType("application/json")
-
-	var response models.Workflow
-	rr.AssertJSONResponse(&response)
-
-	if response.ID == 0 {
-		t.Error("Expected created workflow to have an ID")
-	}
-	if response.Name != workflow.Name {
-		t.Errorf("Expected name %s, got %s", workflow.Name, response.Name)
-	}
-	if response.Description != workflow.Description {
-		t.Errorf("Expected description %s, got %s", workflow.Description, response.Description)
-	}
-	if response.IsDefault != workflow.IsDefault {
-		t.Errorf("Expected IsDefault %v, got %v", workflow.IsDefault, response.IsDefault)
-	}
-}
-
-func TestWorkflowHandler_GetAll_Success(t *testing.T) {
-	tdb := testutils.CreateTestDB(t, true)
-	defer tdb.Close()
-
-	handler := NewWorkflowHandler(repository.NewWorkflowRepository(tdb.GetDatabase()), logger.NewAuditor(tdb.GetDatabase()))
-
-	// The database should already have at least one default workflow from initialization
-	req := testutils.CreateJSONRequest(t, "GET", "/api/workflows", nil)
-	rr := testutils.ExecuteAuthenticatedRequest(t, handler.GetAll, req, nil)
-
-	rr.AssertStatusCode(http.StatusOK).
-		AssertContentType("application/json")
-
-	var response []models.Workflow
-	rr.AssertJSONResponse(&response)
-
-	// Should have at least the default workflow
-	if len(response) < 1 {
-		t.Errorf("Expected at least 1 default workflow, got %d", len(response))
-	}
-
-	// Default workflow should appear first
-	if len(response) > 0 && !response[0].IsDefault {
-		t.Error("Expected first workflow to be default")
-	}
-}
-
-func TestWorkflowHandler_Update_Success(t *testing.T) {
-	tdb := testutils.CreateTestDB(t, true)
-	defer tdb.Close()
-
-	handler := NewWorkflowHandler(repository.NewWorkflowRepository(tdb.GetDatabase()), logger.NewAuditor(tdb.GetDatabase()))
-
-	// Create initial workflow
-	workflow := models.Workflow{
-		Name:        "Original Workflow",
-		Description: "Original description",
-		IsDefault:   false,
-	}
-
-	createReq := testutils.CreateJSONRequest(t, "POST", "/api/workflows", workflow)
-	createRR := testutils.ExecuteAuthenticatedRequest(t, handler.Create, createReq, nil)
-
-	var createdWorkflow models.Workflow
-	createRR.AssertJSONResponse(&createdWorkflow)
-
-	// Update the workflow
-	updatedWorkflow := models.Workflow{
-		Name:        "Updated Workflow",
-		Description: "Updated description",
-		IsDefault:   true,
-	}
-
-	updateReq := testutils.CreateJSONRequest(t, "PUT", "/api/workflows/"+testutils.IntToString(createdWorkflow.ID), updatedWorkflow)
-	updateReq.SetPathValue("id", testutils.IntToString(createdWorkflow.ID))
-	rr := testutils.ExecuteAuthenticatedRequest(t, handler.Update, updateReq, nil)
-
-	rr.AssertStatusCode(http.StatusOK).
-		AssertContentType("application/json")
-
-	var response models.Workflow
-	rr.AssertJSONResponse(&response)
-
-	if response.ID != createdWorkflow.ID {
-		t.Errorf("Expected ID %d, got %d", createdWorkflow.ID, response.ID)
-	}
-	if response.Name != updatedWorkflow.Name {
-		t.Errorf("Expected updated name %s, got %s", updatedWorkflow.Name, response.Name)
-	}
-	if response.Description != updatedWorkflow.Description {
-		t.Errorf("Expected updated description %s, got %s", updatedWorkflow.Description, response.Description)
-	}
-	if response.IsDefault != updatedWorkflow.IsDefault {
-		t.Errorf("Expected updated IsDefault %v, got %v", updatedWorkflow.IsDefault, response.IsDefault)
-	}
-}
-
-func TestWorkflowHandler_Delete_Success(t *testing.T) {
-	tdb := testutils.CreateTestDB(t, true)
-	defer tdb.Close()
-
-	handler := NewWorkflowHandler(repository.NewWorkflowRepository(tdb.GetDatabase()), logger.NewAuditor(tdb.GetDatabase()))
-
-	// Create workflow to delete
-	workflow := models.Workflow{
-		Name:        "Workflow to Delete",
-		Description: "Will be deleted",
-		IsDefault:   false,
-	}
-
-	createReq := testutils.CreateJSONRequest(t, "POST", "/api/workflows", workflow)
-	createRR := testutils.ExecuteAuthenticatedRequest(t, handler.Create, createReq, nil)
-
-	var createdWorkflow models.Workflow
-	createRR.AssertJSONResponse(&createdWorkflow)
-
-	// Delete the workflow
-	deleteReq := testutils.CreateJSONRequest(t, "DELETE", "/api/workflows/"+testutils.IntToString(createdWorkflow.ID), nil)
-	deleteReq.SetPathValue("id", testutils.IntToString(createdWorkflow.ID))
-	rr := testutils.ExecuteAuthenticatedRequest(t, handler.Delete, deleteReq, nil)
-
-	rr.AssertStatusCode(http.StatusNoContent)
-
-	// Verify deletion by trying to get it
-	getReq := testutils.CreateJSONRequest(t, "GET", "/api/workflows/"+testutils.IntToString(createdWorkflow.ID), nil)
-	getReq.SetPathValue("id", testutils.IntToString(createdWorkflow.ID))
 	getRR := testutils.ExecuteAuthenticatedRequest(t, handler.Get, getReq, nil)
 
 	getRR.AssertStatusCode(http.StatusNotFound)

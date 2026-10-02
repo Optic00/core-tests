@@ -4,28 +4,31 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestClient_GetCommentsFollowsAllPages(t *testing.T) {
-	requestedPages := make([]string, 0, 2)
+	requestedQueries := make([]string, 0, 2)
 	client, _ := newTestPageClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/api/v1/items/840/comments" {
+		if r.URL.Path != "/rest/api/v2/items/840/comments" {
 			http.NotFound(w, r)
 			return
 		}
-		requestedPages = append(requestedPages, r.URL.RawQuery)
-		page := r.URL.Query().Get("page")
-		response := PaginatedResponse[Comment]{
-			Pagination: PaginationMeta{Page: 1, Limit: 100, Total: 3, TotalPages: 2},
-		}
-		switch page {
-		case "1":
-			response.Data = []Comment{{ID: 3}, {ID: 2}}
-		case "2":
-			response.Pagination.Page = 2
-			response.Data = []Comment{{ID: 1}}
+		requestedQueries = append(requestedQueries, r.URL.RawQuery)
+		response := DataDocument[struct {
+			Comments   []Comment `json:"comments"`
+			NextCursor string    `json:"next_cursor"`
+			HasMore    bool      `json:"has_more"`
+		}]{}
+		switch r.URL.Query().Get("cursor") {
+		case "":
+			response.Data.Comments = []Comment{{ID: 3, CreatedAt: time.Unix(3, 0).UTC()}, {ID: 2, CreatedAt: time.Unix(2, 0).UTC()}}
+			response.Data.HasMore = true
+			response.Data.NextCursor = "next-page"
+		case "next-page":
+			response.Data.Comments = []Comment{{ID: 1, CreatedAt: time.Unix(1, 0).UTC()}}
 		default:
-			t.Fatalf("unexpected page %q", page)
+			t.Fatalf("unexpected cursor %q", r.URL.Query().Get("cursor"))
 		}
 		_ = json.NewEncoder(w).Encode(response)
 	})
@@ -40,9 +43,7 @@ func TestClient_GetCommentsFollowsAllPages(t *testing.T) {
 		comments[2].ID != 1 {
 		t.Fatalf("comments = %+v, want IDs 3, 2, 1", comments)
 	}
-	if len(requestedPages) != 2 ||
-		requestedPages[0] != "page=1&limit=100" ||
-		requestedPages[1] != "page=2&limit=100" {
-		t.Fatalf("requested pages = %v", requestedPages)
+	if len(requestedQueries) != 2 || requestedQueries[0] != "page_size=100" || requestedQueries[1] != "page_size=100&cursor=next-page" {
+		t.Fatalf("requested queries = %v", requestedQueries)
 	}
 }

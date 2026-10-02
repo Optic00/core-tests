@@ -1,5 +1,5 @@
-import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
+import { test, expect } from '../fixtures/context-path';
+import { createWorkspaceViaAPI, createItemViaAPI } from '../fixtures/api-helpers';
 
 /**
  * Workspace analytics dashboard.
@@ -61,6 +61,12 @@ test.describe('Workspace analytics', () => {
 
     // No hand-rolled analytics table markup survives the refactor.
     await expect(shell.locator('table.analytics-table')).toHaveCount(0);
+
+    if (process.env.ANALYTICS_SCREENSHOT) {
+      await page.setViewportSize({ width: 1550, height: 1400 });
+      await expect(healthStats).toBeVisible();
+      await page.screenshot({ path: process.env.ANALYTICS_SCREENSHOT, fullPage: true });
+    }
   });
 
   /**
@@ -97,10 +103,10 @@ test.describe('Workspace analytics', () => {
 
     // The guard only means something if the headers really do differ in height.
     expect(await headerHeight('analytics-throughput-header')).not.toBe(
-      await headerHeight('analytics-aging-header')
+      await headerHeight('analytics-aging-header'),
     );
     expect(await cardTop('analytics-throughput-stats')).toBe(
-      await cardTop('analytics-aging-stats')
+      await cardTop('analytics-aging-stats'),
     );
   });
 

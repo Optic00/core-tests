@@ -1,5 +1,5 @@
-import type { APIRequestContext } from '../fixtures/context-path';
 import { expect, test } from '../fixtures/role-context';
+import type { APIRequestContext } from '../fixtures/context-path';
 
 const SEC_FETCH = { 'Sec-Fetch-Site': 'same-origin' };
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
@@ -64,7 +64,7 @@ test.describe('Asset create-item action workspace permissions (WI-652)', () => {
     // API calls below create prerequisites only. The asset creation that fires
     // both actions, the allowed-item assertion, and the denied-log assertion
     // all run through the browser UI.
-    const setResponse = await admin.request.post('/api/asset-sets', {
+    const setResponse = await admin.request.post('/api/v2/asset-sets', {
       headers: SEC_FETCH,
       data: {
         name: `e2e-asset-action-permissions-${stamp}`,
@@ -73,27 +73,27 @@ test.describe('Asset create-item action workspace permissions (WI-652)', () => {
       },
     });
     expect(setResponse.status(), await setResponse.text()).toBe(201);
-    const set = (await setResponse.json()) as { id: number };
+    const set = (await setResponse.json()).data as { id: number };
 
-    const typeResponse = await admin.request.post(`/api/asset-sets/${set.id}/types`, {
+    const typeResponse = await admin.request.post(`/api/v2/asset-sets/${set.id}/types`, {
       headers: SEC_FETCH,
       data: { name: `Server ${stamp}` },
     });
     expect(typeResponse.status(), await typeResponse.text()).toBe(201);
 
-    const rolesResponse = await admin.request.get('/api/asset-roles', { headers: SEC_FETCH });
+    const rolesResponse = await admin.request.get('/api/v2/asset-roles', { headers: SEC_FETCH });
     expect(rolesResponse.ok()).toBeTruthy();
-    const roles = (await rolesResponse.json()) as Array<{ id: number; name: string }>;
+    const roles = (await rolesResponse.json()).data as Array<{ id: number; name: string }>;
     const assetAdminRole = roles.find((role) => role.name === 'Administrator');
-    if (!assetAdminRole) throw new Error('Administrator asset role not found');
-    const assignmentResponse = await admin.request.post(`/api/asset-sets/${set.id}/roles`, {
+    expect(assetAdminRole).toBeDefined();
+    const assignmentResponse = await admin.request.post(`/api/v2/asset-sets/${set.id}/roles`, {
       headers: SEC_FETCH,
-      data: { user_id: member.userId, role_id: assetAdminRole.id },
+      data: { user_id: member.userId, role_id: assetAdminRole!.id },
     });
     expect(assignmentResponse.status(), await assignmentResponse.text()).toBe(201);
 
     const itemTypesResponse = await admin.request.get(
-      `/api/item-types?workspace_id=${member.workspaceId}`,
+      `/api/v2/item-types?workspace_id=${member.workspaceId}`,
       { headers: SEC_FETCH }
     );
     expect(itemTypesResponse.ok()).toBeTruthy();
@@ -115,13 +115,13 @@ test.describe('Asset create-item action workspace permissions (WI-652)', () => {
       name: string;
     }>;
     const editorRole = workspaceRoles.find((role) => role.name === 'Editor');
-    if (!editorRole) throw new Error('Editor workspace role not found');
+    expect(editorRole).toBeDefined();
     const restrictTargetResponse = await admin.request.post('/api/workspace-roles/assign', {
       headers: SEC_FETCH,
       data: {
         user_id: admin.userId,
         workspace_id: admin.workspaceId,
-        role_id: editorRole.id,
+        role_id: editorRole!.id,
       },
     });
     expect(restrictTargetResponse.ok(), await restrictTargetResponse.text()).toBeTruthy();
@@ -152,6 +152,9 @@ test.describe('Asset create-item action workspace permissions (WI-652)', () => {
       await page.goto('/assets');
       await page.getByTestId('asset-create').click();
       await page.locator('#asset-title-input').fill(`Browser-created asset ${stamp}`);
+      // New assets need a set type; submit enables once the set's type list
+      // has loaded and the default type is selected.
+      await expect(page.getByTestId('asset-submit')).toBeEnabled({ timeout: 15000 });
       await page.getByTestId('asset-submit').click();
       await expect(page.locator('#asset-title-input')).toBeHidden({ timeout: 10_000 });
 
@@ -172,9 +175,10 @@ test.describe('Asset create-item action workspace permissions (WI-652)', () => {
       const deniedCard = page.getByTestId(`action-card-${deniedAction.id}`);
       await deniedCard.getByTestId('action-view-logs').click();
       await expect
-        .poll(async () => (await page.getByTestId('action-log-row').allTextContents()).join('\n'), {
-          timeout: 15_000,
-        })
+        .poll(
+          async () => (await page.getByTestId('action-log-row').allTextContents()).join('\n'),
+          { timeout: 15_000 }
+        )
         .toContain('not authorized (item.create)');
     } finally {
       await browserContext.close();

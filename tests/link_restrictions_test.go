@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,7 +31,7 @@ func TestLinkTypeRestrictions(t *testing.T) {
 		"key":         "TEST",
 		"description": "Workspace for link restriction testing",
 	}
-	workspaceResp, _ := makeAuthRequest(http.MethodPost, "/workspaces", workspaceData)
+	workspaceResp, _ := makeAuthRequest(http.MethodPost, "/v2/workspaces", workspaceData)
 	if workspaceResp.StatusCode != http.StatusOK && workspaceResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(workspaceResp.Body)
 		t.Fatalf("Failed to create workspace: %d - %s", workspaceResp.StatusCode, string(body))
@@ -41,9 +40,7 @@ func TestLinkTypeRestrictions(t *testing.T) {
 	var workspace struct {
 		ID int `json:"id"`
 	}
-	if err := json.NewDecoder(workspaceResp.Body).Decode(&workspace); err != nil {
-		t.Fatalf("Failed to decode workspace response: %v", err)
-	}
+	DecodeJSON(t, workspaceResp, &workspace)
 	workspaceResp.Body.Close()
 	t.Logf("Created workspace with ID: %d", workspace.ID)
 
@@ -63,9 +60,7 @@ func TestLinkTypeRestrictions(t *testing.T) {
 	var item1 struct {
 		ID int `json:"id"`
 	}
-	if err := json.NewDecoder(item1Resp.Body).Decode(&item1); err != nil {
-		t.Fatalf("Failed to decode item 1 response: %v", err)
-	}
+	DecodeJSON(t, item1Resp, &item1)
 	item1Resp.Body.Close()
 	t.Logf("Created work item 1 with ID: %d", item1.ID)
 
@@ -83,9 +78,7 @@ func TestLinkTypeRestrictions(t *testing.T) {
 	var item2 struct {
 		ID int `json:"id"`
 	}
-	if err := json.NewDecoder(item2Resp.Body).Decode(&item2); err != nil {
-		t.Fatalf("Failed to decode item 2 response: %v", err)
-	}
+	DecodeJSON(t, item2Resp, &item2)
 	item2Resp.Body.Close()
 	t.Logf("Created work item 2 with ID: %d", item2.ID)
 
@@ -93,10 +86,9 @@ func TestLinkTypeRestrictions(t *testing.T) {
 	t.Log("Creating test cases...")
 	testCase1Data := map[string]interface{}{
 		"title":  "Test Case 1",
-		"name":   "TC-001",
 		"status": "active",
 	}
-	testCase1Resp, _ := makeAuthRequest(http.MethodPost, fmt.Sprintf("/workspaces/%d/test-cases", workspace.ID), testCase1Data)
+	testCase1Resp, _ := makeAuthRequest(http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/test-cases", workspace.ID), testCase1Data)
 	if testCase1Resp.StatusCode != http.StatusOK && testCase1Resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(testCase1Resp.Body)
 		t.Fatalf("Failed to create test case 1: %d - %s", testCase1Resp.StatusCode, string(body))
@@ -105,18 +97,15 @@ func TestLinkTypeRestrictions(t *testing.T) {
 	var testCase1 struct {
 		ID int `json:"id"`
 	}
-	if err := json.NewDecoder(testCase1Resp.Body).Decode(&testCase1); err != nil {
-		t.Fatalf("Failed to decode test case 1 response: %v", err)
-	}
+	DecodeJSON(t, testCase1Resp, &testCase1)
 	testCase1Resp.Body.Close()
 	t.Logf("Created test case 1 with ID: %d", testCase1.ID)
 
 	testCase2Data := map[string]interface{}{
 		"title":  "Test Case 2",
-		"name":   "TC-002",
 		"status": "active",
 	}
-	testCase2Resp, _ := makeAuthRequest(http.MethodPost, fmt.Sprintf("/workspaces/%d/test-cases", workspace.ID), testCase2Data)
+	testCase2Resp, _ := makeAuthRequest(http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/test-cases", workspace.ID), testCase2Data)
 	if testCase2Resp.StatusCode != http.StatusOK && testCase2Resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(testCase2Resp.Body)
 		t.Fatalf("Failed to create test case 2: %d - %s", testCase2Resp.StatusCode, string(body))
@@ -125,9 +114,7 @@ func TestLinkTypeRestrictions(t *testing.T) {
 	var testCase2 struct {
 		ID int `json:"id"`
 	}
-	if err := json.NewDecoder(testCase2Resp.Body).Decode(&testCase2); err != nil {
-		t.Fatalf("Failed to decode test case 2 response: %v", err)
-	}
+	DecodeJSON(t, testCase2Resp, &testCase2)
 	testCase2Resp.Body.Close()
 	t.Logf("Created test case 2 with ID: %d", testCase2.ID)
 

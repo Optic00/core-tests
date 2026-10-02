@@ -43,6 +43,7 @@ var MatrixRoutes = []MatrixRoute{
 	// policy-intent declarations only (they satisfy the drift guard but
 	// are not re-tested for status code).
 	{Method: "GET", Path: "/api/items/{id}", Class: "workspace.item.view"},
+	{Method: "GET", Path: "/api/items/{id}/sla", Class: "workspace.item.view"},
 	{
 		Method: "PUT",
 		Path:   "/api/items/{id}",
@@ -54,6 +55,7 @@ var MatrixRoutes = []MatrixRoute{
 			return map[string]any{"title": "Matrix updated"}
 		},
 	},
+	{Method: "GET", Path: "/api/admin/object-translations/definitions", Class: "global.system.admin"},
 	{
 		Method: "POST",
 		Path:   "/api/items/{id}/comments",
@@ -65,17 +67,9 @@ var MatrixRoutes = []MatrixRoute{
 		},
 	},
 	{
-		Method: "PUT",
-		// Registered as `PUT /workspaces/{id}` but `{id}` here would resolve
-		// to the item ID via the placeholder convention; use {workspaceId}
-		// so ExpandMatrixPath substitutes TargetWorkspaceID. Go's mux is
-		// positional — the placeholder name in the URL doesn't have to
-		// match the registration.
-		Path:  "/api/workspaces/{workspaceId}",
-		Class: "workspace.admin",
-		// Workspace.Update validates Name as `required` — minimum body must
-		// include it. active=true keeps the workspace usable for any later
-		// classes that run after this one.
+		Method: "PATCH",
+		Path:   "/api/v2/workspaces/{workspaceId}",
+		Class:  "workspace.admin",
 		Body: func(fx MatrixFixtures) any {
 			return map[string]any{
 				"name":   "Matrix Target",
@@ -101,7 +95,6 @@ var MatrixRoutes = []MatrixRoute{
 	{Method: "GET", Path: "/api/items/{id}/children", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/ancestors", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/descendants", Class: "workspace.item.view"},
-	{Method: "GET", Path: "/api/items/{id}/tree", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/watch", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/personal-tasks", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/recurrence", Class: "workspace.item.view"},
@@ -122,6 +115,8 @@ var MatrixRoutes = []MatrixRoute{
 	{Method: "GET", Path: "/api/items/{id}/scm-repositories", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/webhooks", Class: "workspace.item.view"},
 	{Method: "GET", Path: "/api/items/{id}/agent-runs", Class: "workspace.item.view"},
+	// Incident reads allow workspace viewers or the incident team's responders.
+	{Method: "GET", Path: "/api/items/{id}/incident", Class: "workspace.item.view"},
 
 	// workspace.item.edit — routes gated on canEditItem / PermissionItemEdit.
 	// Add only non-destructive operations here; destructive deletes that
@@ -145,8 +140,17 @@ var MatrixRoutes = []MatrixRoute{
 	{Method: "POST", Path: "/api/items/{id}/labels", Class: "workspace.item.edit"},
 	{Method: "PUT", Path: "/api/items/{id}/personal-labels", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/personal-labels", Class: "workspace.item.edit"},
+	// Declaring an incident requires item edit permission; the item's team
+	// supplies the escalation policy.
+	{Method: "POST", Path: "/api/items/{id}/incident", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/integration-links", Class: "workspace.item.edit"},
 	{Method: "GET", Path: "/api/items/{id}/integration-search", Class: "workspace.item.edit"},
+	// Zammad ticket operations gate on the same item view/edit permissions
+	// via CheckItemPermission (zammad.go): reads on view, ticket creation and
+	// linking on edit.
+	{Method: "GET", Path: "/api/items/{id}/zammad-links", Class: "workspace.item.view"},
+	{Method: "POST", Path: "/api/items/{id}/zammad-tickets", Class: "workspace.item.edit"},
+	{Method: "POST", Path: "/api/items/{id}/zammad-ticket-links", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/scm-links", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/{id}/scm-links/create-branch", Class: "workspace.item.edit"},
 	{Method: "POST", Path: "/api/items/bulk-update", Class: "workspace.item.edit"},
@@ -165,6 +169,15 @@ var MatrixRoutes = []MatrixRoute{
 	// Search returns linkable items filtered by view perm (multi-workspace
 	// filter semantics, exempted).
 	{Method: "POST", Path: "/api/links", Class: "workspace.item.edit"},
+
+	// Instance translations are global configuration and never inherit a
+	// workspace administrator's narrower authority.
+	{Method: "POST", Path: "/api/admin/object-translations/resolve", Class: "global.system.admin"},
+	{Method: "GET", Path: "/api/admin/object-translations/orphans", Class: "global.system.admin"},
+	{Method: "GET", Path: "/api/admin/object-translations/canonical-differences", Class: "global.system.admin"},
+	{Method: "GET", Path: "/api/admin/object-translations/{object_type}/{object_id}", Class: "global.system.admin"},
+	{Method: "PUT", Path: "/api/admin/object-translations/{object_type}/{object_id}/{field}/{locale}", Class: "global.system.admin"},
+	{Method: "DELETE", Path: "/api/admin/object-translations/{object_type}/{object_id}/{field}/{locale}", Class: "global.system.admin"},
 }
 
 // RepresentativeRouteFor returns the first MatrixRoute classified under the

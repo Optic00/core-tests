@@ -1,13 +1,11 @@
 package tests
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 )
 
-// TestItemsBatchEndpoint exercises GET /api/items/batch — the bulk item fetch
+// TestItemsBatchEndpoint exercises POST /api/items/batch — the bulk item fetch
 // that backs api.items.getMany(), replacing the per-id GET /items/{id} fan-out
 // that could exhaust the DB pool on a collection delta refresh. It verifies the
 // response is an array of full item objects, that duplicate ids are tolerated,
@@ -24,8 +22,9 @@ func TestItemsBatchEndpoint(t *testing.T) {
 	const missing = 999999999
 
 	// Duplicate id + a non-existent id included intentionally.
-	endpoint := fmt.Sprintf("/items/batch?ids=%d,%d,%d,%d,%d", itemA, itemB, itemC, itemA, missing)
-	resp := MakeAuthRequest(t, server, http.MethodGet, endpoint, nil)
+	resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/items/batch", map[string]any{
+		"ids": []int{itemC, itemA, itemB, itemA, missing},
+	})
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusOK)
 
@@ -48,6 +47,11 @@ func TestItemsBatchEndpoint(t *testing.T) {
 	if _, ok := byID[missing]; ok {
 		t.Fatalf("non-existent id %d should be omitted, got %v", missing, keysOf(byID))
 	}
+	for index, id := range []int{itemC, itemA, itemB} {
+		if gotID := intField(got[index], "id"); gotID != id {
+			t.Fatalf("response order at %d = %d, want %d", index, gotID, id)
+		}
+	}
 
 	// Full detail shape: title + workspace_id populated (consumers Object.assign
 	// these onto loaded rows, so the batch shape must match GET /items/{id}).
@@ -67,7 +71,7 @@ func TestItemsBatchEndpoint_NoIDs(t *testing.T) {
 	defer cleanup()
 	CreateBearerToken(t, server)
 
-	resp := MakeAuthRequest(t, server, http.MethodGet, "/items/batch?ids=", nil)
+	resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/items/batch", map[string]any{"ids": []int{}})
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusOK)
 
@@ -84,12 +88,11 @@ func TestItemsBatchEndpoint_Cap(t *testing.T) {
 	defer cleanup()
 	CreateBearerToken(t, server)
 
-	ids := make([]string, 501)
+	ids := make([]int, 501)
 	for i := range ids {
-		ids[i] = fmt.Sprintf("%d", i+1)
+		ids[i] = i + 1
 	}
-	endpoint := "/items/batch?ids=" + strings.Join(ids, ",")
-	resp := MakeAuthRequest(t, server, http.MethodGet, endpoint, nil)
+	resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/items/batch", map[string]any{"ids": ids})
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusBadRequest)
 }
@@ -115,8 +118,7 @@ func TestItemsBatchEndpoint_PermissionFiltering(t *testing.T) {
 	AssignWorkspaceRole(t, server, userID, wsA, "Editor")
 	userToken := CreateBearerTokenForUser(t, server, username, password)
 
-	endpoint := fmt.Sprintf("/items/batch?ids=%d,%d", itemA, itemB)
-	resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodGet, endpoint, nil)
+	resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, "/v2/items/batch", map[string]any{"ids": []int{itemA, itemB}})
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusOK)
 

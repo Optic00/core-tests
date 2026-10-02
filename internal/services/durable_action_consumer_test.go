@@ -5,6 +5,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -15,6 +16,83 @@ import (
 	"windshift/internal/repository"
 	"windshift/internal/testutils"
 )
+
+type cancellationProbeExecutor struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (e *cancellationProbeExecutor) NodeType() models.ActionNodeType {
+	return models.ActionNodeHTTPRequest
+}
+
+func (e *cancellationProbeExecutor) Execute(_ *models.ActionNode, ctx *models.ExecutionContext, _ *models.StepResult) error {
+	close(e.started)
+	select {
+	case <-ctx.Context.Done():
+		return ctx.Context.Err()
+	case <-e.release:
+		return nil
+	}
+}
+
+func TestDurableActionConsumerCancelsInFlightExecution(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	t.Cleanup(func() { _ = tdb.Close() })
+	data := tdb.SeedTestData(t)
+	db := tdb.GetDatabase()
+	itemID, err := CreateItem(db, ItemCreationParams{
+		WorkspaceID: data.WorkspaceID, Title: "cancellable durable target",
+		StatusID: &data.StatusID, CreatorID: &data.UserID,
+	})
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	repo := repository.NewActionRepository(db)
+	actionID := createDurableTestAction(t, repo, data.WorkspaceID, "cancellable", models.ActionTriggerItemCreated)
+	triggerID, err := repo.CreateNode(&models.ActionNode{ActionID: actionID, NodeType: models.ActionNodeTrigger, NodeConfig: "{}"})
+	if err != nil {
+		t.Fatalf("create trigger node: %v", err)
+	}
+	requestID, err := repo.CreateNode(&models.ActionNode{ActionID: actionID, NodeType: models.ActionNodeHTTPRequest, NodeConfig: "{}"})
+	if err != nil {
+		t.Fatalf("create probe node: %v", err)
+	}
+	if _, err := repo.CreateEdge(&models.ActionEdge{ActionID: actionID, SourceNodeID: triggerID, TargetNodeID: requestID}); err != nil {
+		t.Fatalf("create action edge: %v", err)
+	}
+
+	service := NewActionService(db, DefaultActionServiceConfig(), nil)
+	t.Cleanup(service.Stop)
+	probe := &cancellationProbeExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	service.RegisterNodeExecutor(probe)
+	service.InvalidateWorkspaceCache(data.WorkspaceID)
+	consumer := NewDurableActionConsumer(db, service)
+	event := durableCreatedEvent(t, 43, "item-created-cancel-43", data.WorkspaceID, int(itemID), data.UserID)
+
+	handlerCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- consumer.Handle(handlerCtx, event) }()
+	select {
+	case <-probe.started:
+	case <-time.After(2 * time.Second):
+		close(probe.release)
+		t.Fatal("action node did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Handle() error = %v, want context cancellation", err)
+		}
+	case <-time.After(250 * time.Millisecond):
+		close(probe.release)
+		<-done
+		t.Fatal("durable action continued after its delivery context was canceled")
+	}
+}
 
 func TestDurableActionConsumerFreezesTargetsAndDeduplicatesExecution(t *testing.T) {
 	tdb := testutils.CreateTestDB(t, true)

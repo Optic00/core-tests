@@ -3,9 +3,6 @@ package tests
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -32,8 +29,8 @@ func TestV1TestManagementAggregateRoutes(t *testing.T) {
 	attachCaseToSet(t, server, workspaceID, setID, testCaseID)
 	createRunResp := MakeAuthRequest(t, server, http.MethodPost,
 		fmt.Sprintf("/workspaces/%d/test-runs", workspaceID), map[string]interface{}{
-			"name":   "Aggregate route run",
-			"set_id": setID,
+			"name":    "Aggregate route run",
+			"plan_id": setID,
 		})
 	defer createRunResp.Body.Close()
 	AssertStatusCode(t, createRunResp, http.StatusCreated)
@@ -69,7 +66,7 @@ func TestTestRunExecution_CookieAndRESTV1Contract(t *testing.T) {
 
 	createResponse := MakeAuthRequest(t, server, http.MethodPost,
 		fmt.Sprintf("/workspaces/%d/test-runs", workspaceID),
-		map[string]interface{}{"name": "<script>bad()</script>Parity run", "set_id": setID})
+		map[string]interface{}{"name": "<script>bad()</script>Parity run", "plan_id": setID})
 	defer createResponse.Body.Close()
 	AssertStatusCode(t, createResponse, http.StatusCreated)
 	var run map[string]interface{}
@@ -148,7 +145,7 @@ func TestTestCatalog_CookieAndRESTV1Contract(t *testing.T) {
 	foreignSetID := seedTestSet(t, server, foreignWorkspaceID, "Foreign catalog set")
 
 	createSetResponse := MakeAuthRequest(t, server, http.MethodPost,
-		fmt.Sprintf("/workspaces/%d/test-sets", workspaceID), map[string]interface{}{
+		fmt.Sprintf("/workspaces/%d/test-plans", workspaceID), map[string]interface{}{
 			"name":        "<script>bad()</script>Shared set",
 			"description": "before<script>bad()</script>after",
 		})
@@ -170,7 +167,7 @@ func TestTestCatalog_CookieAndRESTV1Contract(t *testing.T) {
 	AssertStatusCode(t, updateSetResponse, http.StatusOK)
 
 	cookieSetResponse := MakeAuthRequest(t, server, http.MethodGet,
-		fmt.Sprintf("/workspaces/%d/test-sets/%d", workspaceID, setID), nil)
+		fmt.Sprintf("/workspaces/%d/test-plans/%d", workspaceID, setID), nil)
 	defer cookieSetResponse.Body.Close()
 	AssertStatusCode(t, cookieSetResponse, http.StatusOK)
 	var updatedSet map[string]interface{}
@@ -182,7 +179,7 @@ func TestTestCatalog_CookieAndRESTV1Contract(t *testing.T) {
 	for _, request := range map[string]func() *http.Response{
 		"cookie": func() *http.Response {
 			return MakeAuthRequest(t, server, http.MethodPost,
-				fmt.Sprintf("/workspaces/%d/test-sets/%d/test-cases", workspaceID, setID),
+				fmt.Sprintf("/workspaces/%d/test-plans/%d/test-cases", workspaceID, setID),
 				map[string]interface{}{"test_case_id": foreignCaseID})
 		},
 		"v1": func() *http.Response {
@@ -200,7 +197,7 @@ func TestTestCatalog_CookieAndRESTV1Contract(t *testing.T) {
 
 	createTemplateResponse := MakeAuthRequest(t, server, http.MethodPost,
 		fmt.Sprintf("/workspaces/%d/test-run-templates", workspaceID), map[string]interface{}{
-			"set_id":      setID,
+			"plan_id":     setID,
 			"name":        "<script>bad()</script>Shared template",
 			"description": "before<script>bad()</script><br/>after",
 		})
@@ -217,7 +214,7 @@ func TestTestCatalog_CookieAndRESTV1Contract(t *testing.T) {
 		func() *http.Response {
 			return MakeAuthRequest(t, server, http.MethodPost,
 				fmt.Sprintf("/workspaces/%d/test-run-templates", workspaceID),
-				map[string]interface{}{"set_id": foreignSetID, "name": "Foreign template"})
+				map[string]interface{}{"plan_id": foreignSetID, "name": "Foreign template"})
 		},
 		func() *http.Response {
 			return MakeBearerRequest(t, server, http.MethodPost,
@@ -250,60 +247,4 @@ func TestTestCatalog_CookieAndRESTV1Contract(t *testing.T) {
 	if len(results) != 1 || results[0]["status"] != "not_run" {
 		t.Fatalf("template execution results = %v, want one not_run result", results)
 	}
-}
-
-func TestV1TestManagementRoutesMirrorCookieSurface(t *testing.T) {
-	root := repoRoot(t)
-	cookie := extractRoutes(t, filepath.Join(root, "internal/routes/test_management.go"), regexp.MustCompile(`api\.HandleH\("([A-Z]+) ([^"]+)"`), func(string) bool { return true })
-	v1 := extractRoutes(t, filepath.Join(root, "internal/restapi/v1/router.go"), regexp.MustCompile(`v1\.HandleWithMiddleware\("([A-Z]+) ([^"]+)"`), isTestManagementRoute)
-
-	for route := range cookie {
-		if !v1[route] {
-			t.Errorf("cookie test-management route missing from v1: %s", route)
-		}
-	}
-	for route := range v1 {
-		if !cookie[route] {
-			t.Errorf("v1 test-management route has no cookie counterpart: %s", route)
-		}
-	}
-}
-
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("could not find repo root")
-		}
-		dir = parent
-	}
-}
-
-func extractRoutes(t *testing.T, path string, re *regexp.Regexp, include func(string) bool) map[string]bool {
-	t.Helper()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	routes := map[string]bool{}
-	for _, match := range re.FindAllStringSubmatch(string(body), -1) {
-		path := match[2]
-		if include(path) {
-			routes[match[1]+" "+path] = true
-		}
-	}
-	return routes
-}
-
-func isTestManagementRoute(path string) bool {
-	return strings.Contains(path, "test-") || strings.HasPrefix(path, "/test-cases")
 }

@@ -1,5 +1,5 @@
-import { createGroupViaAPI, createUserViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { createGroupViaAPI, createUserViaAPI } from '../fixtures/api-helpers';
 import { generateGroup, generateUser } from '../fixtures/test-data';
 import { GroupPage } from '../pages/group.page';
 
@@ -81,7 +81,7 @@ test.describe('Group Management', () => {
       // User creation is a two-step flow (create then activate) since core
       // commit 73b2b39 — createUserViaAPI handles the activate POST itself.
       const testUser = generateUser('group-member');
-      await createUserViaAPI(request, {
+      const createdUser = await createUserViaAPI(request, {
         email: testUser.email,
         username: testUser.username,
         first_name: testUser.first_name,
@@ -93,7 +93,7 @@ test.describe('Group Management', () => {
       // last_name + email (no username), and the picker's client-side filter
       // matches email substring. The Members list row also shows the email,
       // so the same value works for the verify step.
-      await groupPage.addMember(testGroup.name, testUser.email);
+      await groupPage.addMember(testGroup.name, createdUser.id, testUser.email);
       await groupPage.verifyMemberInGroup(testGroup.name, testUser.email);
     });
 
@@ -101,7 +101,7 @@ test.describe('Group Management', () => {
       // User creation is a two-step flow (create then activate) since core
       // commit 73b2b39 — createUserViaAPI handles the activate POST itself.
       const testUser = generateUser('group-remove');
-      await createUserViaAPI(request, {
+      const createdUser = await createUserViaAPI(request, {
         email: testUser.email,
         username: testUser.username,
         first_name: testUser.first_name,
@@ -113,16 +113,14 @@ test.describe('Group Management', () => {
       // last_name + email (no username), and the picker's client-side filter
       // matches email substring. The Members list row also shows the email,
       // so the same value works for the verify step.
-      await groupPage.addMember(testGroup.name, testUser.email);
+      await groupPage.addMember(testGroup.name, createdUser.id, testUser.email);
       await groupPage.verifyMemberInGroup(testGroup.name, testUser.email);
 
       await groupPage.removeMember(testGroup.name, testUser.email);
 
       // Verify member was removed — reopen members modal
       await groupPage.openMembers(testGroup.name);
-      const memberText = groupPage.page
-        .locator('div[role="dialog"]')
-        .locator(`text=${testUser.email}`);
+      const memberText = groupPage.page.locator('div[role="dialog"]').locator(`text=${testUser.email}`);
       await expect(memberText).not.toBeVisible({ timeout: 5000 });
     });
   });
@@ -143,8 +141,12 @@ test.describe('Group Management', () => {
       await groupPage.verifyGroupExists(group2.name);
       await groupPage.verifyGroupExists(group3.name);
 
-      const count = await groupPage.getGroupCount();
-      expect(count).toBeGreaterThanOrEqual(3);
+      // The create submits re-fetch the list; wait (bounded) for the rows
+      // to render.
+      const countStart = Date.now();
+      await expect
+        .poll(async () => groupPage.getGroupCount(), { timeout: 15000 })
+        .toBeGreaterThanOrEqual(3);
     });
   });
 });

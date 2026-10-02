@@ -3,16 +3,19 @@
 package dialog
 
 import (
+	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"windshift/internal/tui/styles"
 )
 
 func TestFormSubmitKeysAvoidCtrlS(t *testing.T) {
-	s := styles.New(styles.WindshiftDark())
+	s := styles.New(styles.CatppuccinMocha())
 	area := textarea.New()
 	area.SetValue("hello")
 	form := NewForm("comment", "Comment", []FormField{{Key: "body", Multiline: true, Area: area}}, s, 40)
@@ -43,8 +46,37 @@ func TestFormSubmitKeysAvoidCtrlS(t *testing.T) {
 	}
 }
 
+func TestFormPropagatesTextInputFocusCommand(t *testing.T) {
+	s := styles.New(styles.CatppuccinMocha())
+	input := textinput.New()
+	form := NewForm("edit", "Edit", []FormField{{Key: "title", Input: input}}, s, 40)
+	action := form.HandleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if action.Cmd == nil {
+		t.Fatal("beginning text input editing dropped the focus command")
+	}
+	if cmd := form.HandleMessage(cursor.Blink()); cmd == nil {
+		t.Fatal("focused text input dropped the cursor lifecycle message")
+	}
+}
+
+func TestFormViewIsBoundedAndResponsive(t *testing.T) {
+	s := styles.New(styles.CatppuccinMocha())
+	fields := make([]FormField, 8)
+	for i := range fields {
+		fields[i] = FormField{Key: string(rune('a' + i)), Label: "Field", Input: textinput.New()}
+	}
+	form := NewForm("long", "Long", fields, s, 70)
+	view := form.View(12, 6)
+	if got := len(strings.Split(view, "\n")); got > 6 {
+		t.Fatalf("form height = %d, want at most 6", got)
+	}
+	if form.fields[0].Input.Width() > 12 {
+		t.Fatalf("input width = %d, want at most 12", form.fields[0].Input.Width())
+	}
+}
+
 func TestFormChoiceConsumesPickerResult(t *testing.T) {
-	s := styles.New(styles.WindshiftDark())
+	s := styles.New(styles.CatppuccinMocha())
 	choice := &FormChoice{
 		PickerID: "status",
 		Options:  []Option{{Label: "Open", Value: 1}, {Label: "Done", Value: 2}},

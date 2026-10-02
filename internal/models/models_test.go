@@ -82,10 +82,10 @@ func TestSetupStatus_JSONSerialization(t *testing.T) {
 func TestSetupRequest_JSONSerialization(t *testing.T) {
 	setupReq := SetupRequest{
 		AdminUser: SetupUser{
-			Email:     "admin@example.com",
-			Username:  "admin",
-			FirstName: "Admin",
-			LastName:  "User",
+			Email:        "admin@example.com",
+			Username:     "admin",
+			FirstName:    "Admin",
+			LastName:     "User",
 			Password:  "password123",
 		},
 		ModuleSettings: ModuleSettings{
@@ -130,10 +130,10 @@ func TestSetupRequest_JSONSerialization(t *testing.T) {
 
 func TestSetupUser_JSONSerialization(t *testing.T) {
 	setupUser := SetupUser{
-		Email:     "test@example.com",
-		Username:  "testuser",
-		FirstName: "Test",
-		LastName:  "User",
+		Email:        "test@example.com",
+		Username:     "testuser",
+		FirstName:    "Test",
+		LastName:     "User",
 		Password:  "hashedpassword",
 	}
 
@@ -244,10 +244,10 @@ func TestSetupRequest_ValidationScenarios(t *testing.T) {
 			name: "Valid complete request",
 			req: SetupRequest{
 				AdminUser: SetupUser{
-					Email:     "admin@example.com",
-					Username:  "admin",
-					FirstName: "Admin",
-					LastName:  "User",
+					Email:        "admin@example.com",
+					Username:     "admin",
+					FirstName:    "Admin",
+					LastName:     "User",
 					Password:  "password123",
 				},
 				ModuleSettings: ModuleSettings{
@@ -348,10 +348,10 @@ func TestJSONFieldNames(t *testing.T) {
 	// Test that JSON field names match expected API structure
 	setupReq := SetupRequest{
 		AdminUser: SetupUser{
-			Email:     "admin@example.com",
-			Username:  "admin",
-			FirstName: "Admin",
-			LastName:  "User",
+			Email:        "admin@example.com",
+			Username:     "admin",
+			FirstName:    "Admin",
+			LastName:     "User",
 			Password:  "password123",
 		},
 		ModuleSettings: ModuleSettings{

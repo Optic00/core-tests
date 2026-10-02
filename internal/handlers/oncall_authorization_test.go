@@ -80,35 +80,43 @@ func TestListIncidentsFiltersUnauthorizedTeamsAndItemWorkspaces(t *testing.T) {
 	grantViewerRoleForAuthorizationTest(t, tdb, viewerID, visibleWorkspaceID)
 	grantViewerRoleForAuthorizationTest(t, tdb, otherID, hiddenWorkspaceID)
 
-	visibleItemID := testutils.InsertID(t, tdb.GetDatabase(), `
-		INSERT INTO items (workspace_id, workspace_item_number, title, description, creator_id, frac_index)
-		VALUES (?, 1, 'Visible incident item', '', ?, ?)
-	`, visibleWorkspaceID, viewerID, testutils.NextTestFracIndex())
-	hiddenItemID := testutils.InsertID(t, tdb.GetDatabase(), `
-		INSERT INTO items (workspace_id, workspace_item_number, title, description, creator_id, frac_index)
-		VALUES (?, 1, 'Restricted incident item', '', ?, ?)
-	`, hiddenWorkspaceID, otherID, testutils.NextTestFracIndex())
+	createItem := func(workspaceID, creatorID, teamID int, title string) int {
+		t.Helper()
+		itemID, err := services.CreateItem(tdb.GetDatabase(), services.ItemCreationParams{
+			WorkspaceID: workspaceID,
+			Title:       title,
+			CreatorID:   &creatorID,
+			TeamID:      &teamID,
+		})
+		if err != nil {
+			t.Fatalf("create %q: %v", title, err)
+		}
+		return int(itemID)
+	}
+	visibleItemID := createItem(visibleWorkspaceID, viewerID, visibleTeamID, "Visible incident item")
+	hiddenTeamItemID := createItem(visibleWorkspaceID, viewerID, hiddenTeamID, "Hidden team incident item")
+	hiddenWorkspaceItemID := createItem(hiddenWorkspaceID, otherID, visibleTeamID, "Hidden workspace incident item")
 
 	visiblePolicyID := testutils.InsertID(t, tdb.GetDatabase(), `
 		INSERT INTO on_call_escalation_policies (team_id, name, description, repeat_count, created_by)
 		VALUES (?, 'Visible policy', '', 0, ?)
 	`, visibleTeamID, viewerID)
-	hiddenPolicyID := testutils.InsertID(t, tdb.GetDatabase(), `
-		INSERT INTO on_call_escalation_policies (team_id, name, description, repeat_count, created_by)
-		VALUES (?, 'Hidden policy', '', 0, ?)
-	`, hiddenTeamID, otherID)
 
-	// Incidents currently have no production create API, so this handler-level
-	// authorization fixture inserts the legacy rows the endpoint can expose.
-	if _, err := tdb.ExecWrite(`INSERT INTO on_call_incidents (escalation_policy_id, item_id) VALUES (?, ?)`, visiblePolicyID, visibleItemID); err != nil {
-		t.Fatalf("insert visible incident: %v", err)
+	// Incidents are item pager state; the handler-level authorization fixture
+	// inserts rows directly because no public create API exists for this shape.
+	openIncident := func(itemID, policyID int, label string) {
+		t.Helper()
+		incidentID := testutils.InsertID(t, tdb.GetDatabase(), `
+			INSERT INTO incidents (item_id, escalation_policy_id, status, urgency, source)
+			VALUES (?, ?, 'triggered', 'high', 'manual')
+		`, itemID, policyID)
+		if _, err := tdb.ExecWrite(`UPDATE items SET incident_id = ? WHERE id = ?`, incidentID, itemID); err != nil {
+			t.Fatalf("link %s incident: %v", label, err)
+		}
 	}
-	if _, err := tdb.ExecWrite(`INSERT INTO on_call_incidents (escalation_policy_id, item_id) VALUES (?, ?)`, hiddenPolicyID, visibleItemID); err != nil {
-		t.Fatalf("insert hidden-team incident: %v", err)
-	}
-	if _, err := tdb.ExecWrite(`INSERT INTO on_call_incidents (escalation_policy_id, item_id) VALUES (?, ?)`, visiblePolicyID, hiddenItemID); err != nil {
-		t.Fatalf("insert hidden-item incident: %v", err)
-	}
+	openIncident(visibleItemID, visiblePolicyID, "visible")
+	openIncident(hiddenTeamItemID, visiblePolicyID, "hidden-team")
+	openIncident(hiddenWorkspaceItemID, visiblePolicyID, "hidden-workspace")
 
 	handler, permissionService := newOnCallAuthorizationHandler(t, tdb)
 	t.Cleanup(func() { _ = permissionService.Close() })
@@ -119,12 +127,12 @@ func TestListIncidentsFiltersUnauthorizedTeamsAndItemWorkspaces(t *testing.T) {
 	recorder := testutils.ExecuteRequest(t, handler.ListIncidents, req)
 	recorder.AssertStatusCode(http.StatusOK)
 
-	var incidents []models.OnCallIncident
+	var incidents []models.Incident
 	if err := json.NewDecoder(recorder.Body).Decode(&incidents); err != nil {
 		t.Fatalf("decode incidents: %v", err)
 	}
-	if len(incidents) != 1 || incidents[0].EscalationPolicyID != visiblePolicyID || incidents[0].ItemTitle != "Visible incident item" {
-		t.Fatalf("incidents = %+v, want only the authorized team and item", incidents)
+	if len(incidents) != 1 || incidents[0].EscalationPolicyID == nil || *incidents[0].EscalationPolicyID != visiblePolicyID || incidents[0].ItemTitle != "Visible incident item" {
+		t.Fatalf("incidents = %+v, want only the authorized team and workspace", incidents)
 	}
 }
 
@@ -137,10 +145,15 @@ func newOnCallAuthorizationHandler(t *testing.T, tdb *testutils.TestDB) (*OnCall
 		t.Fatalf("NewPermissionService: %v", err)
 	}
 	repo := repository.NewOnCallRepository(tdb.GetDatabase())
+	itemRepo := repository.NewItemRepository(tdb.GetDatabase())
+	teamRepo := repository.NewTeamRepository(tdb.GetDatabase())
+	onCallService := services.NewOnCallService(tdb.GetDatabase(), repo, repository.NewLeaveRepository(tdb.GetDatabase()))
 	return NewOnCallHandler(
 		repo,
-		repository.NewTeamRepository(tdb.GetDatabase()),
-		services.NewOnCallService(tdb.GetDatabase(), repo, repository.NewLeaveRepository(tdb.GetDatabase())),
+		teamRepo,
+		itemRepo,
+		onCallService,
+		services.NewIncidentService(tdb.GetDatabase(), repo, itemRepo, onCallService, teamRepo, nil),
 		permissionService,
 		logger.NewAuditor(tdb.GetDatabase()),
 	), permissionService

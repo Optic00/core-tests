@@ -33,8 +33,8 @@ func TestSessionManagerStoresHashedTokensAndValidatesLegacyPlaintext(t *testing.
 	}
 	userID := int(userID64)
 
-	sm := NewSessionManager(db, false, false, nil, "test-cookie-secret", "strict")
-	sameSecretManager := NewSessionManager(db, false, false, nil, "test-cookie-secret", "strict")
+	sm := NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "test-cookie-secret", "strict", DefaultSessionValidationCacheTTL)
+	sameSecretManager := NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "test-cookie-secret", "strict", DefaultSessionValidationCacheTTL)
 	if !bytes.Equal(sm.DeriveOpaqueValue("test", "value"), sameSecretManager.DeriveOpaqueValue("test", "value")) {
 		t.Fatal("opaque auth values were not stable for the configured secret")
 	}

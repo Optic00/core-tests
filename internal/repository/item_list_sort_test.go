@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
+	"windshift/internal/database"
+	"windshift/internal/models"
 	"windshift/internal/testutils"
 )
 
@@ -174,6 +177,83 @@ func expectTitles(t *testing.T, got, want []string) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("titles = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestFindAllWithDetailsSortsSLADeadlineNullsLast covers two defects: an item
+// with a paused and a running cycle resolved to a NULL deadline (losing the
+// real one), and NULL ordering differed between SQLite and PostgreSQL.
+func TestFindAllWithDetailsSortsSLADeadlineNullsLast(t *testing.T) {
+	fixture := newSLAFixture(t)
+	ctx := context.Background()
+	metricID := fixture.createMetric(t)
+	now := time.Date(2025, 1, 8, 12, 0, 0, 0, time.UTC)
+
+	secondMetricID := 0
+	if err := database.WithTx(fixture.db, func(tx database.Tx) error {
+		id, err := fixture.repo.CreateMetric(ctx, tx, &models.SLAMetric{
+			WorkspaceID: fixture.workspaceID, Name: "Second response", DisplayFormat: "time", IsActive: true, ImportStatus: "native",
+			Goals: []models.SLAGoal{{Position: 0, QLQuery: "true", ImportStatus: "native",
+				Targets: []models.SLAGoalTarget{{Position: 0, IsFallback: true, TargetMs: 3_600_000, CalendarID: fixture.calendarID}}}},
+		})
+		secondMetricID = id
+		return err
+	}); err != nil {
+		t.Fatalf("create second metric: %v", err)
+	}
+
+	running := func(itemID, metric int, deadline time.Time) {
+		fixture.insertCycle(t, &models.ItemSLACycle{
+			ItemID: itemID, MetricID: metric, CycleNo: 1, Status: models.SLACycleOngoing,
+			StartedAt: now.Add(-time.Hour), LastCalculatedAt: now, GoalDurationMs: 10_000, RemainingMs: 1,
+			NextDeadlineAt: &deadline, Origin: models.SLAOriginNative,
+			CalendarSnapshot: json.RawMessage(`{}`), GoalQuerySnapshot: "1 = 1",
+		})
+	}
+
+	earlyItem := fixture.insertItem(t, 2)
+	running(earlyItem, metricID, now.Add(1*time.Hour))
+
+	// Mixed item: a paused cycle for the first metric and a running cycle for
+	// the second. Its real deadline must win over the paused cycle's NULL.
+	mixedItem := fixture.insertItem(t, 3)
+	pausedAt := now.Add(-time.Minute)
+	fixture.insertCycle(t, &models.ItemSLACycle{
+		ItemID: mixedItem, MetricID: metricID, CycleNo: 1, Status: models.SLACycleOngoing,
+		StartedAt: now.Add(-time.Hour), LastCalculatedAt: now, GoalDurationMs: 10_000, RemainingMs: 1,
+		Paused: true, PauseStartedAt: &pausedAt, Origin: models.SLAOriginNative,
+		CalendarSnapshot: json.RawMessage(`{}`), GoalQuerySnapshot: "1 = 1",
+	})
+	running(mixedItem, secondMetricID, now.Add(2*time.Hour))
+
+	lateItem := fixture.insertItem(t, 4)
+	running(lateItem, metricID, now.Add(3*time.Hour))
+
+	nullItem := fixture.insertItem(t, 5)
+
+	page, err := NewItemRepository(fixture.db).FindAllWithDetailsPageContext(ctx, ItemListParams{
+		Filters:    ItemFilters{WorkspaceID: &fixture.workspaceID},
+		Pagination: PaginationParams{Limit: 20},
+		SortBy:     "sla_deadline",
+		SortAsc:    true,
+	})
+	if err != nil {
+		t.Fatalf("list sorted items: %v", err)
+	}
+	got := make([]int, len(page.Items))
+	for i := range page.Items {
+		got[i] = page.Items[i].ID
+	}
+	// fixture.itemID and nullItem have no running deadline, so they sort last
+	// by item id after the three real deadlines.
+	want := []int{earlyItem, mixedItem, lateItem, fixture.itemID, nullItem}
+	if len(got) != len(want) {
+		t.Fatalf("item order = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("item order = %v, want %v", got, want)
 		}
 	}
 }

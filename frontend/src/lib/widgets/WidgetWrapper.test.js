@@ -1,15 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../layout/DropdownMenu.svelte', () => ({
-  default: function MockDropdownMenu() {},
-}));
-
-vi.mock('@lucide/svelte', () => ({
-  Check: function MockCheck() {},
-  ChevronDown: function MockChevronDown() {},
-}));
-
 import WidgetWrapper from './WidgetWrapper.svelte';
 
 afterEach(() => {
@@ -67,5 +58,15 @@ describe('WidgetWrapper workspace resizing', () => {
     await fireEvent.dblClick(screen.getByTestId('widget-resize-handle'));
 
     expect(onwidthchange).toHaveBeenCalledWith(2);
+  });
+});
+
+describe('WidgetWrapper width menu trigger', () => {
+  it('renders a single kebab icon without a built-in chevron', () => {
+    render(WidgetWrapper, { props: {} });
+
+    const trigger = screen.getByTestId('widget-width-menu');
+    expect(trigger.querySelectorAll('svg')).toHaveLength(1);
+    expect(trigger.querySelector('svg')).toHaveClass('lucide-ellipsis');
   });
 });

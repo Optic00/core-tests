@@ -1,4 +1,5 @@
 import { expect, type Page } from '../fixtures/context-path';
+import { shotForCurrentTest } from '../helpers/screenshot';
 
 /**
  * Field type value to display label mapping (matches frontend fieldTypes array)
@@ -36,7 +37,6 @@ export class CustomFieldsPage {
    */
   async goto() {
     await this.page.goto('/admin/custom-fields');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -63,15 +63,19 @@ export class CustomFieldsPage {
 
     const dialog = this.page.locator(this.modal);
 
-    // Click the field type dropdown trigger button (shows current type label or "Select type...")
-    const trigger = dialog.getByTestId('custom-field-type-trigger');
-    await trigger.click();
+    const picker = dialog.locator('#field-type');
+    await picker.click();
+    await picker.fill(label);
 
     // Wait for the menu to open, pick the option, then wait for it to close.
     const menuItem = this.page.getByTestId(`custom-field-type-${typeValue}`);
     await menuItem.waitFor({ state: 'visible', timeout: 5000 });
     await menuItem.click();
     await menuItem.waitFor({ state: 'detached', timeout: 5000 });
+  }
+
+  fieldTypePicker() {
+    return this.page.locator('#field-type');
   }
 
   /**
@@ -126,6 +130,11 @@ export class CustomFieldsPage {
     if (data.options && data.options.length > 0) {
       await this.fillOptions(data.options);
     }
+
+    // Snap the filled-in form before submission so screenshot docs show the
+    // actual create flow (rather than only the resulting list rendered by
+    // the auto end-of-test reporter). No-op when E2E_SCREENSHOTS is unset.
+    await shotForCurrentTest(this.page, 'form-filled');
 
     await this.clickSave();
 

@@ -42,6 +42,13 @@ describe('parseFieldOptions', () => {
     });
   });
 
+  test('accepts the decoded v2 representation', () => {
+	expect(parseFieldOptions({ next_id: 2, items: [{ id: 1, label: 'High' }] })).toEqual({
+	  nextId: 2,
+	  items: [{ id: 1, label: 'High' }],
+	});
+  });
+
   test('drops unknown fields from each item (only id+label are kept)', () => {
     const json = JSON.stringify({
       next_id: 2,

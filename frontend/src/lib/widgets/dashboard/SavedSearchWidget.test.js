@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getCollections: vi.fn(),
@@ -41,30 +41,18 @@ vi.mock('../../stores/i18n.svelte.js', () => ({
 import SavedSearchWidget from './SavedSearchWidget.svelte';
 
 describe('SavedSearchWidget', () => {
-  const originalAnimate = Element.prototype.animate;
-
   beforeEach(() => {
-    Element.prototype.animate = vi.fn(() => ({
-      cancel: vi.fn(),
-      finished: Promise.resolve(),
-    }));
     mocks.getCollections.mockResolvedValue([]);
     mocks.getWorkspaces.mockResolvedValue([]);
-    mocks.getItems.mockResolvedValue({ items: [] });
-  });
-
-  afterAll(() => {
-    if (originalAnimate) {
-      Element.prototype.animate = originalAnimate;
-    } else {
-      delete Element.prototype.animate;
-    }
+    mocks.getItems.mockResolvedValue({ data: [] });
   });
 
   it('loads the selected collection and renders dashboard item rows', async () => {
-    mocks.getCollections.mockResolvedValue([{ id: 9, name: 'Release queue', workspace_id: 7 }]);
+    mocks.getCollections.mockResolvedValue([
+      { id: 9, name: 'Release queue', workspace_id: 7 },
+    ]);
     mocks.getItems.mockResolvedValue({
-      items: [
+      data: [
         {
           id: 21,
           title: 'Ship saved search widget',

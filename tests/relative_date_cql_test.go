@@ -21,11 +21,10 @@ func TestRelativeDateCQLHTTP(t *testing.T) {
 	itemTypes := GetItemTypes(t, server, GetDefaultConfigurationSet(t, server))
 	bugTypeID := RequireItemTypeID(t, itemTypes, "Bug")
 
-	milestoneResponse := MakeAuthRequest(t, server, http.MethodPost, "/milestones", map[string]interface{}{
-		"name":         "Relative date milestone",
-		"description":  "Milestone for relative date CQL",
-		"status":       "in-progress",
-		"workspace_id": workspaceID,
+	milestoneResponse := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), map[string]interface{}{
+		"name":        "Relative date milestone",
+		"description": "Milestone for relative date CQL",
+		"status":      "in-progress",
 	})
 	AssertStatusCode(t, milestoneResponse, http.StatusCreated)
 	var milestone map[string]interface{}

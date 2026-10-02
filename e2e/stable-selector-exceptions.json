@@ -19,7 +19,7 @@
     "pages/board.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 11,
-      "fingerprint": "7c4662eb091aa8a30655707a7c5a7bd09ffb93b7b08c0dcde63d58e43d2ada80"
+      "fingerprint": "b12efe85d5a6bb716d4e0db7b741b9bf8699667836d273c8b04b48f23498436d"
     },
     "pages/calendar.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -33,8 +33,8 @@
     },
     "pages/group.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 23,
-      "fingerprint": "fdde3db8c12dd0d9ada068dba3210f6754b4a66e9c41b3594816ae882c36e96b"
+      "violations": 21,
+      "fingerprint": "c6caf0840047da16c809d979c50bf38d5577e36cb727ee717cbabd6ef88dc856"
     },
     "pages/item-links.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -43,43 +43,38 @@
     },
     "pages/item.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 36,
-      "fingerprint": "5e8aa2f785de9ee7a84c6f8ed94561f082a5fcf06e3b755306c7f96cd7941693"
+      "violations": 30,
+      "fingerprint": "cfdb2de55b4e6bfe2b6da7c5617904e1fd478444f2daaf2f0ef74e5edd62bde1"
     },
     "pages/iteration.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 18,
-      "fingerprint": "809913970fd24e40877a0213da4d8daae803413c7dff0a9389f5ec70eba2f5a1"
+      "fingerprint": "fa7ad943ee3ffb004d9ecd81df6d8c3b120790162c9d973bb8d9920d2f7f1d4a"
     },
     "pages/knowledge.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 5,
-      "fingerprint": "3ade98ae5759bfc309c8ca62b92984e6f985d0ec5856544e0527d94f649e562a"
+      "fingerprint": "f5b50299f61a8b80bdc6f4d3a103ac9ecc44685f86ca491193cb13949151e51f"
     },
     "pages/list-view.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 7,
-      "fingerprint": "0a00a5cf6dad72e1369a8d3cc5ade9ac393e0f0c875586e336b28eeea8852c86"
+      "fingerprint": "6c810e0f3d212d93825dae95b11cebb41b306004068542234af4363fa10da36f"
     },
     "pages/login.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 10,
-      "fingerprint": "6817c40c7682775ab3598ab6dd92a5d74541cbe923498ecac192fc7f5082c61f"
+      "violations": 11,
+      "fingerprint": "00eb84d674163f4735716fcf97c9a29f3f78fe74c23ce3c6bb46a2daba887275"
     },
     "pages/milestone.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 15,
-      "fingerprint": "9ee098126b44458fb2a8ca7fb4ac63a385f609cc455f873d3673a7232df6ca9b"
+      "fingerprint": "d53e50acdd278430b9f35d7be808157ba72567ea320a72e11b549227244c8b21"
     },
     "pages/priority-manager.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 17,
-      "fingerprint": "b674112b789a99828bee45863201db855ed81c75b648770167c536adbd34746e"
-    },
-    "pages/setup.page.ts": {
-      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 7,
-      "fingerprint": "1980737dadc968a9b5659d8707fe172ca846b2ddd3630f9549bba62869f1399d"
+      "violations": 8,
+      "fingerprint": "b8b1c9bbef0110a893ea98998abdc2200caf0f3c86ebd2b45a8b12c088f262ba"
     },
     "pages/team-oncall.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -88,28 +83,28 @@
     },
     "pages/teams.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 18,
-      "fingerprint": "ad6405daffc43478972b81afd7786aea0fd1c91e9382afc55776f76652d6ac15"
+      "violations": 19,
+      "fingerprint": "1239d9843e806e3158ce2adedba8201bf1072a0cb55ed9480071c8f646ac7509"
     },
     "pages/time-tracking.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 25,
-      "fingerprint": "f75a738f9bda6fa02e6cf95ae15e584611b9b6bbf1354a824c85c32fe8a3e0db"
+      "fingerprint": "29931fd8e547df525f2ed0303d91bb60483b1123153e1c12706fadac424b5024"
     },
     "pages/user.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 34,
-      "fingerprint": "d18960a0b368a268821094edd95a8db498454b5d614c290ddcf97e2c1d5d50ab"
+      "fingerprint": "ac6fd5df5464b9cd74d039f2bf5dd26bfa2627d4db10891da142c99f49a484b8"
     },
     "pages/workspace-settings.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 16,
-      "fingerprint": "5ca972e2989e42841dae21ee5f797b00332d5ca0c304a7fc7769e2116460b8ca"
+      "fingerprint": "d2f67918fce77540b761f6baaff6a6bb7eca531a128e563394007249da7c2104"
     },
     "pages/workspace.page.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 18,
-      "fingerprint": "1186551731377269163ead70879a55c2b144814053eff1e017e6b7187a18bf6e"
+      "violations": 17,
+      "fingerprint": "8e70195d8650f822559d865af386e007a53d194bd438040798407346e41900a1"
     },
     "tests/action-templates-editor-shape.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -141,20 +136,20 @@
       "violations": 2,
       "fingerprint": "f604a63aee8cd3bec98de84ada4ddf49d67ae8b26e8bf06fb92bd080ef7ba0a9"
     },
+    "tests/blog-portal-screenshots.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 5,
+      "fingerprint": "210ae06a2ea3637fcc760e030e69c0768188a787d427f63473cc5178bd72adf1"
+    },
     "tests/board-bubble-sort.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 4,
-      "fingerprint": "9ab11c66e98ba00c3a85633a1d5a6e4a251f9c2f3dfb0b27943d2da6880ec106"
-    },
-    "tests/board-rightmost-cap-fetch.spec.ts": {
-      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 11,
-      "fingerprint": "50198936149b0f0e939872e3741105c072695b8e98a9f888fc6e05f9f826eb33"
+      "fingerprint": "1c9a95b83611908271e5874d48de22c8be5df1ce11a1988deb67b6a1b073d189"
     },
     "tests/board-swimlane-quick-add-types.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 5,
-      "fingerprint": "f28063069a29af723f3c12b5c0d8c67257ab472bf82a712a2952f5374f489b71"
+      "fingerprint": "ff5569e3b73fe27ca807cff1b468e57ead9dddbfbd32d38f3d3cfe7f433efc35"
     },
     "tests/board-view.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -163,28 +158,38 @@
     },
     "tests/button-smoke.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 14,
-      "fingerprint": "e116f63cf234b9f9ec895d0f9f346c835ef7783eb04e48cbb74ac669b3397939"
+      "violations": 12,
+      "fingerprint": "40eddf075b2baddc13413124db544bc2ec53398241ee1c6808ca7692f915c817"
     },
     "tests/chat-action-context.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 4,
-      "fingerprint": "c70da6ed6896904d70ad1fbf8e90d549b024ca41840beec1e69dc90b984dd411"
+      "fingerprint": "2b69acbb7b2101b6c93eea31b261cc65ab5ddd130aa348be92af375e1ad66a6c"
     },
     "tests/collaboration.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 1,
-      "fingerprint": "ccd8768830a984c7cce6fefaa7aeb0dd96688e3816f0fd64b1b29d5f6674a76d"
+      "fingerprint": "ce0be3c5cf5fc951f7582725b5b57d1e0ebbcdaff165ed90aad50adbfee34d67"
     },
-    "tests/collection-search-columns.spec.ts": {
+    "tests/create-modal-asset-custom-field.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 1,
-      "fingerprint": "5c82269c270f357277f6c001525f9cb6d0c05efdc89143fd5593610630b8587d"
+      "violations": 5,
+      "fingerprint": "7f275e4027dbcbb402f57a0d50700ee69ec8c9943bcff10a49842cfb8f054d18"
     },
     "tests/critical-browser-page.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 1,
-      "fingerprint": "a8012f19950604de834bec518fbdb8267d794f17aac2ae16e5aa5a63e5a2098e"
+      "fingerprint": "d36a73f373b9ba6ffd7184888885c0d30db771caf3e1de28893d3d867d7c639e"
+    },
+    "tests/docs-screenshots.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 1,
+      "fingerprint": "56b18ba457f17061cacf26e0da1bfeac457f21bbd770326b4a1be3b4db7044c1"
+    },
+    "tests/editor-scroll-audit.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 1,
+      "fingerprint": "b41cedbb3b3b97d91cfdb206da8128f1b7f7dea94d970d8b9a26c5a7e95eedfc"
     },
     "tests/email-templates.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -198,8 +203,8 @@
     },
     "tests/global-permissions.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 51,
-      "fingerprint": "ce31eef6bc96f67e62d9a5d92e67223c77f30c5047379ae13cd3fc67b0df6880"
+      "violations": 49,
+      "fingerprint": "222ea2ad882fb0e5aa447a56fb9358e1cc6ce8d1e66ca9aa7b91121f3b702fc9"
     },
     "tests/global-search.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -209,7 +214,7 @@
     "tests/groups.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 2,
-      "fingerprint": "5e844e82f487e3af81b2eff9fe6c8634c5c46a691a586faab004e88b1d107261"
+      "fingerprint": "07b1e2eaa6ec7e06db478c4ae738c33bc06cc14cabdccd5098d519cbb5c9a64c"
     },
     "tests/item-detail-sse-live.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -219,7 +224,7 @@
     "tests/item-links.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 1,
-      "fingerprint": "955f6386bad3ade3e45bc7dd3ab031f0f631fbe793aa6074f22e9afa56d132dd"
+      "fingerprint": "746938c879071a71f9f894a4f8f38bafe2266572304f2f32446b74ac70dcd9e0"
     },
     "tests/item-modal-comment-escape.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -233,23 +238,28 @@
     },
     "tests/items.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 16,
-      "fingerprint": "d9fc9549c85771eaf0a96c3db8975cae214eaa5c21facf57414d003f42bf3405"
+      "violations": 14,
+      "fingerprint": "5f89527573679fdd59efc3486eb2873e37d52dbb6a078562bd33452465175079"
     },
     "tests/iterations.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 4,
-      "fingerprint": "162e985a7ac02d4cb802b63e64801ee9dfafea55746bf7d13aed51935d14642a"
+      "violations": 6,
+      "fingerprint": "f9a468c3f60836eeac70891469818ea92e0dd9a4e0303a0dfaa5c0d408a4c3cc"
     },
     "tests/knowledge-pages.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 1,
-      "fingerprint": "93676f5a25d84dabfeb77fb79c352ffaf727f67111c1e1de60640d7c6d960642"
+      "fingerprint": "54d8d74e0b71b5fdf8f6df4d0d70ae88e8869fa12c0d49b941a43093b034dd24"
     },
     "tests/milestones.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 4,
-      "fingerprint": "32d22766d2ff57dfffd420881d9583fc64d02b930893f4eb253c5fb02debbf46"
+      "violations": 6,
+      "fingerprint": "ce5208d0aac3bdec2a324a1e37b7452d634192901fdefa228781280daa77e655"
+    },
+    "tests/mobile-surface.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 11,
+      "fingerprint": "8ad501d940d34cd2489eab309edf0f66f22e582dc6f856ca7a2d75b39718b12b"
     },
     "tests/notifications.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -264,7 +274,17 @@
     "tests/page-links.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 9,
-      "fingerprint": "c64bf462aac4907409479d545655550e4a3e0612f947c9667fa91fe039a74081"
+      "fingerprint": "b5622caf33271c6a1dab3251e5b76519f2474ea5459a302429f8b5e2f3c248c5"
+    },
+    "tests/page-title-layout.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 2,
+      "fingerprint": "d5c939510d6a5b328c5c291455d415a5ac3d9f5c2f74dc917f0d4dc577c20fe6"
+    },
+    "tests/pages-hardbreak-br.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 1,
+      "fingerprint": "5713090de8894864cad6fa1cf3b175228d8da071957470f7d00f01336b8d399d"
     },
     "tests/pages-history.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -274,7 +294,7 @@
     "tests/pages-print.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 4,
-      "fingerprint": "d1532a496cc0b10cd3d5e0de906201eb58986fc01c98b17b7aa0c043721d86cc"
+      "fingerprint": "335957669e47c800ffe5097db7872c9edd1d3e4731d01e0206051d1d30cff920"
     },
     "tests/portal-channel-toggle.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -291,20 +311,65 @@
       "violations": 1,
       "fingerprint": "017581fe241ee670941c621aa2009a37a2cd76f7b04159fda5fe8bc03f3b8b57"
     },
+    "tests/admin-integrations-providers.spec.ts": {
+      "reason": "Provider modals expose no stable container test id; role=dialog scoping is the exact mount point. Replace when dialogs grow stable test ids.",
+      "violations": 2,
+      "fingerprint": "f61a90914f27f37ce10fba58d32e5701189922457b8bc181736b36a16f08f046"
+    },
+    "tests/admin-llm-connections.spec.ts": {
+      "reason": "Model picker options carry only data-option-id attributes inside the shared picker list; no per-option test id exists yet.",
+      "violations": 3,
+      "fingerprint": "42909a0d714adbbab0e58d85c68ff8aa00dbafccb7018d716d4b3cf53f777cac"
+    },
+    "tests/admin-oauth-clients.spec.ts": {
+      "reason": "Scope inputs and modals lack stable test ids; role=dialog and nested input scoping is the current contract.",
+      "violations": 2,
+      "fingerprint": "835841f811c5b7e881942b31ac17351917cb338c9b4e58063fd6cc58d9e01fd4"
+    },
+    "tests/admin-statuses.spec.ts": {
+      "reason": "Status rows render dynamic per-id test ids reachable only via prefix matching, and modals lack stable container test ids.",
+      "violations": 5,
+      "fingerprint": "86d01d8582373a5b41dcc8e08215621e65d3a40e4cf4761c0615d5978237af6b"
+    },
+    "tests/admin-theme-manager.spec.ts": {
+      "reason": "Theme modals expose no stable container test id; role=dialog scoping is the exact mount point.",
+      "violations": 1,
+      "fingerprint": "9c17d71ba0af77e424b26fa844190e86829d2160f51c6b9385a3dfd48ce2fae2"
+    },
+    "tests/create-modal-workspace-permissions.spec.ts": {
+      "reason": "Picker options expose no per-option test id; filtering by the workspace key text is the only stable probe. Replace when the workspace picker grows stable option selectors.",
+      "violations": 2,
+      "fingerprint": "d153f4cafabb37942c87f3cdaed03ec46abe433888dafc4bc76123f36e6054cc"
+    },
+    "tests/portal-kb-ticket-links.spec.ts": {
+      "reason": "Portal comment and article anchors render without stable test ids; href-based selectors are the exact target contract. Replace when portal links grow stable selectors.",
+      "violations": 3,
+      "fingerprint": "06e47f453606ca81b495b6ec4ffee818d1eb110196f9b07abfa4b5ba6a9b332b"
+    },
+    "tests/portal-knowledge-pages.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes. Reviewed 2026-09-21: the added violations are rich-text content-shape assertions on the ProseMirror DOM and rendered KB article elements, which have no production test IDs.",
+      "violations": 9,
+      "fingerprint": "691f0dd40f94b6e961fc1d11e9ad747fb4969e62e1ead5d9b708c19476cd7881"
+    },
     "tests/portal-passkey.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 3,
-      "fingerprint": "2349054306de14c3d3de575d308cd7fb9ad7db5afbc015ae28f1c9a18875bedc"
+      "fingerprint": "23ea95558ff1a08dadcee28f9115b28d33fd8c7224540fa7a4c74c26c1760fe5"
     },
     "tests/priority-manager.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 1,
       "fingerprint": "aee23366065553519345818e062b5bfa092323766d44bbea9122468bab3e7c38"
     },
-    "tests/rich-editor-security-mentions.spec.ts": {
+    "tests/refactor-shots.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 2,
-      "fingerprint": "9b2553310593ededc3f04fe3773c2d91a4f02d9692603a5e1d33fde0ad56483c"
+      "violations": 1,
+      "fingerprint": "544e8d2a840ddfb99350688b7c29a19aadc2f05029efaf6763de3cd7a7ce92d2"
+    },
+    "tests/scroll-reachability.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 1,
+      "fingerprint": "4ae2f154d88a7c5342fdf403d4c7563868e05a9bc1dd8dfb4eb33e285896d78a"
     },
     "tests/security-page-shortcuts.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -319,17 +384,22 @@
     "tests/teams.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 2,
-      "fingerprint": "8515cb099e6f7877711131a780aaa9787c376e8efbae8f8343fdf4aa010c5838"
+      "fingerprint": "61dcf89edf4c4819f7024aff366b250ec72ba3bb6fc7260eaedd2cb6060d23eb"
     },
     "tests/test-cases-sidebar.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 6,
-      "fingerprint": "330bf7e6e06895b34e334ede7000b96c38a518f78a8c70eca5faa3eab0e32567"
+      "fingerprint": "eeeb24c1c18e23986a52a44dad749d63ef9e50993426e222f34a8008e9a7d7e5"
+    },
+    "tests/time-worklog-search.spec.ts": {
+      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
+      "violations": 2,
+      "fingerprint": "4364bd1a6e41fba214d8a06b407ca24c513384660ba7e734017ac825d3a7e5e0"
     },
     "tests/users.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
       "violations": 7,
-      "fingerprint": "3cea57bf0799a99dd62e0fd78ee4ad61dd61950a4938cc7c7188706720efd89e"
+      "fingerprint": "78925f0927041b93455b3e0ba41bda86b8a255fb96f78f12aa3fc3bd9b9bb3a3"
     },
     "tests/wi-37-agent-comment-owner-tooltip.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -341,15 +411,10 @@
       "violations": 1,
       "fingerprint": "967a6028024604af2b33bd93979099f43cae63f24055b038782b7c312e7adc65"
     },
-    "tests/workflow-designer.spec.ts": {
-      "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 16,
-      "fingerprint": "0b0b53c722d73a7f01dc31002d540ccc28c5f439a5387754d03f987cfcb12f79"
-    },
     "tests/workspace-admin-nav.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 9,
-      "fingerprint": "fe451685806d41e479b50152d53dcd30262dec05b204a2c0913a2dd9e94b981d"
+      "violations": 1,
+      "fingerprint": "ec7a2f813bb93c1b731a750d3ba97f2248ab05f7de739f3d0216d4a0f4adaed3"
     },
     "tests/workspace-analytics.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
@@ -363,8 +428,33 @@
     },
     "tests/workspaces.spec.ts": {
       "reason": "Legacy selector debt; replace with production test IDs when this surface changes.",
-      "violations": 14,
-      "fingerprint": "c7f97dd12c3b1b2dc18092d6d562629f189864c0e426f1ce5206b0cd4cff314d"
+      "violations": 9,
+      "fingerprint": "d314f1a945b9ae09d14c9bd322cf346efed7527a68c89c957b526594f2e4a7cb"
+    },
+    "tests/canned-responses-journey.spec.ts": {
+      "reason": "Selector debt inherited from the internal suite; replace with production test IDs when this surface changes.",
+      "violations": 1,
+      "fingerprint": "7bb7e87ee618e953457f23527ae32caeb1a730e1010395e3bf9d5672532f426e"
+    },
+    "tests/item-merge-lifecycle.spec.ts": {
+      "reason": "Selector debt inherited from the internal suite; replace with production test IDs when this surface changes.",
+      "violations": 5,
+      "fingerprint": "6c745cbb852a5bbb560dfc346d14f73d89c0e576514ad74d99baffc1e39b8f00"
+    },
+    "tests/portal-request-attachments.spec.ts": {
+      "reason": "Selector debt inherited from the internal suite; replace with production test IDs when this surface changes.",
+      "violations": 3,
+      "fingerprint": "e32290880df3f8378136e02fddd2308c905439b67c508bc1c99ac905038b0296"
+    },
+    "tests/sla-clock-breach.spec.ts": {
+      "reason": "Selector debt inherited from the internal suite; replace with production test IDs when this surface changes.",
+      "violations": 2,
+      "fingerprint": "20737e1b6ec97372a3b93ac8980e80e9e542f9f686c561642898deaa3eb79bfc"
+    },
+    "tests/support-queue.spec.ts": {
+      "reason": "Selector debt inherited from the internal suite; replace with production test IDs when this surface changes.",
+      "violations": 1,
+      "fingerprint": "0c8dedd9501560ab9f253a0538dbe1487e2bc8e3d248d18c6696da7157f7ea2c"
     }
   }
 }

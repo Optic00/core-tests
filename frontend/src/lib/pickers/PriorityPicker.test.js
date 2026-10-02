@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../api.js', () => ({
   api: {
-    workspaces: { get: vi.fn() },
+    workspaces: {
+      get: vi.fn(),
+      // WI-1351: workspace-scoped priority configuration resolves through
+      // workspaceDataStore.screenConfig, which calls getEffectiveConfig.
+      getEffectiveConfig: vi.fn(),
+    },
     configurationSets: { get: vi.fn() },
     priorities: { getAll: vi.fn() },
   },
@@ -22,14 +27,15 @@ describe('PriorityPicker', () => {
   });
 
   it('loads default priorities when the workspace configuration set has none', async () => {
-    api.workspaces.get.mockResolvedValue({ id: 9, configuration_set_id: 12 });
-    api.configurationSets.get.mockResolvedValue({ id: 12, priorities_detailed: [] });
+    // Store is uninitialized in this test, so screenConfig resolves to null
+    // without hitting the API, and the picker falls back to the global
+    // priority list.
+    api.workspaces.getEffectiveConfig.mockResolvedValue({ priorities: [] });
     api.priorities.getAll.mockResolvedValue([{ id: 3, name: 'Medium', sort_order: 0 }]);
 
     render(PriorityPicker, { props: { workspaceId: 9 } });
 
     await waitFor(() => {
-      expect(api.configurationSets.get).toHaveBeenCalledWith(12);
       expect(api.priorities.getAll).toHaveBeenCalled();
     });
   });

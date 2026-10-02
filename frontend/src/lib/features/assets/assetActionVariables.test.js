@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assetActionConditionFields, loadAssetActionCustomFields } from './assetActionVariables.js';
+import {
+  assetActionConditionFields,
+  loadAssetActionCustomFields,
+} from './assetActionVariables.js';
 
 describe('asset action condition variables', () => {
   it('offers the executor canonical field names', () => {

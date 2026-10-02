@@ -22,6 +22,10 @@ vi.mock('../stores/i18n.svelte.js', () => ({
   i18n: { locale: 'en-US' },
 }));
 
+vi.mock('../utils/serverClock.js', () => ({
+  serverNow: () => new Date('2026-09-10T12:00:00.000Z'),
+}));
+
 import WorkItemForm from './WorkItemForm.svelte';
 
 afterEach(() => {
@@ -144,6 +148,45 @@ describe('item type chip', () => {
     expect(typeIcon).toHaveStyle({ color: 'rgb(139, 92, 246)' });
     expect(typeIcon.querySelector('svg')).toHaveAttribute('width', '16');
     expect(typeIcon.style.backgroundColor).toBe('');
+  });
+});
+
+describe('date chips', () => {
+  it('uses deadline wording only for the due date chip', () => {
+    const store = createStore({
+      formData: {
+        due_date: '2026-09-11T00:00:00.000Z',
+        start_date: '2026-09-11T00:00:00.000Z',
+        end_date: '2026-09-11T00:00:00.000Z',
+      },
+      isFieldConfigured: (identifier) => ['due_date', 'start_date', 'end_date'].includes(identifier),
+    });
+
+    render(WorkItemForm, { props: { formStore: store } });
+
+    expect(screen.getByTestId('create-due-date-chip')).toHaveTextContent('dueDate.dueTomorrow');
+    expect(screen.getByTestId('create-start-date-chip')).toHaveTextContent('Sep 11, 2026');
+    expect(screen.getByTestId('create-end-date-chip')).toHaveTextContent('Sep 11, 2026');
+    expect(screen.getByTestId('create-start-date-chip')).not.toHaveTextContent('Due');
+    expect(screen.getByTestId('create-end-date-chip')).not.toHaveTextContent('Due');
+  });
+
+  it.each([
+    ['due date', 'create-due-date-chip', 'create-due-date-input'],
+    ['start date', 'create-start-date-chip', 'create-start-date-input'],
+    ['end date', 'create-end-date-chip', 'create-end-date-input'],
+  ])('keeps the %s popover open while the native input changes', async (_label, triggerTestId, inputTestId) => {
+    const store = createStore({
+      isFieldConfigured: (identifier) => ['due_date', 'start_date', 'end_date'].includes(identifier),
+    });
+
+    render(WorkItemForm, { props: { formStore: store } });
+
+    await fireEvent.click(screen.getByTestId(triggerTestId));
+    const input = screen.getByTestId(inputTestId);
+    await fireEvent.change(input, { target: { value: '2026-09-15' } });
+
+    expect(input).toBeVisible();
   });
 });
 

@@ -102,16 +102,14 @@ func TestCanceledQueryReturnsPoolConnection(t *testing.T) {
 		`).Scan(&sum)
 	}()
 
-	acquireDeadline := time.NewTimer(time.Second)
-	defer acquireDeadline.Stop()
-	acquireTicker := time.NewTicker(time.Millisecond)
-	defer acquireTicker.Stop()
-	for sqlDB.Stats().InUse == 0 {
-		select {
-		case <-acquireTicker.C:
-		case <-acquireDeadline.C:
-			t.Fatal("slow query did not acquire the only pool connection")
-		}
+	deadline := time.Now().Add(time.Second)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for sqlDB.Stats().InUse == 0 && time.Now().Before(deadline) {
+		<-tick.C
+	}
+	if sqlDB.Stats().InUse != 1 {
+		t.Fatal("slow query did not acquire the only pool connection")
 	}
 
 	cancel()
@@ -124,6 +122,10 @@ func TestCanceledQueryReturnsPoolConnection(t *testing.T) {
 		t.Fatal("canceled query did not return promptly")
 	}
 
+	deadline = time.Now().Add(time.Second)
+	for sqlDB.Stats().InUse != 0 && time.Now().Before(deadline) {
+		<-tick.C
+	}
 	if stats := sqlDB.Stats(); stats.InUse != 0 {
 		t.Fatalf("pool in-use connections = %d after cancellation, want 0", stats.InUse)
 	}

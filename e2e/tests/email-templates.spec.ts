@@ -54,8 +54,8 @@ test.describe('Email Templates', () => {
     const list = await listResp.json();
     const rows = (list.data ?? list) as Array<typeof originalMagicLink & { name: string }>;
     const found = rows.find((t) => t.name === 'magic_link');
-    if (!found) throw new Error('magic_link template must be seeded');
-    originalMagicLink = found;
+    expect(found, 'magic_link template must be seeded').toBeDefined();
+    originalMagicLink = found!;
 
     await adminPage.goto();
     await adminPage.clickTab('Email Templates');
@@ -74,7 +74,7 @@ test.describe('Email Templates', () => {
     const subjectInput = page.locator('input[type="text"]').first();
     await expect(subjectInput).toBeVisible({ timeout: 5000 });
 
-    const newSubject = `Sign in — Playwright preview ${Date.now()}`;
+    const newSubject = 'Sign in — Playwright preview ' + Date.now();
     await subjectInput.fill(newSubject);
 
     // Click Preview and confirm the iframe rendered the new subject

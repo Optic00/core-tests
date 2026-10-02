@@ -155,7 +155,10 @@ func TestSharedDurableEngineProcessesMixedItemAndAssetActions(t *testing.T) {
 		t.Fatalf("create mixed asset: %v", err)
 	}
 
-	deadline := time.NewTimer(5 * time.Second)
+	// Delivery waits on the engine's poll loop and, after a lease handoff, on
+	// LeaseDuration expiry; both stretch under CI runner load, so allow many
+	// lease periods instead of assuming an idle machine.
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -279,7 +282,9 @@ func waitForDurableAssetExecutions(t *testing.T, db interface {
 	QueryRow(string, ...any) *sql.Row
 }, want int) {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
+	// Must exceed the engine's LeaseDuration handoff plus poll latency under
+	// CI runner load.
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()

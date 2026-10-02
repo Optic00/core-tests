@@ -61,7 +61,7 @@ func TestPasswordLoginCreatesOnlyRestrictedSessionsUnderPasskeyPolicies(t *testi
 	}
 	rateLimiter := middleware.NewRateLimiter(100, 100, false, nil)
 	defer rateLimiter.Stop()
-	sessionManager := auth.NewSessionManager(db, false, false, nil, "auth-policy-test-secret", "strict")
+	sessionManager := auth.NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "auth-policy-test-secret", "strict", auth.DefaultSessionValidationCacheTTL)
 	policyHandler := NewAuthPolicyHandlerWithFallback(db, false, logger.NewAuditor(db))
 	handler := NewAuthHandler(
 		repository.NewUserRepository(db),
@@ -142,6 +142,88 @@ func TestPasswordLoginCreatesOnlyRestrictedSessionsUnderPasskeyPolicies(t *testi
 	decodeLoginResponse(t, response, &fallback)
 	if response.Code != http.StatusOK || !fallback.Success || fallback.PasskeyRequired || fallback.EnrollmentRequired {
 		t.Fatalf("admin fallback response = status %d, %+v", response.Code, fallback)
+	}
+	assertNormalSessionCookie(t, sessionManager, cookies)
+}
+
+func TestSSORequiredRejectsPasswordLoginWithoutFallback(t *testing.T) {
+	db, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "auth-policy-sso.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteDB: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	password := "correct horse battery staple"
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("GenerateFromPassword: %v", err)
+	}
+	adminID := insertAuthTestUser(t, db, "sso-admin@example.com", "sso-admin", string(passwordHash))
+	var adminPermissionID int
+	if err := db.QueryRow(`SELECT id FROM permissions WHERE permission_key = 'system.admin'`).Scan(&adminPermissionID); err != nil {
+		t.Fatalf("find system.admin permission: %v", err)
+	}
+	if _, err := db.ExecWrite(`INSERT INTO user_global_permissions (user_id, permission_id) VALUES (?, ?)`, adminID, adminPermissionID); err != nil {
+		t.Fatalf("grant system.admin: %v", err)
+	}
+
+	permissionService, err := services.NewPermissionService(db, services.PermissionCacheConfig{
+		TTL: time.Minute, MaxCacheSize: 1, BatchSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("NewPermissionService: %v", err)
+	}
+	rateLimiter := middleware.NewRateLimiter(100, 100, false, nil)
+	defer rateLimiter.Stop()
+	sessionManager := auth.NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "auth-policy-sso-test-secret", "strict", auth.DefaultSessionValidationCacheTTL)
+	policyHandler := NewAuthPolicyHandlerWithFallback(db, false, logger.NewAuditor(db))
+	if err := policyHandler.upsertSetting("auth_policy", string(AuthPolicySSOPrimary), "string", "test", "auth"); err != nil {
+		t.Fatalf("set SSO-required policy: %v", err)
+	}
+	handler := NewAuthHandler(
+		repository.NewUserRepository(db),
+		repository.NewCredentialRepository(db),
+		logger.NewAuditor(db),
+		sessionManager,
+		rateLimiter,
+		permissionService,
+		nil,
+		utils.NewIPExtractor(false, nil),
+		policyHandler,
+		nil,
+	)
+
+	response, cookies := performPasswordLogin(t, handler, "sso-admin", password)
+	var denied LoginResponse
+	decodeLoginResponse(t, response, &denied)
+	if response.Code != http.StatusForbidden || denied.Success || !denied.SSORequired {
+		t.Fatalf("SSO-required password response = status %d, %+v", response.Code, denied)
+	}
+	if len(cookies) != 0 {
+		t.Fatal("SSO-required password login issued a session cookie")
+	}
+
+	fallbackPolicy := NewAuthPolicyHandlerWithFallback(db, true, logger.NewAuditor(db))
+	fallbackHandler := NewAuthHandler(
+		repository.NewUserRepository(db),
+		repository.NewCredentialRepository(db),
+		logger.NewAuditor(db),
+		sessionManager,
+		rateLimiter,
+		permissionService,
+		nil,
+		utils.NewIPExtractor(false, nil),
+		fallbackPolicy,
+		middleware.NewAdminFallbackRateLimiter(db),
+	)
+	response, cookies = performPasswordLogin(t, fallbackHandler, "sso-admin", password)
+	var fallback LoginResponse
+	decodeLoginResponse(t, response, &fallback)
+	if response.Code != http.StatusOK || !fallback.Success || fallback.SSORequired {
+		t.Fatalf("SSO-required fallback response = status %d, %+v", response.Code, fallback)
 	}
 	assertNormalSessionCookie(t, sessionManager, cookies)
 }

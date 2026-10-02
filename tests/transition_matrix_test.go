@@ -39,25 +39,32 @@ func TestTransitionMatrixEndpoint(t *testing.T) {
 	defer matrixResp.Body.Close()
 	AssertStatusCode(t, matrixResp, http.StatusOK)
 
-	var matrix struct {
-		Transitions map[string][]map[string]interface{} `json:"transitions"`
+	var matrix []struct {
+		ItemTypeID  int                      `json:"item_type_id"`
+		StatusID    int                      `json:"status_id"`
+		Transitions []map[string]interface{} `json:"transitions"`
 	}
 	DecodeJSON(t, matrixResp, &matrix)
 
-	if len(matrix.Transitions) == 0 {
+	if len(matrix) == 0 {
 		t.Fatalf("expected a non-empty transition matrix")
 	}
 
-	key := fmt.Sprintf("%d:%d", itemTypeID, statusID)
-	matrixEntry, ok := matrix.Transitions[key]
-	if !ok {
-		t.Fatalf("matrix missing entry for the item's pair %q; keys: %v", key, keysOfStrMap(matrix.Transitions))
+	var matrixEntry []map[string]interface{}
+	for _, entry := range matrix {
+		if entry.ItemTypeID == itemTypeID && entry.StatusID == statusID {
+			matrixEntry = entry.Transitions
+			break
+		}
+	}
+	if matrixEntry == nil {
+		t.Fatalf("matrix missing entry for item type %d and status %d", itemTypeID, statusID)
 	}
 
 	// Cross-validate against the per-item endpoint (same source of truth, minus
 	// item-specific approval/condition gating, which a fresh item has none of).
 	perItemResp := MakeAuthRequest(t, server, http.MethodGet,
-		fmt.Sprintf("/items/%d/available-status-transitions", itemID), nil)
+		fmt.Sprintf("/v2/items/%d/available-transitions", itemID), nil)
 	defer perItemResp.Body.Close()
 	AssertStatusCode(t, perItemResp, http.StatusOK)
 
@@ -67,7 +74,7 @@ func TestTransitionMatrixEndpoint(t *testing.T) {
 	DecodeJSON(t, perItemResp, &perItem)
 
 	if got, want := statusIDsOf(matrixEntry), statusIDsOf(perItem.AvailableTransitions); !equalIntSlices(got, want) {
-		t.Fatalf("matrix entry %q transitions %v != per-item transitions %v", key, got, want)
+		t.Fatalf("matrix transitions %v != per-item transitions %v", got, want)
 	}
 }
 
@@ -98,12 +105,4 @@ func statusIDsOf(transitions []map[string]interface{}) []int {
 	}
 	sort.Ints(ids)
 	return ids
-}
-
-func keysOfStrMap(m map[string][]map[string]interface{}) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }

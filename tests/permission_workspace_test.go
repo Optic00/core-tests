@@ -82,7 +82,6 @@ func TestWorkspaceRoles_Viewer(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d", workspaceID)
 		updateData := map[string]interface{}{
 			"name":        "Updated by Viewer",
-			"key":         shortKey("VTW"),
 			"description": "Should fail",
 		}
 		resp := MakeAuthRequestWithToken(t, server, viewerToken, http.MethodPut, endpoint, updateData)
@@ -169,7 +168,6 @@ func TestWorkspaceRoles_Editor(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d", workspaceID)
 		updateData := map[string]interface{}{
 			"name":        "Updated by Editor",
-			"key":         shortKey("ETW"),
 			"description": "Should fail",
 		}
 		resp := MakeAuthRequestWithToken(t, server, editorToken, http.MethodPut, endpoint, updateData)
@@ -185,7 +183,7 @@ func TestWorkspaceRoles_Administrator(t *testing.T) {
 	server.BearerToken = adminToken
 
 	// Create a test workspace and lock it down
-	workspaceID, workspaceKey := CreateTestWorkspace(t, server, "Admin Test Workspace", shortKey("ATW"))
+	workspaceID, _ := CreateTestWorkspace(t, server, "Admin Test Workspace", shortKey("ATW"))
 	LockDownWorkspace(t, server, workspaceID)
 
 	// Create a workspace admin user and assign role
@@ -261,7 +259,6 @@ func TestWorkspaceRoles_Administrator(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d", workspaceID)
 		updateData := map[string]interface{}{
 			"name":        "Updated by WS Admin",
-			"key":         workspaceKey, // Keep the same key
 			"description": "Updated description",
 		}
 		resp := MakeAuthRequestWithToken(t, server, wsAdminToken, http.MethodPut, endpoint, updateData)
@@ -373,9 +370,44 @@ func TestWorkspaceRoles_DerivedEveryone(t *testing.T) {
 		AssertRejected(t, resp2)
 	})
 
+	t.Run("TesterRestricted_BlocksTester_AllowsViewerAndEditor", func(t *testing.T) {
+		// Assigning Tester restricts only the Tester role for "everyone";
+		// Viewer and Editor fallback access stays open.
+		workspaceID, _ := CreateTestWorkspace(t, server, "Tester Restricted WS", shortKey("TRWS"))
+		testerID, _, _ := CreateTestUserWithCredentials(t, server, "tester_only", "tester_only@test.com")
+		AssignWorkspaceRole(t, server, testerID, workspaceID, "Tester")
+
+		_, noRoleUsername, noRolePassword := CreateTestUserWithCredentials(t, server, "norole_tr", "norole_tr@test.com")
+		noRoleToken := CreateBearerTokenForUser(t, server, noRoleUsername, noRolePassword)
+
+		// Can view (Viewer still open)
+		endpoint := fmt.Sprintf("/workspaces/%d", workspaceID)
+		resp := MakeAuthRequestWithToken(t, server, noRoleToken, http.MethodGet, endpoint, nil)
+		defer resp.Body.Close()
+		AssertStatusCode(t, resp, http.StatusOK)
+
+		// Can still create items (Editor still open)
+		itemData := map[string]interface{}{
+			"title":        "Created while tester gated",
+			"workspace_id": workspaceID,
+			"item_type_id": itemTypeID,
+		}
+		resp2 := MakeAuthRequestWithToken(t, server, noRoleToken, http.MethodPost, "/items", itemData)
+		defer resp2.Body.Close()
+		AssertStatusCode(t, resp2, http.StatusCreated)
+
+		// Cannot manage test cases (Tester now gated)
+		testCaseData := map[string]interface{}{
+			"title": "Should Fail",
+		}
+		resp3 := MakeAuthRequestWithToken(t, server, noRoleToken, http.MethodPost, fmt.Sprintf("/workspaces/%d/test-cases", workspaceID), testCaseData)
+		defer resp3.Body.Close()
+		AssertRejected(t, resp3)
+	})
+
 	t.Run("EditorRestricted_AdminNeverImplicit", func(t *testing.T) {
 		// Even with fully open workspace, admin requires explicit assignment
-		workspaceID, workspaceKey := CreateTestWorkspace(t, server, "Admin Never Implicit WS", shortKey("ANWS"))
+		workspaceID, _ := CreateTestWorkspace(t, server, "Admin Never Implicit WS", shortKey("ANWS"))
 
 		_, username, password := CreateTestUserWithCredentials(t, server, "not_admin", "not_admin@test.com")
 		userToken := CreateBearerTokenForUser(t, server, username, password)
@@ -384,7 +416,6 @@ func TestWorkspaceRoles_DerivedEveryone(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d", workspaceID)
 		updateData := map[string]interface{}{
 			"name":        "Updated by Non-Admin",
-			"key":         workspaceKey,
 			"description": "Should fail",
 		}
 		resp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPut, endpoint, updateData)

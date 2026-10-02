@@ -1,11 +1,11 @@
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import {
-  type APIRequestContext,
+  test,
   expect,
+  type APIRequestContext,
   type Locator,
   type Page,
-  test,
 } from '../fixtures/context-path';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { generateWorkspace } from '../fixtures/test-data';
 import { BoardPage } from '../pages/board.page';
 
@@ -26,7 +26,7 @@ async function listWorkspaceStatuses(
   request: APIRequestContext,
   workspaceId: number
 ): Promise<Array<{ id: number; name: string }>> {
-  const resp = await request.get(`/api/workspaces/${workspaceId}/statuses`, {
+  const resp = await request.get(`/api/v2/workspaces/${workspaceId}/statuses`, {
     headers: SEC_FETCH,
   });
   expect(resp.ok(), `list statuses failed (${resp.status()})`).toBeTruthy();
@@ -40,7 +40,7 @@ async function createItem(
   title: string,
   statusId: number
 ): Promise<number> {
-  const resp = await request.post(`${BASE_URL}/api/items`, {
+  const resp = await request.post(`${BASE_URL}/api/v2/items`, {
     headers: SEC_FETCH,
     data: { workspace_id: workspaceId, title, status_id: statusId },
   });
@@ -54,14 +54,18 @@ async function addComment(
   itemId: number,
   content: string
 ): Promise<void> {
-  const resp = await request.post(`${BASE_URL}/api/items/${itemId}/comments`, {
+  const resp = await request.post(`${BASE_URL}/api/v2/items/${itemId}/comments`, {
     headers: SEC_FETCH,
     data: { content, is_private: false },
   });
   expect(resp.ok(), `add comment failed (${resp.status()})`).toBeTruthy();
 }
 
-async function dragCardToCard(page: Page, card: Locator, target: Locator): Promise<void> {
+async function dragCardToCard(
+  page: Page,
+  card: Locator,
+  target: Locator
+): Promise<void> {
   const cardBox = await card.boundingBox();
   const targetBox = await target.boundingBox();
   if (!cardBox || !targetBox) {
@@ -78,7 +82,10 @@ async function dragCardToCard(page: Page, card: Locator, target: Locator): Promi
 }
 
 test.describe('Board Bubble Mode sort', () => {
-  test('toggles, persists, and bubbles a commented card to the top', async ({ page, request }) => {
+  test('toggles, persists, and bubbles a commented card to the top', async ({
+    page,
+    request,
+  }) => {
     const workspace = await createWorkspaceViaAPI(request, generateWorkspace());
     const workspaceId: number = workspace.id;
 
@@ -96,7 +103,9 @@ test.describe('Board Bubble Mode sort', () => {
     const boardPage = new BoardPage(page);
     await boardPage.goto(String(workspaceId));
 
-    const openColumn = page.locator(`[data-status-column][data-status-id="${openStatus.id}"]`);
+    const openColumn = page.locator(
+      `[data-status-column][data-status-id="${openStatus.id}"]`
+    );
     await expect(openColumn.locator('.board-card')).toHaveCount(4);
 
     const firstCardId = async (): Promise<string | null> =>
@@ -119,7 +128,11 @@ test.describe('Board Bubble Mode sort', () => {
     // cards. The board must explain this rather than silently ignoring it.
     const oldestCard = page.getByTestId(`board-item-${oldest}`);
     await expect(oldestCard).toHaveAttribute('draggable', 'true');
-    await dragCardToCard(page, oldestCard, page.getByTestId(`board-item-${newest}`));
+    await dragCardToCard(
+      page,
+      oldestCard,
+      page.getByTestId(`board-item-${newest}`)
+    );
     await expect(page.getByTestId('toast')).toHaveAttribute('data-toast-variant', 'info');
     await expect(page.getByTestId('toast-message-info')).toHaveText(
       'Switch to Rank mode to arrange cards manually.'
@@ -129,7 +142,7 @@ test.describe('Board Bubble Mode sort', () => {
     // and the freshly fetched last_active_at floats the commented card to the top.
     await addComment(request, oldest, 'Bumping the oldest item');
     await page.reload();
-    await page.waitForLoadState('networkidle');
+
 
     await expect(sortTrigger).toContainText('Sort: Bubble');
     await expect(openColumn.locator('.board-card')).toHaveCount(4);

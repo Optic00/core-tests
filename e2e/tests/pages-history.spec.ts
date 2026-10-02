@@ -75,9 +75,9 @@ test.describe('Page revision history — drawer + restore', () => {
     const restoredPageReload = page.waitForResponse(
       (res) =>
         res.request().method() === 'GET' &&
-        res.url().endsWith(`/api/workspaces/${workspaceId}/pages/${pageId}`) &&
+        res.url().endsWith(`/api/v2/workspaces/${workspaceId}/pages/${pageId}`) &&
         res.ok(),
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
     await page.locator('[data-testid="dialog-confirm"]').click();
 
@@ -95,9 +95,11 @@ test.describe('Page revision history — drawer + restore', () => {
     // revision row but never updates the page content would still pass.
     // Read the body from the API since the editor renders Markdown into
     // ProseMirror nodes that don't expose the raw source as plain text.
-    const fetched = await page.request.get(`/api/workspaces/${workspaceId}/pages/${pageId}`);
+    const fetched = await page.request.get(
+      `/api/v2/workspaces/${workspaceId}/pages/${pageId}`,
+    );
     expect(fetched.ok()).toBeTruthy();
-    const fetchedBody = await fetched.json();
+    const fetchedBody = (await fetched.json()).data;
     expect(fetchedBody.content).toContain('With the kale clause');
     expect(fetchedBody.content).not.toContain('Final — no kale');
   });

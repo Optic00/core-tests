@@ -61,11 +61,9 @@ func TestEmailChannelItemCreation(t *testing.T) {
 		Date:      time.Now(),
 	})
 
-	// Trigger email processing
+	// Trigger email processing and wait for the item to appear
 	TriggerEmailProcessing(t, server, channelID)
-
-	// Verify item was created
-	items := GetItemsByWorkspace(t, server, workspaceID)
+	items := waitForEmailItemCount(t, server, workspaceID, 1)
 
 	if len(items) == 0 {
 		t.Fatal("Expected at least one item to be created from email")
@@ -157,7 +155,7 @@ func TestReplyCreatesComment(t *testing.T) {
 	TriggerEmailProcessing(t, server, channelID)
 
 	// Verify item was created
-	items := GetItemsByWorkspace(t, server, workspaceID)
+	items := waitForEmailItemCount(t, server, workspaceID, 1)
 	if len(items) == 0 {
 		t.Fatal("Original email should have created an item")
 	}
@@ -181,7 +179,7 @@ func TestReplyCreatesComment(t *testing.T) {
 	TriggerEmailProcessing(t, server, channelID)
 
 	// Verify no new items were created
-	items = GetItemsByWorkspace(t, server, workspaceID)
+	items = settleEmailProcessing(t, server, workspaceID)
 	if len(items) != 1 {
 		t.Errorf("Expected 1 item (reply should be comment), got %d", len(items))
 	}
@@ -259,8 +257,9 @@ func TestEmailChannelValidation(t *testing.T) {
 			MessageID: "validation-test@example.com",
 		})
 
-		// No processing is triggered because the required item type is absent.
-		items := GetItemsByWorkspace(t, server, workspaceID)
+		// The processing will fail due to missing item type
+		// We can't easily verify the error, but we can verify no items were created
+		items := settleEmailProcessing(t, server, workspaceID)
 		if len(items) > 0 {
 			t.Error("No items should be created when item type is not configured")
 		} else {
@@ -331,7 +330,7 @@ func TestEmailDeduplication(t *testing.T) {
 	TriggerEmailProcessing(t, server, channelID)
 
 	// Verify one item was created
-	items := GetItemsByWorkspace(t, server, workspaceID)
+	items := waitForEmailItemCount(t, server, workspaceID, 1)
 	if len(items) != 1 {
 		t.Fatalf("Expected 1 item after first processing, got %d", len(items))
 	}
@@ -351,10 +350,46 @@ func TestEmailDeduplication(t *testing.T) {
 	TriggerEmailProcessing(t, server, channelID)
 
 	// Verify still only one item exists
-	items = GetItemsByWorkspace(t, server, workspaceID)
+	items = settleEmailProcessing(t, server, workspaceID)
 	if len(items) != 1 {
 		t.Errorf("Expected still 1 item after duplicate processing, got %d", len(items))
 	} else {
 		t.Log("Deduplication working: still only 1 item after duplicate email")
 	}
+}
+
+// waitForEmailItemCount polls the workspace until it holds exactly want items
+// or the timeout elapses, returning the last seen snapshot.
+func waitForEmailItemCount(t *testing.T, server *TestServer, workspaceID, want int) []map[string]interface{} {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var items []map[string]interface{}
+	for {
+		items = GetItemsByWorkspace(t, server, workspaceID)
+		if len(items) == want {
+			return items
+		}
+		select {
+		case <-deadline.C:
+			return items
+		case <-ticker.C:
+		}
+	}
+}
+
+// settleEmailProcessing gives asynchronous email handling a full window to
+// finish before the caller asserts that nothing new appeared.
+func settleEmailProcessing(t *testing.T, server *TestServer, workspaceID int) []map[string]interface{} {
+	t.Helper()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var items []map[string]interface{}
+	for i := 0; i < 10; i++ {
+		<-ticker.C
+		items = GetItemsByWorkspace(t, server, workspaceID)
+	}
+	return items
 }

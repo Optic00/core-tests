@@ -105,7 +105,10 @@ describe('CollectionEditorOptionsStore', () => {
   });
 
   it('single-flights asset options by workspace, set, filter, and search', async () => {
-    api.assets.getAll.mockResolvedValue({ assets: [{ id: 3 }], total: 1 });
+    api.assets.getAll.mockResolvedValue({
+      data: [{ id: 3 }],
+      pagination: { total_items: 1 },
+    });
 
     const [first, second] = await Promise.all([
       store.loadAssets(11, 4, 'status = active', 'lap'),

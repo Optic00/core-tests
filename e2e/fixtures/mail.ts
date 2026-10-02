@@ -1,4 +1,4 @@
-import { type APIRequestContext, test as base, expect } from './context-path';
+import { test as base, expect, type APIRequestContext } from './context-path';
 
 /**
  * Mailpit email-capture fixture.
@@ -69,7 +69,10 @@ export const test = base.extend<MailFixtures>({
       return api;
     };
 
-    const matchAddr = (addrs: Array<{ Address: string }>, m: string | RegExp): boolean => {
+    const matchAddr = (
+      addrs: Array<{ Address: string }>,
+      m: string | RegExp
+    ): boolean => {
       const re = typeof m === 'string' ? new RegExp(m, 'i') : m;
       return addrs.some((a) => re.test(a.Address));
     };
@@ -140,7 +143,9 @@ export const test = base.extend<MailFixtures>({
       extractLink: (body, pattern) => {
         const m = body.match(pattern);
         if (!m) {
-          throw new Error(`link not found; pattern=${pattern} body-snippet=${body.slice(0, 200)}`);
+          throw new Error(
+            `link not found; pattern=${pattern} body-snippet=${body.slice(0, 200)}`
+          );
         }
         return m[0];
       },

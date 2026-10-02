@@ -1,5 +1,5 @@
+import { test as base, expect, type APIRequestContext } from './context-path';
 import { createUserViaAPI, createWorkspaceViaAPI } from './api-helpers';
-import { type APIRequestContext, test as base, expect } from './context-path';
 import { generateUser, generateWorkspace } from './test-data';
 
 /**
@@ -69,22 +69,32 @@ export interface RoleOptions {
   isolated?: boolean;
 }
 
-async function loginAs(ctx: APIRequestContext, username: string, password: string): Promise<void> {
+async function loginAs(
+  ctx: APIRequestContext,
+  username: string,
+  password: string
+): Promise<void> {
   const resp = await ctx.post('/api/auth/login', {
     headers: SEC_FETCH,
     data: { email_or_username: username, password, remember_me: false },
   });
-  expect(resp.ok(), `login as ${username} failed (status ${resp.status()})`).toBeTruthy();
+  expect(
+    resp.ok(),
+    `login as ${username} failed (status ${resp.status()})`
+  ).toBeTruthy();
 }
 
-async function getRoleIdByName(ctx: APIRequestContext, name: string): Promise<number> {
+async function getRoleIdByName(
+  ctx: APIRequestContext,
+  name: string
+): Promise<number> {
   const resp = await ctx.get('/api/workspace-roles', { headers: SEC_FETCH });
   expect(resp.ok()).toBeTruthy();
   const body = await resp.json();
   const roles: Array<{ id: number; name: string }> = body.data ?? body;
   const role = roles.find((r) => r.name === name);
-  if (!role) throw new Error(`workspace role "${name}" not found in seeded roles`);
-  return role.id;
+  expect(role, `workspace role "${name}" not found in seeded roles`).toBeDefined();
+  return role!.id;
 }
 
 async function assignWorkspaceRole(
@@ -97,7 +107,10 @@ async function assignWorkspaceRole(
     headers: SEC_FETCH,
     data: { user_id: userId, workspace_id: workspaceId, role_id: roleId },
   });
-  expect(resp.ok(), `role assign failed (status ${resp.status()})`).toBeTruthy();
+  expect(
+    resp.ok(),
+    `role assign failed (status ${resp.status()})`
+  ).toBeTruthy();
 }
 
 async function whoAmI(

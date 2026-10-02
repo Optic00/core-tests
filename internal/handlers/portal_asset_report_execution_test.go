@@ -61,7 +61,7 @@ func TestExecuteAssetReportSubstitutesFormPlaceholderBeforeRunningCQL(t *testing
 		t.Fatalf("insert report field: %v", err)
 	}
 
-	sessionManager := auth.NewSessionManager(db, false, false, nil, "asset-report-test-secret", "strict")
+	sessionManager := auth.NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "asset-report-test-secret", "strict", auth.DefaultSessionValidationCacheTTL)
 	handler := NewPortalHandler(db, sessionManager, nil, nil, "")
 	request := httptest.NewRequest(
 		http.MethodPost,

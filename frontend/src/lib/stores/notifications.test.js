@@ -164,7 +164,7 @@ describe('notificationActions.markItemAsRead', () => {
     expect(errSpy).toHaveBeenCalled();
   });
 
-  test('no-op when there are no unread notifications for the item', async () => {
+  test('uses the authoritative item mutation when the loaded page has no unread match', async () => {
     notifications.set([
       { id: 1, read: true, actionUrl: '/workspaces/2/items/42' },
       { id: 2, read: false, actionUrl: '/workspaces/2/items/99' },
@@ -172,7 +172,7 @@ describe('notificationActions.markItemAsRead', () => {
 
     await notificationActions.markItemAsRead(42);
 
-    expect(api.notifications.markItemAsRead).not.toHaveBeenCalled();
+    expect(api.notifications.markItemAsRead).toHaveBeenCalledWith(42);
     expect(get(notifications)).toEqual([
       { id: 1, read: true, actionUrl: '/workspaces/2/items/42' },
       { id: 2, read: false, actionUrl: '/workspaces/2/items/99' },
@@ -280,12 +280,12 @@ describe('notificationActions.markAllAsRead', () => {
     expect(get(notifications).map((n) => n.read)).toEqual([false, false]);
   });
 
-  test('does not call the API when all notifications are already read', async () => {
+  test('uses the authoritative all-read mutation when loaded notifications are already read', async () => {
     notifications.set([{ id: 1, read: true }]);
 
     await notificationActions.markAllAsRead();
 
-    expect(api.notifications.markAllAsRead).not.toHaveBeenCalled();
+    expect(api.notifications.markAllAsRead).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -374,6 +374,76 @@ describe('notificationActions.refresh', () => {
 
     expect(get(notifications)).toEqual([{ id: 99 }]);
     expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  test('loads every server page before publishing a complete inbox', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: 200 - index,
+      read: true,
+      timestamp: '2026-05-12T11:00:00Z',
+      action_url: `/workspaces/2/items/${200 - index}`,
+    }));
+    api.notifications.getAll.mockResolvedValueOnce(firstPage).mockResolvedValueOnce([
+      {
+        id: 42,
+        read: false,
+        timestamp: '2026-05-01T11:00:00Z',
+        action_url: '/workspaces/2/items/7',
+      },
+    ]);
+
+    await notificationActions.refresh();
+
+    expect(api.notifications.getAll).toHaveBeenNthCalledWith(1, { limit: 100, offset: 0 });
+    expect(api.notifications.getAll).toHaveBeenNthCalledWith(2, { limit: 100, offset: 100 });
+    expect(get(notifications)).toHaveLength(101);
+    expect(get(notifications).at(-1)).toMatchObject({
+      id: 42,
+      read: false,
+      actionUrl: '/workspaces/2/items/7',
+    });
+  });
+
+  test('marks an item whose unread notification is beyond the first page', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: 200 - index,
+      read: true,
+      timestamp: '2026-05-12T11:00:00Z',
+      action_url: `/workspaces/2/items/${200 - index}`,
+    }));
+    api.notifications.getAll.mockResolvedValueOnce(firstPage).mockResolvedValueOnce([
+      {
+        id: 42,
+        read: false,
+        timestamp: '2026-05-01T11:00:00Z',
+        action_url: '/workspaces/2/items/7',
+      },
+    ]);
+
+    await notificationActions.refresh();
+    await notificationActions.markItemAsRead(7);
+
+    expect(api.notifications.markItemAsRead).toHaveBeenCalledWith(7);
+    expect(get(notifications).at(-1).read).toBe(true);
+  });
+
+  test('preserves the last complete inbox when a later page fails', async () => {
+    const previousInbox = [{ id: 9, read: false, title: 'previous complete inbox' }];
+    notifications.set(previousInbox);
+    api.notifications.getAll
+      .mockResolvedValueOnce(
+        Array.from({ length: 100 }, (_, index) => ({
+          id: 200 - index,
+          read: true,
+          timestamp: '2026-05-12T11:00:00Z',
+        }))
+      )
+      .mockRejectedValueOnce(new Error('second page failed'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await notificationActions.refresh();
+
+    expect(get(notifications)).toEqual(previousInbox);
   });
 });
 

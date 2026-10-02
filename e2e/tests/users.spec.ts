@@ -87,12 +87,15 @@ test.describe('User Management', () => {
       );
       await userPage.clickSave();
       const resp = await dupeResponse;
-      expect([400, 409, 422], `expected 4xx for duplicate email, got ${resp.status()}`).toContain(
-        resp.status()
-      );
+      expect(
+        [400, 409, 422],
+        `expected 4xx for duplicate email, got ${resp.status()}`
+      ).toContain(resp.status());
       await expect(userPage.page.locator(userPage.userModal)).toBeVisible();
       await expect(
-        userPage.page.locator('[data-testid="toast"][data-toast-variant="error"]').first()
+        userPage.page
+          .locator('[data-testid="toast"][data-toast-variant="error"]')
+          .first()
       ).toBeVisible({ timeout: 5000 });
     });
 
@@ -129,7 +132,9 @@ test.describe('User Management', () => {
       ).toContain(resp.status());
       await expect(userPage.page.locator(userPage.userModal)).toBeVisible();
       await expect(
-        userPage.page.locator('[data-testid="toast"][data-toast-variant="error"]').first()
+        userPage.page
+          .locator('[data-testid="toast"][data-toast-variant="error"]')
+          .first()
       ).toBeVisible({ timeout: 5000 });
     });
 

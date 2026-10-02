@@ -1,17 +1,17 @@
 import {
+  test,
+  expect,
+  type APIRequestContext,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from '../fixtures/context-path';
+import {
   createCollectionViaAPI,
   createCustomerOrgViaAPI,
   createItemViaAPI,
   createWorkspaceViaAPI,
 } from '../fixtures/api-helpers';
-import {
-  type APIRequestContext,
-  type Browser,
-  type BrowserContext,
-  expect,
-  type Page,
-  test,
-} from '../fixtures/context-path';
 import {
   generateItem,
   generateIteration,
@@ -54,14 +54,10 @@ interface GrantedUser {
 async function permissionIdByKey(request: APIRequestContext, key: PermissionKey): Promise<number> {
   const resp = await request.get('/api/permissions', { headers: SEC_FETCH });
   await expectStatus(resp, 200, 'GET /api/permissions');
-  const permissions = (await resp.json()) as Array<{
-    id: number;
-    permission_key: string;
-    scope: string;
-  }>;
+  const permissions = (await resp.json()) as Array<{ id: number; permission_key: string; scope: string }>;
   const permission = permissions.find((p) => p.permission_key === key && p.scope === 'global');
-  if (!permission) throw new Error(`global permission ${key} should be seeded`);
-  return permission.id;
+  expect(permission, `global permission ${key} should be seeded`).toBeDefined();
+  return permission!.id;
 }
 
 async function expectStatus(
@@ -70,9 +66,7 @@ async function expectStatus(
   label: string
 ): Promise<void> {
   if (response.status() !== status) {
-    throw new Error(
-      `${label}: expected ${status}, got ${response.status()} ${await response.text()}`
-    );
+    throw new Error(`${label}: expected ${status}, got ${response.status()} ${await response.text()}`);
   }
 }
 
@@ -168,16 +162,10 @@ async function expectAdminGuard(page: Page, path: string) {
   await expect(page.locator('text=system.admin')).toBeVisible();
 }
 
-async function createCustomerOrganisationViaUI(
-  page: Page,
-  data: { name: string; email?: string; description?: string }
-) {
+async function createCustomerOrganisationViaUI(page: Page, data: { name: string; email?: string; description?: string }) {
   await page.goto('/time/organizations');
-  await page.waitForLoadState('networkidle');
-  await page
-    .locator('button')
-    .filter({ hasText: /add organization/i })
-    .click();
+
+  await page.locator('button').filter({ hasText: /add organization/i }).click();
 
   const dialog = page.locator('div[role="dialog"]');
   await dialog.waitFor({ state: 'visible', timeout: 5000 });
@@ -188,10 +176,7 @@ async function createCustomerOrganisationViaUI(
   if (data.email) {
     await dialog.locator('input[type="email"]').fill(data.email);
   }
-  await dialog
-    .locator('button')
-    .filter({ hasText: /create organization/i })
-    .click();
+  await dialog.locator('button').filter({ hasText: /create organization/i }).click();
   await dialog.waitFor({ state: 'detached', timeout: 10000 });
   await expect(await findRowByName(page, data.name)).toBeVisible({ timeout: 10000 });
 }
@@ -202,7 +187,7 @@ async function editCustomerOrganisationViaUI(
   data: { name: string; description?: string }
 ) {
   await page.goto('/time/organizations');
-  await page.waitForLoadState('networkidle');
+
   const row = await findRowByName(page, currentName);
   await row.locator('button').last().click();
   await page.locator('button[role="menuitem"]').filter({ hasText: /edit/i }).click();
@@ -213,23 +198,17 @@ async function editCustomerOrganisationViaUI(
   if (data.description !== undefined) {
     await dialog.locator('textarea').fill(data.description);
   }
-  await dialog
-    .locator('button')
-    .filter({ hasText: /update organization/i })
-    .click();
+  await dialog.locator('button').filter({ hasText: /update organization/i }).click();
   await dialog.waitFor({ state: 'detached', timeout: 10000 });
   await expect(await findRowByName(page, data.name)).toBeVisible({ timeout: 10000 });
 }
 
 async function deleteCustomerOrganisationViaUI(page: Page, name: string) {
   await page.goto('/time/organizations');
-  await page.waitForLoadState('networkidle');
+
   const row = await findRowByName(page, name);
   await row.locator('button').last().click();
-  await page
-    .locator('button[role="menuitem"]')
-    .filter({ hasText: /delete/i })
-    .click();
+  await page.locator('button[role="menuitem"]').filter({ hasText: /delete/i }).click();
   const dialog = page.locator('div[role="dialog"]');
   await dialog.waitFor({ state: 'visible', timeout: 5000 });
   await dialog.locator('[data-testid="dialog-confirm"]').click();
@@ -239,25 +218,14 @@ async function deleteCustomerOrganisationViaUI(page: Page, name: string) {
 async function openAssetSetActions(page: Page, setName: string) {
   const heading = page.locator('h2').filter({ hasText: setName }).first();
   await expect(heading).toBeVisible({ timeout: 10000 });
-  await heading
-    .locator('xpath=ancestor::div[contains(@class, "flex")][1]')
-    .locator('button')
-    .last()
-    .click();
-  await page
-    .locator('button[role="menuitem"]')
-    .first()
-    .waitFor({ state: 'visible', timeout: 5000 });
+  await heading.locator('xpath=ancestor::div[contains(@class, "flex")][1]').locator('button').last().click();
+  await page.locator('button[role="menuitem"]').first().waitFor({ state: 'visible', timeout: 5000 });
 }
 
 async function createAssetSetViaUI(page: Page, data: { name: string; description?: string }) {
   await page.goto('/assets/settings');
-  await page.waitForLoadState('networkidle');
-  await page
-    .locator('button')
-    .filter({ hasText: /new set|create asset set/i })
-    .first()
-    .click();
+
+  await page.locator('button').filter({ hasText: /new set|create asset set/i }).first().click();
   const dialog = page.locator('div[role="dialog"]');
   await dialog.waitFor({ state: 'visible', timeout: 5000 });
   await dialog.locator('input[type="text"]').fill(data.name);
@@ -266,18 +234,12 @@ async function createAssetSetViaUI(page: Page, data: { name: string; description
   }
   await dialog.locator('[data-testid="dialog-confirm"]').click();
   await dialog.waitFor({ state: 'detached', timeout: 10000 });
-  await expect(page.locator('h2').filter({ hasText: data.name }).first()).toBeVisible({
-    timeout: 10000,
-  });
+  await expect(page.locator('h2').filter({ hasText: data.name }).first()).toBeVisible({ timeout: 10000 });
 }
 
-async function editAssetSetViaUI(
-  page: Page,
-  currentName: string,
-  data: { name: string; description?: string }
-) {
+async function editAssetSetViaUI(page: Page, currentName: string, data: { name: string; description?: string }) {
   await page.goto('/assets/settings');
-  await page.waitForLoadState('networkidle');
+
   await openAssetSetActions(page, currentName);
   await page.locator('button[role="menuitem"]').filter({ hasText: /edit/i }).click();
   const dialog = page.locator('div[role="dialog"]');
@@ -288,9 +250,7 @@ async function editAssetSetViaUI(
   }
   await dialog.locator('[data-testid="dialog-confirm"]').click();
   await dialog.waitFor({ state: 'detached', timeout: 10000 });
-  await expect(page.locator('h2').filter({ hasText: data.name }).first()).toBeVisible({
-    timeout: 10000,
-  });
+  await expect(page.locator('h2').filter({ hasText: data.name }).first()).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Global permissions for non-admin users', () => {
@@ -305,7 +265,7 @@ test.describe('Global permissions for non-admin users', () => {
       const workspacePage = new WorkspacePage(user.page);
 
       await workspacePage.goto();
-      await expect(user.page.locator('button').filter({ hasText: 'Add Workspace' })).toBeVisible();
+      await expect(user.page.getByTestId('workspaces-create').first()).toBeVisible();
       await workspacePage.clickCreate();
       await workspacePage.fillForm(ws);
       await workspacePage.clickSave();
@@ -345,9 +305,7 @@ test.describe('Global permissions for non-admin users', () => {
 
       const iterationPage = new IterationPage(user.page);
       await iterationPage.gotoGlobal();
-      await expect(
-        user.page.locator('[data-testid="iteration-create-button"]').first()
-      ).toBeHidden();
+      await expect(user.page.locator('[data-testid="iteration-create-button"]').first()).toBeHidden();
 
       await milestonePage.gotoGlobal();
       await milestonePage.deleteMilestone(milestone.name);
@@ -378,9 +336,7 @@ test.describe('Global permissions for non-admin users', () => {
 
       const milestonePage = new MilestonePage(user.page);
       await milestonePage.gotoGlobal();
-      await expect(
-        user.page.locator('[data-testid="milestone-create-button"]').first()
-      ).toBeHidden();
+      await expect(user.page.locator('[data-testid="milestone-create-button"]').first()).toBeHidden();
 
       await iterationPage.gotoGlobal();
       await iterationPage.deleteIteration(iteration.name);
@@ -409,8 +365,8 @@ test.describe('Global permissions for non-admin users', () => {
     playwright,
     browser,
   }) => {
-    const user = await newGrantedUser(request, playwright, browser, 'asset.manage');
-    try {
+      const user = await newGrantedUser(request, playwright, browser, 'asset.manage');
+      try {
       const setName = `E2E GP Asset Set ${Date.now()}`;
       await createAssetSetViaUI(user.page, {
         name: setName,
@@ -450,7 +406,7 @@ test.describe('Global permissions for non-admin users', () => {
       });
 
       await user.page.goto('/time/projects');
-      await user.page.waitForLoadState('networkidle');
+
       await expect(user.page.locator('button').filter({ hasText: /add project/i })).toBeHidden();
 
       await deleteCustomerOrganisationViaUI(user.page, renamed);
@@ -460,7 +416,11 @@ test.describe('Global permissions for non-admin users', () => {
     }
   });
 
-  test('project.manage: can manage time projects', async ({ request, playwright, browser }) => {
+  test('project.manage: can manage time projects', async ({
+    request,
+    playwright,
+    browser,
+  }) => {
     const user = await newGrantedUser(request, playwright, browser, 'project.manage');
     try {
       const customer = await createCustomerOrgViaAPI(request, {
@@ -490,11 +450,7 @@ test.describe('Global permissions for non-admin users', () => {
     }
   });
 
-  test('teams.manage: can create teams, but not workspaces', async ({
-    request,
-    playwright,
-    browser,
-  }) => {
+  test('teams.manage: can create teams, but not workspaces', async ({ request, playwright, browser }) => {
     const user = await newGrantedUser(request, playwright, browser, 'teams.manage');
     try {
       const teamsPage = new TeamsPage(user.page);
@@ -510,7 +466,7 @@ test.describe('Global permissions for non-admin users', () => {
       await teamsPage.verifyTeamExists(renamed);
 
       await user.page.goto('/workspaces');
-      await user.page.waitForLoadState('networkidle');
+
       await expect(user.page.locator('button').filter({ hasText: 'Add Workspace' })).toBeHidden();
 
       await teamsPage.deleteTeam(renamed);
@@ -521,7 +477,7 @@ test.describe('Global permissions for non-admin users', () => {
     }
   });
 
-  test("public_board.manage: can publish own collection, but not someone else's collection", async ({
+  test('public_board.manage: can publish own collection, but not someone else\'s collection', async ({
     request,
     playwright,
     browser,
@@ -546,7 +502,7 @@ test.describe('Global permissions for non-admin users', () => {
 
       // Setup: create a collection owned by the granted user so the browser can
       // exercise the public sharing UI.
-      const own = await user.request.post('/api/collections', {
+      const own = await user.request.post('/api/v2/collections', {
         headers: SEC_FETCH,
         data: {
           name: `E2E GP Public Board ${Date.now()}`,
@@ -555,16 +511,22 @@ test.describe('Global permissions for non-admin users', () => {
         },
       });
       await expectStatus(own, 201, 'create collection with unsafe persisted scope');
-      const ownCollection = await own.json();
+      const ownCollection = (await own.json()).data;
       const slug = `gp-public-${Date.now()}`;
 
       await user.page.goto(`/collections/${ownCollection.id}`);
-      await user.page.waitForLoadState('networkidle');
+
+      // The query bar renders in builder mode while collection hydration is
+      // still in flight; the `!=` query then settles into raw mode. Wait for
+      // the results table (shown only after loading completes) so the mode is
+      // final before deciding whether to enter raw mode manually.
+      await expect(user.page.getByTestId('collection-search-results-table')).toBeVisible({
+        timeout: 15000,
+      });
+
       const rawEditor = user.page.locator('#ql-editor');
-      const enterRawMode = user.page.getByTestId('ql-enter-raw-mode');
-      await expect(rawEditor.or(enterRawMode)).toBeVisible({ timeout: 15000 });
       if (!(await rawEditor.isVisible())) {
-        await enterRawMode.click();
+        await user.page.getByTestId('ql-enter-raw-mode').click();
         await user.page.getByTestId('dialog-confirm').click();
       }
       await expect(rawEditor).toBeVisible();
@@ -576,8 +538,8 @@ test.describe('Global permissions for non-admin users', () => {
       await user.page.getByTestId('public-board-slug').fill(slug);
       const saved = user.page.waitForResponse(
         (response) =>
-          response.request().method() === 'PUT' &&
-          new URL(response.url()).pathname.endsWith(`/api/collections/${ownCollection.id}`)
+          response.request().method() === 'PATCH' &&
+          new URL(response.url()).pathname.endsWith(`/api/v2/collections/${ownCollection.id}`)
       );
       await user.page.getByTestId('public-board-save').click();
       const savedResponse = await saved;
@@ -604,7 +566,7 @@ test.describe('Global permissions for non-admin users', () => {
       });
 
       await user.page.goto(`/collections/${adminCollection.id}`);
-      await user.page.waitForLoadState('networkidle');
+
       await expect(user.page.getByTestId('public-board-button')).toBeHidden();
     } finally {
       await user.context.close();
@@ -638,19 +600,19 @@ test.describe('Global permissions for non-admin users', () => {
       const rolesResp = await request.get('/api/workspace-roles', { headers: SEC_FETCH });
       const roles = (await rolesResp.json()) as Array<{ id: number; name: string }>;
       const adminRole = roles.find((r) => r.name === 'Administrator');
-      if (!adminRole) throw new Error('Administrator workspace role not found');
+      expect(adminRole).toBeDefined();
       const assign = await request.post('/api/workspace-roles/assign', {
         headers: SEC_FETCH,
-        data: { user_id: user.id, workspace_id: ws.id, role_id: adminRole.id },
+        data: { user_id: user.id, workspace_id: ws.id, role_id: adminRole!.id },
       });
       expect(assign.ok(), `assign Administrator: ${assign.status()}`).toBeTruthy();
 
-      const created = await request.post(`/api/workspaces/${ws.id}/actions`, {
+      const created = await request.post(`/api/v2/workspaces/${ws.id}/actions`, {
         headers: SEC_FETCH,
         data: body,
       });
       await expectStatus(created, 201, 'create action with actor');
-      const action = await created.json();
+      const action = (await created.json()).data;
 
       await user.page.goto(`/workspaces/${ws.id}/actions/${action.id}`);
       await expect(user.page.locator('[data-testid="user-picker-trigger"]').first()).toBeVisible({

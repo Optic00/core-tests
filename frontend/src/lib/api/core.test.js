@@ -22,7 +22,9 @@ import { authStore } from '../stores';
 import {
   ADMIN_UI_MUTATION_EVENT,
   clearAPIRequestSessionKey,
+  fetchAllV2Pages,
   fetchAPI,
+  fetchAPIV2,
   setAPIRequestSessionKey,
 } from './core.js';
 
@@ -128,6 +130,29 @@ describe('fetchAPI — error mapping', () => {
     expect(caught.statusText).toBe('Bad Request');
   });
 
+  test('parses the canonical v2 nested error envelope', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        makeResponse({
+          status: 400,
+          statusText: 'Bad Request',
+          body: JSON.stringify({
+            error: { code: 'invalid_request', message: 'page is out of range', details: { field: 'page' } },
+            request_id: 'req-v2',
+          }),
+        })
+      )
+    );
+
+    await expect(fetchAPIV2('/users?page=0')).rejects.toMatchObject({
+      message: 'page is out of range',
+      code: 'invalid_request',
+      details: { field: 'page' },
+      requestId: 'req-v2',
+    });
+    expect(global.fetch).toHaveBeenCalledWith('/api/v2/users?page=0', expect.any(Object));
+  });
+
   test("falls back to 'message' field when 'error' is missing", async () => {
     global.fetch = vi.fn(() =>
       Promise.resolve(
@@ -207,6 +232,111 @@ describe('fetchAPI — error mapping', () => {
       caught = e;
     }
     expect(caught.message).toBe('Request failed: Not Implemented');
+  });
+});
+
+describe('fetchAPIV2 — canonical pagination', () => {
+  test('drains every page when an existing array consumer needs the full catalog', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: JSON.stringify({ data: [{ id: 1 }], pagination: { total_pages: 2 } }),
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: JSON.stringify({ data: [{ id: 2 }], pagination: { total_pages: 2 } }),
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+    await expect(fetchAllV2Pages('/users?sort=username')).resolves.toEqual([{ id: 1 }, { id: 2 }]);
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/v2/users?sort=username&page_size=100&page=1',
+      expect.any(Object)
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/v2/users?sort=username&page_size=100&page=2',
+      expect.any(Object)
+    );
+  });
+
+  test('raises page_size per call for fat payloads', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      makeResponse({
+        body: JSON.stringify({ data: [{ id: 1 }], pagination: { total_pages: 1 } }),
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    await expect(fetchAllV2Pages('/workspaces', { pageSize: 1000 })).resolves.toEqual([{ id: 1 }]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v2/workspaces?page_size=1000&page=1',
+      expect.any(Object)
+    );
+  });
+
+  test('does not leak the pageSize option into the fetch options', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      makeResponse({
+        body: JSON.stringify({ data: [], pagination: { total_pages: 1 } }),
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    await fetchAllV2Pages('/workspaces', { pageSize: 500, headers: { 'x-trace': '1' } });
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options).not.toHaveProperty('pageSize');
+    expect(options.headers).toMatchObject({ 'x-trace': '1' });
+  });
+
+  test('keeps a row that drifts across a page boundary only once', async () => {
+    // Offset pagination over a name-sorted list drifts when rows are created
+    // between page fetches: the boundary row can appear on two pages.
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: JSON.stringify({
+            data: [{ id: 1 }, { id: 2 }],
+            pagination: { total_pages: 2 },
+          }),
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        makeResponse({
+          body: JSON.stringify({
+            data: [{ id: 2 }, { id: 3 }],
+            pagination: { total_pages: 2 },
+          }),
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+    await expect(fetchAllV2Pages('/workspaces')).resolves.toEqual([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+  });
+
+  test('keeps items without an id or key as-is', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      makeResponse({
+        body: JSON.stringify({
+          data: ['alpha', 'alpha'],
+          pagination: { total_pages: 1 },
+        }),
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    await expect(fetchAllV2Pages('/workspaces')).resolves.toEqual(['alpha', 'alpha']);
   });
 });
 
@@ -425,7 +555,9 @@ describe('fetchAPI — administration UI refresh signaling', () => {
       window.history.replaceState({}, '', '/');
     }
 
-    expect(events).toEqual([{ endpoint: '/admin/llm-connections', method: 'POST' }]);
+    expect(events).toEqual([
+      { endpoint: '/admin/llm-connections', method: 'POST' },
+    ]);
   });
 
   test('supports admin routes below a configured context path', async () => {

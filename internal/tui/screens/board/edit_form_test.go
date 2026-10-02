@@ -15,7 +15,7 @@ import (
 func TestEditFormIncludesMutableWorkItemFields(t *testing.T) {
 	statusID, priorityID, assigneeID := 1, 2, 3
 	ctx := &core.Ctx{
-		Styles:    styles.New(styles.WindshiftDark()),
+		Styles:    styles.New(styles.CatppuccinMocha()),
 		Theme:     styles.DefaultTheme,
 		Keys:      core.DefaultKeyMap(),
 		Workspace: &data.Workspace{ID: 1, Key: "WI", Name: "Windshift"},
@@ -30,6 +30,7 @@ func TestEditFormIncludesMutableWorkItemFields(t *testing.T) {
 		ID: 42, Title: "Restore editor", StatusID: &statusID, PriorityID: &priorityID, AssigneeID: &assigneeID,
 	}}
 	m.rebuildRows()
+	m.detailsLoaded[42] = true
 
 	msg := m.openEdit()()
 	opened, ok := msg.(dialog.OpenMsg)

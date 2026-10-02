@@ -19,15 +19,13 @@ export class GroupPage {
   readonly nameInput = '#name';
   readonly descriptionInput = '#description';
   readonly groupRow = 'tbody tr';
-  readonly createButton =
-    'button:has-text("Create Group"), button:has-text("Add Group"), button:has-text("New Group")';
+  readonly createButton = 'button:has-text("Create Group"), button:has-text("Add Group"), button:has-text("New Group")';
 
   /**
    * Navigate to groups page
    */
   async goto() {
     await this.page.goto('/admin/groups');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -97,7 +95,6 @@ export class GroupPage {
   async clickGroup(name: string) {
     const group = this.findGroupByName(name);
     await group.click();
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -106,10 +103,7 @@ export class GroupPage {
   private async openRowDropdown(name: string) {
     const row = this.findGroupByName(name);
     await row.locator('button').last().click();
-    await this.page
-      .locator('button[role="menuitem"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.locator('button[role="menuitem"]').first().waitFor({ state: 'visible', timeout: 5000 });
   }
 
   /**
@@ -173,29 +167,15 @@ export class GroupPage {
   /**
    * Add member to group via the members modal
    */
-  async addMember(groupName: string, memberName: string) {
+  async addMember(groupName: string, userId: number, memberName: string) {
     await this.openMembers(groupName);
     const dialog = this.page.locator(this.groupModal);
 
     // Open the UserPicker popover (combobox trigger lives in the dialog)
     await dialog.getByTestId('user-picker-trigger').click();
 
-    // The popover is portalled to <body>, so the search input is NOT inside the dialog
-    const searchInput = this.page.getByTestId('user-picker-search');
-    await searchInput.waitFor({ state: 'visible', timeout: 5000 });
-
-    // UserPicker fetches /api/users on mount; on a cold run the response can
-    // take >5s, and the picker's filter is purely client-side so an empty
-    // usersList means zero <option>s render. Wait for the initial load to
-    // produce at least one option before searching, otherwise the
-    // option-visible check below races the response.
-    await this.page.getByRole('option').first().waitFor({ state: 'visible', timeout: 15000 });
-
-    await searchInput.fill(memberName);
-
-    // Filter narrows the listbox to the typed user; pick it
-    const option = this.page.getByRole('option', { name: new RegExp(memberName, 'i') }).first();
-    await option.waitFor({ state: 'visible', timeout: 5000 });
+    const option = this.page.getByTestId(`user-picker-option-${userId}`);
+    await option.waitFor({ state: 'visible', timeout: 15000 });
     await option.click();
 
     // Commit by clicking Add in the dialog (appears once a user is staged)
@@ -204,10 +184,7 @@ export class GroupPage {
     await addButton.click();
 
     // Wait for the new member to appear in the members list inside the dialog
-    await dialog
-      .locator(`text=${memberName}`)
-      .first()
-      .waitFor({ state: 'visible', timeout: 10000 });
+    await dialog.locator(`text=${memberName}`).first().waitFor({ state: 'visible', timeout: 10000 });
   }
 
   /**
@@ -236,9 +213,7 @@ export class GroupPage {
     await confirmDialog.locator('[data-testid="dialog-confirm"]').click();
 
     // Wait for the member's email to disappear from the members dialog
-    await dialog
-      .getByText(memberName, { exact: false })
-      .waitFor({ state: 'detached', timeout: 10000 });
+    await dialog.getByText(memberName, { exact: false }).waitFor({ state: 'detached', timeout: 10000 });
   }
 
   /**
@@ -254,7 +229,7 @@ export class GroupPage {
    * Get group count
    */
   async getGroupCount(): Promise<number> {
-    await this.goto();
+    // No goto here: same rationale as getTeamCount.
     return this.page.locator(this.groupRow).count();
   }
 }

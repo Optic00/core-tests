@@ -81,6 +81,8 @@ func TestTriggerTypeCatalogCoverage(t *testing.T) {
 		models.ActionTriggerItemCreated,
 		models.ActionTriggerItemUpdated,
 		models.ActionTriggerItemLinked,
+		models.ActionTriggerSLABreached,
+		models.ActionTriggerSLAWarning,
 		models.ActionTriggerManual,
 		models.ActionTriggerSCMTagCreated,
 		models.ActionTriggerSCMReleaseBranchCreated,

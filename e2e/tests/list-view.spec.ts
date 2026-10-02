@@ -1,5 +1,5 @@
-import { createItemViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { authenticateAdminRequest, createItemViaAPI } from '../fixtures/api-helpers';
 import { generateItem, generateWorkspace } from '../fixtures/test-data';
 import { ListViewPage } from '../pages/list-view.page';
 import { WorkspacePage } from '../pages/workspace.page';
@@ -72,6 +72,56 @@ test.describe('List View', () => {
       const count = await listViewPage.getRowCount();
       expect(count).toBeGreaterThanOrEqual(3);
     });
+
+    test('keeps the title readable when fixed columns are sized wide', async ({
+      page,
+      request,
+    }) => {
+      await authenticateAdminRequest(request);
+
+      // Several XL fixed columns would otherwise consume the whole row and
+      // collapse the flexible Title track until its text spills over the
+      // Status cell.
+      const configResponse = await request.put(
+        `/api/v2/workspaces/${workspaceId}/board-configuration`,
+        {
+          headers: { 'Sec-Fetch-Site': 'same-origin' },
+          data: {
+            columns: [],
+            backlog_status_ids: [],
+            list_columns: [
+              { field_identifier: 'key', field_type: 'system', display_order: 0, width: 1 },
+              { field_identifier: 'title', field_type: 'system', display_order: 1, width: 4 },
+              { field_identifier: 'status', field_type: 'system', display_order: 2, width: 4 },
+              { field_identifier: 'priority', field_type: 'system', display_order: 3, width: 4 },
+              { field_identifier: 'created_at', field_type: 'system', display_order: 4, width: 4 },
+              { field_identifier: 'milestone', field_type: 'system', display_order: 5, width: 4 },
+            ],
+            card_fields: [],
+          },
+        }
+      );
+      expect(configResponse.ok(), `list config save failed (${configResponse.status()})`).toBeTruthy();
+
+      const item = await createItemViaAPI(request, Number(workspaceId), {
+        title: 'Design levels',
+      });
+
+      await page.setViewportSize({ width: 900, height: 800 });
+      await listViewPage.goto(workspaceId);
+
+      const titleCell = page.getByTestId(`workspace-item-title-${item.id}`);
+      await titleCell.waitFor({ state: 'attached' });
+
+      const metrics = await titleCell.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(metrics.clientWidth, 'Title column must keep a readable width').toBeGreaterThan(150);
+      expect(metrics.scrollWidth, 'Title text must stay inside its own cell').toBeLessThanOrEqual(
+        metrics.clientWidth + 1
+      );
+    });
   });
 
   test.describe('List Sorting', () => {
@@ -101,27 +151,21 @@ test.describe('List View', () => {
       // than reading once and racing the re-render.
       await listViewPage.sortByColumn('Title');
       await expect
-        .poll(
-          async () => {
-            const a = await listViewPage.rowIndexOf(itemA.title);
-            const b = await listViewPage.rowIndexOf(itemB.title);
-            return a >= 0 && b >= 0 && a < b;
-          },
-          { message: 'ascending Title sort should place alpha before beta', timeout: 10000 }
-        )
+        .poll(async () => {
+          const a = await listViewPage.rowIndexOf(itemA.title);
+          const b = await listViewPage.rowIndexOf(itemB.title);
+          return a >= 0 && b >= 0 && a < b;
+        }, { message: 'ascending Title sort should place alpha before beta', timeout: 10000 })
         .toBe(true);
 
       // Second click → descending: order must flip to beta before alpha.
       await listViewPage.sortByColumn('Title');
       await expect
-        .poll(
-          async () => {
-            const a = await listViewPage.rowIndexOf(itemA.title);
-            const b = await listViewPage.rowIndexOf(itemB.title);
-            return a >= 0 && b >= 0 && b < a;
-          },
-          { message: 'descending Title sort should place beta before alpha', timeout: 10000 }
-        )
+        .poll(async () => {
+          const a = await listViewPage.rowIndexOf(itemA.title);
+          const b = await listViewPage.rowIndexOf(itemB.title);
+          return a >= 0 && b >= 0 && b < a;
+        }, { message: 'descending Title sort should place beta before alpha', timeout: 10000 })
         .toBe(true);
     });
   });

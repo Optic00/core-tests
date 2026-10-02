@@ -1,3 +1,4 @@
+import { expect, test } from '../fixtures/context-path';
 import {
   createCollectionViaAPI,
   createItemViaAPI,
@@ -6,15 +7,14 @@ import {
   listIterationTypesViaAPI,
   updateItemViaAPI,
 } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
 import {
   generateCollection,
   generateItem,
   generateIteration,
   generateWorkspace,
 } from '../fixtures/test-data';
-import { ItemPage } from '../pages/item.page';
 import { IterationPage } from '../pages/iteration.page';
+import { ItemPage } from '../pages/item.page';
 
 /**
  * Iteration management e2e coverage:
@@ -83,9 +83,7 @@ test.describe('Iteration Management', () => {
     await iterationPage.verifyStatus(iter.name, 'Planned');
   });
 
-  test('changes workspace iteration status from planned to active via edit modal', async ({
-    request,
-  }) => {
+  test('changes workspace iteration status from planned to active via edit modal', async ({ request }) => {
     const iter = generateIteration('status');
     await createIterationViaAPI(request, {
       ...iter,
@@ -112,14 +110,19 @@ test.describe('Iteration Management', () => {
     await iterationPage.deleteIteration(iter.name);
   });
 
-  test('assigns an iteration to a work item via the item-detail sidebar', async ({
-    page,
-    request,
-  }) => {
+  test('assigns an iteration to a work item via the item-detail sidebar', async ({ page, request }) => {
     const iter = generateIteration('assign');
     const created = await createIterationViaAPI(request, {
       ...iter,
       workspace_id: workspaceId,
+      type_id: iterationTypeId,
+    });
+    // Items are assignable to both scopes, so the picker must offer a global
+    // iteration alongside the workspace's own.
+    const globalIter = generateIteration('assign-global');
+    const globalCreated = await createIterationViaAPI(request, {
+      ...globalIter,
+      workspace_id: null,
       type_id: iterationTypeId,
     });
     const itemData = generateItem(0, 'iter-assign');
@@ -130,6 +133,10 @@ test.describe('Iteration Management', () => {
 
     const dialog = page.locator('[role="dialog"]');
     await dialog.locator('[data-testid="iteration-field"]').click();
+    await expect(page.locator(`[role="option"][data-option-id="${created.id}"]`)).toBeVisible();
+    await expect(
+      page.locator(`[role="option"][data-option-id="${globalCreated.id}"]`)
+    ).toBeVisible();
     await page.locator(`[role="option"][data-option-id="${created.id}"]`).click();
     await expect(dialog.locator('[data-testid="iteration-field"]')).toContainText(iter.name, {
       timeout: 5000,
@@ -156,16 +163,17 @@ test.describe('Iteration Management', () => {
 
     await page.getByTestId(`backlog-item-menu-${target.id}`).click();
     await page.getByTestId(`backlog-assign-iteration-menu-${target.id}`).click();
-    await page.getByTestId(`backlog-assign-iteration-${target.id}-${createdIteration.id}`).click();
+    await page
+      .getByTestId(`backlog-assign-iteration-${target.id}-${createdIteration.id}`)
+      .click();
 
-    const iterationSection = page.getByTestId(`backlog-iteration-section-${createdIteration.id}`);
+    const iterationSection = page.getByTestId(
+      `backlog-iteration-section-${createdIteration.id}`,
+    );
     await expect(iterationSection.getByTestId(`backlog-item-menu-${target.id}`)).toBeVisible();
   });
 
-  test('filters items by iteration via a collection using a raw CQL query', async ({
-    page,
-    request,
-  }) => {
+  test('filters items by iteration via a collection using a raw CQL query', async ({ page, request }) => {
     const iter = generateIteration('filter');
     const iteration = await createIterationViaAPI(request, {
       ...iter,
@@ -191,7 +199,7 @@ test.describe('Iteration Management', () => {
     // server-side. `/workspaces/{id}/collections/{cid}` alone routes to
     // workspace-detail (overview), which doesn't filter.
     await page.goto(`/workspaces/${workspaceId}/collections/${collection.id}/backlog`);
-    await page.waitForLoadState('networkidle');
+
 
     await expect(page.getByText(includedItem.title).first()).toBeVisible({ timeout: 10000 });
     await expect(page.getByText(excludedItem.title)).toHaveCount(0);

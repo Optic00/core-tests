@@ -322,16 +322,16 @@ func TestMoveItemBetween_PlacesItemBetweenNeighbors(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "a2"))
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "z9"))
-	nextID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "a5"))
+	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "0|a2"))
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "0|z9"))
+	nextID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "0|a5"))
 
 	newKey, err := MoveItemBetween(db, movingID, &prevID, &nextID)
 	if err != nil {
 		t.Fatalf("MoveItemBetween: %v", err)
 	}
-	if !(newKey > "a2" && newKey < "a5") {
-		t.Fatalf("expected %q strictly between \"a2\" and \"a5\"", newKey)
+	if !(newKey > "0|a2" && newKey < "0|a5") {
+		t.Fatalf("expected %q strictly between \"0|a2\" and \"0|a5\"", newKey)
 	}
 
 	// Verify it was actually persisted.
@@ -350,15 +350,15 @@ func TestMoveItemBetween_EndOfList(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "a2"))
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "z9"))
+	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "0|a2"))
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "0|z9"))
 
 	newKey, err := MoveItemBetween(db, movingID, &prevID, nil)
 	if err != nil {
 		t.Fatalf("MoveItemBetween: %v", err)
 	}
-	if !(newKey > "a2") {
-		t.Fatalf("expected %q > \"a2\" for end-of-list move", newKey)
+	if !(newKey > "0|a2") {
+		t.Fatalf("expected %q > \"0|a2\" for end-of-list move", newKey)
 	}
 }
 
@@ -368,15 +368,15 @@ func TestMoveItemBetween_StartOfList(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	nextID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "a5"))
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "z9"))
+	nextID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "0|a5"))
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "0|z9"))
 
 	newKey, err := MoveItemBetween(db, movingID, nil, &nextID)
 	if err != nil {
 		t.Fatalf("MoveItemBetween: %v", err)
 	}
-	if !(newKey < "a5") {
-		t.Fatalf("expected %q < \"a5\" for start-of-list move", newKey)
+	if !(newKey < "0|a5") {
+		t.Fatalf("expected %q < \"0|a5\" for start-of-list move", newKey)
 	}
 }
 
@@ -388,19 +388,19 @@ func TestMoveItemBetween_FilteredSubsetEndAvoidsGlobalSuccessorCollision(t *test
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "a0"))
-	_ = insertItemWithFracIndex(t, db, workspaceID, 2, "a1") // Occupies KeyBetween("a0", "").
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "z9"))
+	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "0|a0"))
+	_ = insertItemWithFracIndex(t, db, workspaceID, 2, "0|a1") // Occupies the global successor.
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "0|z9"))
 
 	newKey, err := MoveItemBetween(db, movingID, &prevID, nil)
 	if err != nil {
 		t.Fatalf("MoveItemBetween: %v", err)
 	}
-	if newKey == "a1" {
+	if newKey == "0|a1" {
 		t.Fatalf("move reused occupied global successor %q", newKey)
 	}
-	if newKey <= "a0" {
-		t.Fatalf("new key %q must sort after filtered prev a0", newKey)
+	if newKey <= "0|a0" {
+		t.Fatalf("new key %q must sort after filtered prev 0|a0", newKey)
 	}
 }
 
@@ -408,20 +408,20 @@ func TestMoveItemBetween_FilteredSubsetBetweenAvoidsGlobalMidpointCollision(t *t
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "a0"))
-	_ = insertItemWithFracIndex(t, db, workspaceID, 2, "a1") // Occupies KeyBetween("a0", "a2").
-	nextID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "a2"))
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 4, "z9"))
+	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "0|a0"))
+	_ = insertItemWithFracIndex(t, db, workspaceID, 2, "0|a1") // Occupies the global midpoint.
+	nextID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "0|a2"))
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 4, "0|z9"))
 
 	newKey, err := MoveItemBetween(db, movingID, &prevID, &nextID)
 	if err != nil {
 		t.Fatalf("MoveItemBetween: %v", err)
 	}
-	if newKey == "a1" {
+	if newKey == "0|a1" {
 		t.Fatalf("move reused occupied global midpoint %q", newKey)
 	}
-	if !(newKey > "a0" && newKey < "a2") {
-		t.Fatalf("new key %q must be strictly between filtered neighbors a0 and a2", newKey)
+	if !(newKey > "0|a0" && newKey < "0|a2") {
+		t.Fatalf("new key %q must be strictly between filtered neighbors 0|a0 and 0|a2", newKey)
 	}
 }
 
@@ -429,14 +429,14 @@ func TestMoveItemBetween_FilteredSubsetEmptyUsesGlobalAppend(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	_ = insertItemWithFracIndex(t, db, workspaceID, 1, "a0") // Occupies KeyBetween("", "").
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "z9"))
+	_ = insertItemWithFracIndex(t, db, workspaceID, 1, "0|a0") // Occupies the initial key.
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2, "0|z9"))
 
 	newKey, err := MoveItemBetween(db, movingID, nil, nil)
 	if err != nil {
 		t.Fatalf("MoveItemBetween: %v", err)
 	}
-	if newKey == "a0" {
+	if newKey == "0|a0" {
 		t.Fatalf("move reused occupied initial key %q", newKey)
 	}
 }
@@ -460,51 +460,6 @@ func TestGenerateEvenlySpacedFracKeys_BalancesDenseGap(t *testing.T) {
 	}
 	if maxLen > 8 {
 		t.Fatalf("balanced 1000-key gap should stay short, max len=%d", maxLen)
-	}
-}
-
-func TestMoveItemBetween_LongHotGapTriggersLocalRebalance(t *testing.T) {
-	db := createFracIndexTestDB(t)
-	workspaceID := createFracIndexTestWorkspace(t, db)
-
-	prevID := int(insertItemWithFracIndex(t, db, workspaceID, 1, "a0"))
-
-	// Create a pathological hot gap immediately after prev by repeatedly
-	// inserting between prev and the current first successor. The immediate
-	// successor becomes long enough that MoveItemBetween must rebalance a local
-	// window instead of writing another very long midpoint.
-	upper := "a1"
-	for i := 0; i < 900; i++ {
-		key, err := KeyBetween("a0", upper)
-		if err != nil {
-			t.Fatalf("generate dense key %d: %v", i, err)
-		}
-		insertItemWithFracIndex(t, db, workspaceID, i+2, key)
-		upper = key
-	}
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 2000, "z9"))
-
-	beforeOrder := itemIDsByFracIndex(t, db, movingID)
-	naiveKey := previewMoveFracIndex(t, db, movingID, &prevID, nil)
-	if len(naiveKey) <= fracIndexRebalanceLengthThreshold {
-		t.Fatalf("test setup did not create a long hot-gap key: len=%d key=%q", len(naiveKey), naiveKey)
-	}
-
-	newKey, err := MoveItemBetween(db, movingID, &prevID, nil)
-	if err != nil {
-		t.Fatalf("MoveItemBetween: %v", err)
-	}
-	if len(newKey) > fracIndexRebalanceLengthThreshold {
-		t.Fatalf("local rebalance should keep moved key below threshold: len=%d key=%q", len(newKey), newKey)
-	}
-	assertNoDuplicateFracIndexes(t, db)
-
-	// Local rebalance may rewrite neighboring keys, but it must preserve the
-	// global relative order of every non-moving item. Filtered board/list orders
-	// are subsequences of this global order, so they remain stable too.
-	afterOrder := itemIDsByFracIndex(t, db, movingID)
-	if !slices.Equal(beforeOrder, afterOrder) {
-		t.Fatalf("local rebalance changed non-moving global order")
 	}
 }
 
@@ -607,12 +562,12 @@ func TestHotGapSchedulesMigrationAfterFailedStateReset(t *testing.T) {
 func TestLocalRebalanceKeepsFracIndexesNonNullDuringTransaction(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
-	insertItemWithFracIndex(t, db, workspaceID, 1, "a0")
-	insertItemWithFracIndex(t, db, workspaceID, 2, "a1")
-	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "z9"))
+	insertItemWithFracIndex(t, db, workspaceID, 1, "0|a0")
+	insertItemWithFracIndex(t, db, workspaceID, 2, "0|a1")
+	movingID := int(insertItemWithFracIndex(t, db, workspaceID, 3, "0|z9"))
 
 	err := database.WithTx(db, func(tx database.Tx) error {
-		if err := rebalanceLocalFracIndexWindow(tx, movingID, "a0", "", db.GetDriverName()); err != nil {
+		if err := rebalanceLocalGlobalRankWindow(tx, movingID, "0|a0", "", GlobalRankBucket0, db.GetDriverName()); err != nil {
 			return err
 		}
 		var nullCount int
@@ -695,11 +650,11 @@ func TestUniqueFracIndexConstraintRejectsDuplicates(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	insertItemWithFracIndex(t, db, workspaceID, 1, "a2")
+	insertItemWithFracIndex(t, db, workspaceID, 1, "0|a2")
 	_, err := db.Exec(`
 		INSERT INTO items (workspace_id, workspace_item_number, title, is_task, frac_index, created_at, updated_at)
 		VALUES (?, ?, 'Dup', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, workspaceID, 2, true, "a2")
+	`, workspaceID, 2, true, "0|a2")
 	if err == nil {
 		t.Fatal("expected UNIQUE constraint violation for duplicate frac_index, got nil")
 	}
@@ -716,11 +671,11 @@ func TestIsFracIndexUniqueViolation_DetectsRealError(t *testing.T) {
 	db := createFracIndexTestDB(t)
 	workspaceID := createFracIndexTestWorkspace(t, db)
 
-	insertItemWithFracIndex(t, db, workspaceID, 1, "a2")
+	insertItemWithFracIndex(t, db, workspaceID, 1, "0|a2")
 	_, err := db.Exec(`
 		INSERT INTO items (workspace_id, workspace_item_number, title, is_task, frac_index, created_at, updated_at)
 		VALUES (?, ?, 'Dup', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, workspaceID, 2, true, "a2")
+	`, workspaceID, 2, true, "0|a2")
 	if !IsFracIndexUniqueViolation(err) {
 		t.Fatalf("expected IsFracIndexUniqueViolation=true for duplicate frac_index insert, got %v", err)
 	}

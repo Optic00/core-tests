@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"windshift/internal/database"
+	"windshift/internal/models"
 )
 
 // newPagesTestDB spins up an in-memory SQLite with the minimum schema the
@@ -1224,4 +1225,30 @@ func TestPageService_SearchByKeyword_MatchesContentAndEscapesLikeMetacharacters(
 	if len(gotBS) != 1 || gotBS[0].Title != "back\\slash" {
 		t.Fatalf("backslash search: got %+v", gotBS)
 	}
+}
+
+// BuildPageTree turns a flat ordered page list (typically from ListTree)
+// into a nested PageNode tree suitable for direct rendering in internal tools.
+func BuildPageTree(pages []models.Page) []*models.PageNode {
+	byID := make(map[int]*models.PageNode, len(pages))
+	for i := range pages {
+		node := &models.PageNode{Page: pages[i]}
+		byID[pages[i].ID] = node
+	}
+	var roots []*models.PageNode
+	for i := range pages {
+		node := byID[pages[i].ID]
+		if pages[i].ParentID == nil {
+			roots = append(roots, node)
+			continue
+		}
+		parent, ok := byID[*pages[i].ParentID]
+		if !ok {
+			// Promote orphans so callers do not silently drop visible pages.
+			roots = append(roots, node)
+			continue
+		}
+		parent.Children = append(parent.Children, node)
+	}
+	return roots
 }

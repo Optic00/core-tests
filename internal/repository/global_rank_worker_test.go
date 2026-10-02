@@ -493,32 +493,6 @@ func waitForGlobalRankAdvisoryWaiter(t *testing.T, db interface {
 	t.Fatal("concurrent append never waited for the global rank migration lock")
 }
 
-func assertOrderedRanks(t *testing.T, db interface {
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-}, want []string) {
-	t.Helper()
-	rows, err := db.Query("SELECT frac_index FROM items ORDER BY frac_index")
-	if err != nil {
-		t.Fatalf("read ordered ranks: %v", err)
-	}
-	defer rows.Close()
-	for i, expected := range want {
-		if !rows.Next() {
-			t.Fatalf("ordered ranks ended at %d, want %q", i, expected)
-		}
-		var got string
-		if err := rows.Scan(&got); err != nil {
-			t.Fatalf("scan ordered rank %d: %v", i, err)
-		}
-		if got != expected {
-			t.Errorf("ordered rank %d = %q, want %q", i, got, expected)
-		}
-	}
-	if rows.Next() {
-		t.Fatal("ordered ranks contain more rows than expected")
-	}
-}
-
 func assertOrderedWorkspaceItemNumbers(t *testing.T, db interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }, want []int) {
@@ -585,15 +559,52 @@ func runGlobalRankWorkerToCompletion(t *testing.T, worker *GlobalRankMigrationWo
 	t.Fatal("global rank worker did not complete within 10 batches")
 }
 
-func assertItemRankBetween(t *testing.T, db interface {
-	QueryRow(query string, args ...interface{}) *sql.Row
-}, itemID int, lower, upper string) {
-	t.Helper()
-	var rank string
-	if err := db.QueryRow("SELECT frac_index FROM items WHERE id = ?", itemID).Scan(&rank); err != nil {
-		t.Fatalf("read item %d rank: %v", itemID, err)
+// Items created while a migration runs are keyed inside the unprocessed
+// active-bucket window, so the worker migrates them even though the
+// migration-start snapshot never counted them. Progress must raise the total
+// instead of tripping the migrated-count invariant, which used to fail every
+// subsequent batch and stall the migration permanently.
+func TestGlobalRankMigrationWorkerMigratesItemsCreatedDuringMigration(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	defer tdb.Close()
+	workspaceID := createFracIndexTestWorkspace(t, tdb.DB)
+	for number, rank := range []string{"0|a1", "0|a2"} {
+		insertItemWithFracIndex(t, tdb.DB, workspaceID, number+1, rank)
 	}
-	if !(rank > lower && rank < upper) {
-		t.Fatalf("item %d rank = %q, want between %q and %q", itemID, rank, lower, upper)
+
+	worker := NewGlobalRankMigrationWorker(tdb.DB, "balancer-creates", 1, time.Minute)
+	first, err := worker.Run(context.Background())
+	if err != nil {
+		t.Fatalf("first migration batch: %v", err)
 	}
+	if first.Completed || first.Migrated != 1 || first.State.Frontier == nil || *first.State.Frontier != "0|a2" {
+		t.Fatalf("first batch = %+v, want one migrated row at frontier 0|a2", first)
+	}
+
+	// A concurrent create lands between the remaining rows, inside the
+	// unprocessed window below the frontier.
+	insertItemWithFracIndex(t, tdb.DB, workspaceID, 3, "0|a15")
+
+	second, err := worker.Run(context.Background())
+	if err != nil {
+		t.Fatalf("batch after mid-migration create: %v", err)
+	}
+	if second.Completed || second.Migrated != 1 {
+		t.Fatalf("second batch = %+v, want one migrated row and an active migration", second)
+	}
+
+	runGlobalRankWorkerToCompletion(t, worker)
+
+	state, err := LoadGlobalRankState(tdb.DB)
+	if err != nil {
+		t.Fatalf("load completed state: %v", err)
+	}
+	if state.Phase != GlobalRankPhaseStable || state.ActiveBucket != GlobalRankBucket1 {
+		t.Fatalf("completed state = %+v, want stable bucket 1", state)
+	}
+	if state.TotalCount != 3 || state.MigratedCount != 0 {
+		t.Fatalf("completed progress = %d/%d, want total raised to 3 with progress reset", state.MigratedCount, state.TotalCount)
+	}
+	assertOrderedWorkspaceItemNumbers(t, tdb.DB, []int{1, 3, 2})
+	assertNoDuplicateFracIndexes(t, tdb.DB)
 }

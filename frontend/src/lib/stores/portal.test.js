@@ -63,6 +63,8 @@ vi.mock('./toasts.svelte.js', () => ({
 }));
 
 const { portalStore } = await import('./portal.svelte.js');
+const { portalRequestsStore } = await import('./portalActivity.svelte.js');
+const { portalSearchStore } = await import('./portalSearch.svelte.js');
 
 const publicReports = [{ id: 1, name: 'Audience report', is_active: true }];
 const managerReports = [
@@ -102,6 +104,7 @@ describe('portal asset-report loading', () => {
         title: 'Support',
         sections: [],
         workspace_ids: [],
+        can_manage: true,
       },
       request_types: [],
       asset_reports: publicReports,
@@ -132,6 +135,28 @@ describe('portal asset-report loading', () => {
     });
     expect(portalStore.requestTypes).toEqual([]);
     expect(portalStore.assetReports).toEqual([]);
+  });
+
+  it('clears focused domain state when switching a different portal', async () => {
+    await portalStore.loadPortal('support');
+    portalStore.hydrateUserBootstrap({
+      authenticated: true,
+      my_requests: [{ id: 1, status_is_completed: false }],
+      my_approvals: [],
+    });
+    portalSearchStore.query = 'release notes';
+    portalRequestsStore.visible = true;
+    mocks.portal.getBootstrap.mockResolvedValueOnce({
+      portal: { slug: 'customer-help', title: 'Customer Help', workspace_ids: [] },
+      request_types: [],
+      asset_reports: [],
+    });
+
+    await portalStore.loadPortal('customer-help');
+
+    expect(portalSearchStore.query).toBe('');
+    expect(portalRequestsStore.requests).toEqual([]);
+    expect(portalRequestsStore.visible).toBe(false);
   });
 
   it.each([
@@ -176,6 +201,7 @@ describe('portal asset-report loading', () => {
         title: 'Support',
         sections: [],
         workspace_ids: [],
+        can_manage: true,
       },
       request_types: publicRequestTypes,
       asset_reports: publicReports,
@@ -207,6 +233,7 @@ describe('portal asset-report loading', () => {
         title: 'Support',
         sections: [],
         workspace_ids: [],
+        can_manage: true,
       },
       request_types: publicRequestTypes,
       asset_reports: publicReports,
@@ -305,6 +332,7 @@ describe('portal customization save paths', () => {
         title: 'Support',
         sections: [],
         workspace_ids: [3],
+        can_manage: true,
       },
       request_types: [],
       asset_reports: publicReports,
@@ -333,6 +361,51 @@ describe('portal customization save paths', () => {
       expect(debouncedConfig.portal_workspace_ids).toEqual([3]);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('does not open customization for a non-manager', async () => {
+    mocks.portal.getBootstrap.mockResolvedValueOnce({
+      portal: {
+        channel_id: 7,
+        slug: 'support',
+        title: 'Support',
+        sections: [],
+        workspace_ids: [3],
+        can_manage: false,
+      },
+      request_types: [],
+      asset_reports: publicReports,
+    });
+    await portalStore.loadPortal('support');
+
+    portalStore.showCustomizePanel = true;
+
+    expect(portalStore.canManage).toBe(false);
+    expect(portalStore.showCustomizePanel).toBe(false);
+    expect(portalStore.isEditing).toBe(false);
+    expect(portalStore.portalData.can_manage).toBe(false);
+  });
+
+  it('cancels a pending debounced save on reset', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      await portalStore.loadPortal('support');
+      // Clear the initial-load save guard.
+      await vi.advanceTimersByTimeAsync(100);
+
+      portalStore.saveCustomizations();
+      portalStore.reset();
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // A cancelled debounce must not run at all: without the reset guard the
+      // callback fires against the torn-down store and fails noisily.
+      expect(mocks.channels.updateConfig).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      errorSpy.mockRestore();
     }
   });
 });

@@ -1,7 +1,7 @@
+import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
 import { generateItem, generateWorkspace } from '../fixtures/test-data';
 import { ItemPage } from '../pages/item.page';
-import { WorkspacePage } from '../pages/workspace.page';
 
 /**
  * WI-403 regression: the item-detail field pickers (status, priority,
@@ -15,18 +15,15 @@ import { WorkspacePage } from '../pages/workspace.page';
  * snaps back to (0,0) in the top-left corner.
  */
 test.describe('Field picker dropdown anchoring (WI-403)', () => {
-  let workspacePage: WorkspacePage;
   let itemPage: ItemPage;
 
-  test.beforeEach(async ({ page }) => {
-    workspacePage = new WorkspacePage(page);
+  test.beforeEach(async ({ page, request }) => {
     itemPage = new ItemPage(page);
-    const workspace = generateWorkspace();
-    await workspacePage.createWorkspace(workspace);
-    const workspaceId = await workspacePage.getWorkspaceId(workspace.name);
+    const workspace = await createWorkspaceViaAPI(request, generateWorkspace());
 
     const item = generateItem(0, 'basic');
-    await itemPage.createItem(workspaceId, { title: item.title });
+    await createItemViaAPI(request, workspace.id, { title: item.title });
+    await itemPage.gotoWorkspaceBacklog(String(workspace.id));
     await itemPage.openItemDetailModal(item.title);
   });
 

@@ -47,11 +47,11 @@ import { api } from '../api.js';
 import { aiStore } from '../stores/aiStore.svelte.js';
 import { attachmentStatus } from '../stores/attachmentStatus.svelte.js';
 import { capabilitiesStore } from '../stores/capabilities.svelte.js';
+import { workItemStalenessSettings } from '../stores/workItemStalenessSettings.svelte.js';
 import { logbookStore } from '../stores/logbook.svelte.js';
 import { moduleSettings } from '../stores/moduleSettings.js';
 import { permissionStore } from '../stores/permissions.svelte.js';
 import { themeStore } from '../stores/theme.svelte.js';
-import { workItemStalenessSettings } from '../stores/workItemStalenessSettings.svelte.js';
 import { workspaceDataStore } from '../stores/workspaceDataStore.svelte.js';
 import { workspacesStore } from '../stores/workspaces.svelte.js';
 import {

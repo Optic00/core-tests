@@ -807,7 +807,10 @@ func TestRunService_PrepareRemoteClaimEnriches(t *testing.T) {
 			Git: &models.GitGrant{Repo: "owner/repo", ConnectionID: 7},
 			LLM: &models.LLMGrant{ConnectionID: 9},
 		},
-		env: map[string]string{"WS_WORKSPACE_KEY": "WS"},
+		env: map[string]string{
+			"WS_API_URL":       "https://windshift.test/context/api",
+			"WS_WORKSPACE_KEY": "WS",
+		},
 	})
 
 	// A queued remote run for a pool, binding-backed.
@@ -843,6 +846,12 @@ func TestRunService_PrepareRemoteClaimEnriches(t *testing.T) {
 	}
 	if got := spec.Env["WS_WORKSPACE_KEY"]; got != "WS" {
 		t.Errorf("context env not carried through: WS_WORKSPACE_KEY=%q", got)
+	}
+	if got := spec.Env["WS_URL"]; got != "https://windshift.test/context" {
+		t.Errorf("WS_URL: want trusted CLI base, got %q", got)
+	}
+	if got := spec.Env["WS_WORKSPACE"]; got != "WS" {
+		t.Errorf("WS_WORKSPACE: want WS, got %q", got)
 	}
 	user, _, vErr := tm.ValidateToken(spec.Env["WS_TOKEN"])
 	if vErr != nil || user.ID != actingUserID {
@@ -1001,3 +1010,19 @@ func TestRunService_PrepareRemoteClaimNoBinding(t *testing.T) {
 		t.Error("no token should be bound for a binding-less run")
 	}
 }
+
+// RunnerFunc adapts a plain function to the Runner interface.
+type RunnerFunc func(ctx context.Context, input RunInput, emit EventSink) RunnerResult
+
+// Run implements Runner for RunnerFunc.
+func (f RunnerFunc) Run(ctx context.Context, input RunInput, emit EventSink) RunnerResult {
+	return f(ctx, input, emit)
+}
+
+// BindingID is the optional id stamped on PostRunInfo so the hook can
+
+// PostRunHookFunc adapts a plain function to PostRunHook.
+type PostRunHookFunc func(ctx context.Context, info PostRunInfo)
+
+// AfterRun implements PostRunHook for PostRunHookFunc.
+func (f PostRunHookFunc) AfterRun(ctx context.Context, info PostRunInfo) { f(ctx, info) }

@@ -173,14 +173,15 @@ test.describe('Time Tracking', () => {
     test.afterEach(async ({ request }) => {
       // Tests share a single admin session, so a running timer from one case
       // would block the next. Best-effort stop via API.
-      const resp = await request.get('/api/timer/active', {
+      const resp = await request.get('/api/v2/time/timers/active', {
         headers: SEC_FETCH,
       });
       if (resp.ok()) {
         const body = await resp.json().catch(() => null);
-        const id = body?.id ?? body?.timer?.id;
-        if (id) {
-          await request.delete(`/api/timer/${id}/stop`, { headers: SEC_FETCH });
+        if (body?.data) {
+          await request.post('/api/v2/time/timers/active/stop', {
+            headers: SEC_FETCH,
+          });
         }
       }
     });
@@ -210,7 +211,7 @@ test.describe('Time Tracking', () => {
       await expect(startBtn).toBeVisible({ timeout: 5000 });
 
       const startResp = page.waitForResponse(
-        (r) => r.url().includes('/api/timer/start') && r.request().method() === 'POST' && r.ok()
+        (r) => r.url().endsWith('/api/v2/time/timers') && r.request().method() === 'POST' && r.ok()
       );
       await startBtn.click();
       await startResp;
@@ -236,7 +237,7 @@ test.describe('Time Tracking', () => {
       const itemId = item.id ?? item.data?.id;
 
       // Seed the running timer via API so the test focuses on the Stop flow.
-      const startResp = await request.post('/api/timer/start', {
+      const startResp = await request.post('/api/v2/time/timers', {
         headers: SEC_FETCH,
         data: {
           workspace_id: workspaceId,
@@ -254,9 +255,8 @@ test.describe('Time Tracking', () => {
 
       const stopResp = page.waitForResponse(
         (r) =>
-          r.url().includes('/api/timer/') &&
-          r.url().endsWith('/stop') &&
-          r.request().method() === 'DELETE' &&
+          r.url().endsWith('/api/v2/time/timers/active/stop') &&
+          r.request().method() === 'POST' &&
           r.ok()
       );
       await page.locator('[data-testid="stop-timer-btn"]').click();

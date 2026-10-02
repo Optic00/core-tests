@@ -203,7 +203,7 @@ func TestAPITokenScopes_DoNotEscalateBeyondUserRole(t *testing.T) {
 		// /api/* and silently bypass the v1 scope check. Verify the
 		// cookie-auth surface now refuses bearer tokens explicitly.
 		resp := MakeBearerRequestWithToken(t, server, overScopedToken, http.MethodGet,
-			fmt.Sprintf("/api/items?workspace_id=%d", workspaceID), nil)
+			fmt.Sprintf("/api/v2/items?workspace_id=%d", workspaceID), nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusUnauthorized)
 	})
@@ -227,6 +227,8 @@ func TestAPITokenScopes_NonAdminCannotMintAdminScope(t *testing.T) {
 		{"admin_groups_write", "admin:groups:write"},
 		{"admin_audit_logs_read", "admin:audit-logs:read"},
 		{"admin_api_tokens_write", "admin:api-tokens:write"},
+		{"admin_object_translations_read", "admin:object-translations:read"},
+		{"admin_object_translations_write", "admin:object-translations:write"},
 	}
 
 	for _, c := range cases {

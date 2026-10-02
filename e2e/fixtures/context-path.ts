@@ -1,5 +1,5 @@
-import type { Browser, BrowserContext, Page, Response } from '@playwright/test';
 import { test as base, expect, mergeTests, request } from '@playwright/test';
+import type { Browser, BrowserContext, Page, Response } from '@playwright/test';
 
 const contextPath = normalizeContextPath(process.env.E2E_CONTEXT_PATH || '');
 const baseURL = process.env.BASE_URL || 'http://localhost:8080';
@@ -28,11 +28,7 @@ export function externalPath(pathOrURL: string): string {
   }
   try {
     const url = new URL(pathOrURL, baseURL);
-    if (
-      url.origin !== baseOrigin ||
-      url.pathname === contextPath ||
-      url.pathname.startsWith(`${contextPath}/`)
-    ) {
+    if (url.origin !== baseOrigin || url.pathname === contextPath || url.pathname.startsWith(`${contextPath}/`)) {
       return pathOrURL;
     }
     url.pathname = `${contextPath}${url.pathname}`;
@@ -122,6 +118,7 @@ function patchBrowser(browser: Browser): Browser {
 const unprefixedRoots = [
   '/api',
   '/rest',
+  '/scim',
   '/mcp',
   '/_app',
   '/remoteEntry.js',
@@ -160,61 +157,47 @@ function isUnprefixedWindshiftRequest(urlString: string): boolean {
     return false;
   }
   if (url.origin !== baseOrigin) return false;
-  if (
-    url.pathname === '/' ||
-    url.pathname === contextPath ||
-    url.pathname.startsWith(`${contextPath}/`)
-  )
-    return false;
-  return unprefixedRoots.some(
-    (root) => url.pathname === root || url.pathname.startsWith(`${root}/`)
-  );
+  if (url.pathname === '/' || url.pathname === contextPath || url.pathname.startsWith(`${contextPath}/`)) return false;
+  return unprefixedRoots.some((root) => url.pathname === root || url.pathname.startsWith(`${root}/`));
 }
 
-export const test = base.extend<{ _contextPathLeakCheck: undefined }, { _patchBrowser: undefined }>(
-  {
-    _patchBrowser: [
-      async ({ browser, playwright }, use) => {
-        patchBrowser(browser);
-        // Grab a throwaway APIRequestContext to reach the shared prototype and patch
-        // it before any test-scoped `request` fixture is constructed.
-        const probe = await playwright.request.newContext();
-        patchAPIRequestContextPrototype(probe);
-        await probe.dispose();
-        await use(undefined);
-      },
-      { scope: 'worker', auto: true },
-    ],
+export const test = base.extend<{ _contextPathLeakCheck: void }, { _patchBrowser: void }>({
+  _patchBrowser: [async ({ browser, playwright }, use) => {
+    patchBrowser(browser);
+    // Grab a throwaway APIRequestContext to reach the shared prototype and patch
+    // it before any test-scoped `request` fixture is constructed.
+    const probe = await playwright.request.newContext();
+    patchAPIRequestContextPrototype(probe);
+    await probe.dispose();
+    await use();
+  }, { scope: 'worker', auto: true }],
 
-    context: async ({ context }, use) => {
-      patchContext(context);
-      await use(context);
-    },
+  context: async ({ context }, use) => {
+    patchContext(context);
+    await use(context);
+  },
 
-    page: async ({ page }, use) => {
-      patchPage(page);
-      await use(page);
-    },
+  page: async ({ page }, use) => {
+    patchPage(page);
+    await use(page);
+  },
 
-    _contextPathLeakCheck: [
-      async ({ context }, use) => {
-        const leaks: string[] = [];
-        const onRequest = (request: any) => {
-          const url = request.url();
-          if (isSameOriginURL(url) && isUnprefixedWindshiftRequest(url)) {
-            leaks.push(url);
-          }
-        };
-        context.on('request', onRequest);
-        await use(undefined);
-        context.off('request', onRequest);
-        expect(leaks, 'unprefixed same-origin Windshift requests').toEqual([]);
-      },
-      { auto: true },
-    ],
-  }
-);
+  _contextPathLeakCheck: [async ({ context }, use) => {
+    const leaks: string[] = [];
+    const onRequest = (request: any) => {
+      const url = request.url();
+      if (isSameOriginURL(url) && isUnprefixedWindshiftRequest(url)) {
+        leaks.push(url);
+      }
+    };
+    context.on('request', onRequest);
+    await use();
+    context.off('request', onRequest);
+    expect(leaks, 'unprefixed same-origin Windshift requests').toEqual([]);
+  }, { auto: true }],
+});
 
+export { expect, mergeTests, request };
 export type {
   APIRequestContext,
   Browser,
@@ -223,4 +206,3 @@ export type {
   Page,
   Response,
 } from '@playwright/test';
-export { expect, mergeTests, request };

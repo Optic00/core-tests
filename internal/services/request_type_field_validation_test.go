@@ -129,3 +129,66 @@ func TestValidateAndSeparateRequestFieldsOmitsBlankOptionalCustomFields(t *testi
 		})
 	}
 }
+
+// addRequestTypeDefaultDescriptionField configures the default description
+// field on the fixture request type.
+func addRequestTypeDefaultDescriptionField(t *testing.T, db database.Database, requestTypeID int, required bool) {
+	t.Helper()
+	if _, err := db.ExecWrite(`
+		INSERT INTO request_type_fields
+			(request_type_id, field_identifier, field_type, is_required, display_order)
+		VALUES (?, 'description', 'default', ?, 0)
+	`, requestTypeID, required); err != nil {
+		t.Fatalf("insert default description field: %v", err)
+	}
+}
+
+// The description reaching validation is sanitized with sanitize.Comment,
+// which does not trim, so whitespace-only input must count as blank for the
+// required check — same contract as title and custom/virtual fields.
+func TestValidateAndSeparateRequestFieldsRejectsBlankRequiredDescription(t *testing.T) {
+	db, requestTypeID, _, _ := newRequestFieldValidationDB(t)
+	addRequestTypeDefaultDescriptionField(t, db, requestTypeID, true)
+
+	tests := []struct {
+		name        string
+		description string
+	}{
+		{name: "empty", description: ""},
+		{name: "spaces", description: "   "},
+		{name: "tabs and newlines", description: " \t\n "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ValidateAndSeparateRequestFields(context.Background(), db, &requestTypeID, "Title", tt.description, nil)
+			if err == nil {
+				t.Fatalf("description %q unexpectedly satisfied the required description field", tt.description)
+			}
+			if err.Error() != "description is required" {
+				t.Fatalf("error = %q, want %q", err.Error(), "description is required")
+			}
+		})
+	}
+}
+
+func TestValidateAndSeparateRequestFieldsAcceptsDescriptionWithSurroundingWhitespace(t *testing.T) {
+	db, requestTypeID, _, _ := newRequestFieldValidationDB(t)
+	addRequestTypeDefaultDescriptionField(t, db, requestTypeID, true)
+
+	// Content padded with whitespace is a real value; the required check must
+	// not trim it away, and validation never rewrites the stored description.
+	_, err := ValidateAndSeparateRequestFields(context.Background(), db, &requestTypeID, "Title", "  Printer on floor 3 is jammed  ", nil)
+	if err != nil {
+		t.Fatalf("ValidateAndSeparateRequestFields: %v", err)
+	}
+}
+
+func TestValidateAndSeparateRequestFieldsAllowsWhitespaceOptionalDescription(t *testing.T) {
+	db, requestTypeID, _, _ := newRequestFieldValidationDB(t)
+	addRequestTypeDefaultDescriptionField(t, db, requestTypeID, false)
+
+	if _, err := ValidateAndSeparateRequestFields(context.Background(), db, &requestTypeID, "Title", "   ", nil); err != nil {
+		t.Fatalf("whitespace-only optional description was rejected: %v", err)
+	}
+}

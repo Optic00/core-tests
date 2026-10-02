@@ -49,7 +49,9 @@ describe('ChannelSMTPConfig TLS verification', () => {
       props: { channelId: 7, formData },
     });
 
-    expect(document.querySelector('#smtp-encryption')).toHaveTextContent('channel.noEncryption');
+    expect(document.querySelector('#smtp-encryption')).toHaveTextContent(
+      'channel.noEncryption',
+    );
     expect(screen.getByTestId('smtp-plaintext-warning')).toBeInTheDocument();
     expect(screen.queryByTestId('smtp-skip-tls-verify')).not.toBeInTheDocument();
     expect(screen.queryByTestId('smtp-username')).not.toBeInTheDocument();

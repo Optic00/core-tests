@@ -1,12 +1,12 @@
-import { createGroupViaAPI, createUserViaAPI } from '../fixtures/api-helpers';
 import {
+  expect,
+  test,
   type APIRequestContext,
   type Browser,
   type BrowserContext,
-  expect,
   type Page,
-  test,
 } from '../fixtures/context-path';
+import { createGroupViaAPI, createUserViaAPI } from '../fixtures/api-helpers';
 import { generateGroup, generateUser } from '../fixtures/test-data';
 import { createPortalChannel, type PortalChannelHandle } from '../helpers/portal-setup';
 
@@ -24,9 +24,7 @@ async function expectStatus(
   label: string
 ): Promise<void> {
   if (response.status() !== status) {
-    throw new Error(
-      `${label}: expected ${status}, got ${response.status()} ${await response.text()}`
-    );
+    throw new Error(`${label}: expected ${status}, got ${response.status()} ${await response.text()}`);
   }
 }
 
@@ -72,10 +70,7 @@ async function assignManager(
       manager_ids: [managerID],
     },
   });
-  expect(
-    response.ok(),
-    `assign ${managerType} manager: ${response.status()} ${await response.text()}`
-  ).toBeTruthy();
+  expect(response.ok(), `assign ${managerType} manager: ${response.status()} ${await response.text()}`).toBeTruthy();
 }
 
 async function managedPortal(
@@ -116,9 +111,7 @@ test.describe('Channel manager journey', () => {
       await user.page.goto('/manage/channels');
       await expect(user.page.locator('#nav-channel-management')).toBeVisible();
       await expect(user.page.getByTestId(`manager-channel-row-${managed.channelId}`)).toBeVisible();
-      await expect(user.page.getByTestId(`manager-channel-row-${unowned.channelId}`)).toHaveCount(
-        0
-      );
+      await expect(user.page.getByTestId(`manager-channel-row-${unowned.channelId}`)).toHaveCount(0);
       for (const channelID of defaultChannelIDs) {
         await expect(user.page.getByTestId(`manager-channel-row-${channelID}`)).toHaveCount(0);
       }
@@ -179,20 +172,20 @@ test.describe('Channel manager journey', () => {
     }
   });
 
-  test('active group assignment grants list and portal access', async ({ request, browser }) => {
+  test('active group assignment grants list and portal access', async ({
+    request,
+    browser,
+  }) => {
     const manager = await createUser(request, 'channel-manager-group');
     const group = await createGroupViaAPI(
       request,
       generateGroup(`channel-manager-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     );
-    const addMember = await request.post(`/api/groups/${group.id}/members`, {
-      headers: SEC_FETCH,
-      data: { user_ids: [manager.id] },
+    const addMember = await request.patch(`/api/v2/admin/groups/${group.id}`, {
+      headers: { ...SEC_FETCH, 'Content-Type': 'application/merge-patch+json' },
+      data: { member_ids: [manager.id] },
     });
-    expect(
-      addMember.ok(),
-      `add group member: ${addMember.status()} ${await addMember.text()}`
-    ).toBeTruthy();
+    expect(addMember.ok(), `add group member: ${addMember.status()} ${await addMember.text()}`).toBeTruthy();
 
     const managed = await managedPortal(request, 'group');
     await assignManager(request, managed.channelId, 'group', group.id);

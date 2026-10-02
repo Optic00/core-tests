@@ -105,16 +105,18 @@ func TestSchema_CatalogIsUpgradeOnly(t *testing.T) {
 	for _, m := range database.Catalog {
 		body := m.SQLite
 		check := m.CheckSQLite
+		checkFn := m.CheckSQLiteFn
 		checkName := "CheckSQLite"
 		if tdb.Engine == "postgres" {
 			body = m.Postgres
 			check = m.CheckPostgres
+			checkFn = m.CheckPostgresFn
 			checkName = "CheckPostgres"
 		}
 		if body == "" {
 			continue // intentional no-op on this backend
 		}
-		if check == "" {
+		if check == "" && checkFn == nil {
 			drift = append(drift, fmt.Sprintf(
 				"  %-50s  %s\n      no %s predicate; body always runs on a fresh %s DB. "+
 					"Add a Check that returns >0 once the schema files cover the effect, "+
@@ -123,7 +125,16 @@ func TestSchema_CatalogIsUpgradeOnly(t *testing.T) {
 			continue
 		}
 		var count int
-		if err := tdb.QueryRow(check).Scan(&count); err != nil {
+		if checkFn != nil {
+			applied, fnErr := checkFn(tdb.GetDatabase())
+			if fnErr != nil {
+				t.Errorf("%s: failed to run %s predicate: %v", m.Version, checkName, fnErr)
+				continue
+			}
+			if applied {
+				count = 1
+			}
+		} else if err := tdb.QueryRow(check).Scan(&count); err != nil {
 			t.Errorf("%s: failed to run %s predicate: %v", m.Version, checkName, err)
 			continue
 		}
@@ -229,8 +240,8 @@ func TestDatabase_DefaultData_SystemSettings(t *testing.T) {
 	for key, expected := range expectedSettings {
 		var value, valueType, category string
 		err := tdb.QueryRow(`
-			SELECT value, value_type, category
-			FROM system_settings
+			SELECT value, value_type, category 
+			FROM system_settings 
 			WHERE key = ?
 		`, key).Scan(&value, &valueType, &category)
 

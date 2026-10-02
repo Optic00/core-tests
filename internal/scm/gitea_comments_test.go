@@ -125,7 +125,7 @@ func TestGiteaUpdateIssueComment_PatchesByCommentID(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	if err := newGiteaCommentProvider(t, srv.URL).UpdateIssueComment(context.Background(), "acme", "widget", 99, "edited"); err != nil {
+	if err := newGiteaCommentProvider(t, srv.URL).UpdateIssueComment(context.Background(), "acme", "widget", 7, 99, "edited"); err != nil {
 		t.Fatalf("UpdateIssueComment: %v", err)
 	}
 	if !hit {

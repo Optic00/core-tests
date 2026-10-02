@@ -21,7 +21,7 @@ func TestMCPAndRESTV1_TestExecutionAuthorizationContract(t *testing.T) {
 		t.Helper()
 		response := MakeAuthRequest(t, server, http.MethodPost,
 			fmt.Sprintf("/workspaces/%d/test-runs", workspaceID),
-			map[string]interface{}{"name": name, "set_id": setID})
+			map[string]interface{}{"name": name, "plan_id": setID})
 		defer response.Body.Close()
 		AssertStatusCode(t, response, http.StatusCreated)
 		var run map[string]interface{}

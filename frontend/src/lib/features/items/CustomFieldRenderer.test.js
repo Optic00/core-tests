@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 // Mock the api module — the renderer calls api.getUsers() for the user
 // field type when the stored value is a bare id (not an object). Stub it
@@ -9,6 +9,13 @@ vi.mock('../../api.js', () => ({
     getUsers: vi.fn(),
     assets: {
       getSummaries: vi.fn(),
+      getAll: vi.fn(async () => ({ data: [], pagination: { total_items: 0 } })),
+    },
+    portalCustomers: {
+      getAll: vi.fn(async () => []),
+    },
+    customerOrganisations: {
+      getAll: vi.fn(async () => []),
     },
   },
 }));
@@ -25,16 +32,9 @@ vi.mock('../../stores/i18n.svelte.js', () => ({
   i18n: { locale: 'en-US' },
 }));
 
-// Some Svelte transitions reach for element.animate (Web Animations API)
 // which jsdom doesn't implement. The renderer itself doesn't use
 // transitions, but a child picker might pull one in transitively. Defensive
 // stub.
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({ finished: Promise.resolve(), cancel: () => {} });
-  }
-});
-
 import { api } from '../../api.js';
 import { referenceDisplayCache } from '../../stores/referenceDisplayCache.svelte.js';
 import CustomFieldRenderer from './CustomFieldRenderer.svelte';
@@ -59,7 +59,7 @@ function renderReadonly(props) {
 }
 
 // Helper — readonly without onStartEdit so we exercise the static-display
-// branch (the one used in card layouts, where email/url become <a> tags).
+// wrapper used in card layouts, where email/url can be links.
 function renderStatic(props) {
   return render(CustomFieldRenderer, {
     props: {
@@ -161,12 +161,13 @@ describe('date field', () => {
 });
 
 describe('email field', () => {
-  test('button variant shows the address as text', () => {
-    renderReadonly({
+  test('interactive wrapper shows the address as text without nesting a link', () => {
+    const { container } = renderReadonly({
       field: { field_type: 'email', name: 'Contact' },
       value: 'alice@example.com',
     });
     expect(screen.getByText('alice@example.com')).toBeInTheDocument();
+    expect(container.querySelector('a')).toBeNull();
   });
 
   test('static variant renders a mailto: link', () => {
@@ -180,6 +181,15 @@ describe('email field', () => {
 });
 
 describe('url field', () => {
+  test('interactive wrapper shows the URL as text without nesting a link', () => {
+    const { container } = renderReadonly({
+      field: { field_type: 'url', name: 'Link' },
+      value: 'https://example.com/docs',
+    });
+    expect(screen.getByText('https://example.com/docs')).toBeInTheDocument();
+    expect(container.querySelector('a')).toBeNull();
+  });
+
   test('static variant renders an external link with rel safety', () => {
     renderStatic({
       field: { field_type: 'url', name: 'Link' },
@@ -264,14 +274,14 @@ describe('multiselect field', () => {
   });
 
   test.each([
-    ['1,2', 'Low, Medium'],
-    [3, 'High'],
+	['1,2', 'Low, Medium'],
+	[3, 'High'],
   ])('resolves legacy scalar value %j', (value, expected) => {
-    renderReadonly({
-      field: { field_type: 'multiselect', name: 'Tags', options: SELECT_OPTIONS },
-      value,
-    });
-    expect(screen.getByText(expected)).toBeInTheDocument();
+	renderReadonly({
+	  field: { field_type: 'multiselect', name: 'Tags', options: SELECT_OPTIONS },
+	  value,
+	});
+	expect(screen.getByText(expected)).toBeInTheDocument();
   });
 
   test('empty array shows setField placeholder', () => {
@@ -279,15 +289,15 @@ describe('multiselect field', () => {
       field: { field_type: 'multiselect', name: 'Tags', options: SELECT_OPTIONS },
       value: [],
     });
-    expect(screen.getByText('setField:tags')).toBeInTheDocument();
+	expect(screen.getByText('setField:tags')).toBeInTheDocument();
   });
 
   test('empty array shows items.notSet in static mode', () => {
-    renderStatic({
-      field: { field_type: 'multiselect', name: 'Tags', options: SELECT_OPTIONS },
-      value: [],
-    });
-    expect(screen.getByText('items.notSet')).toBeInTheDocument();
+	renderStatic({
+	  field: { field_type: 'multiselect', name: 'Tags', options: SELECT_OPTIONS },
+	  value: [],
+	});
+	expect(screen.getByText('items.notSet')).toBeInTheDocument();
   });
 });
 
@@ -450,11 +460,11 @@ describe('portalcustomer field', () => {
   });
 
   test('object without a name falls back to its id', () => {
-    renderReadonly({
-      field: { field_type: 'portalcustomer', name: 'Customer' },
-      value: { id: 5 },
-    });
-    expect(screen.getByText('Customer #5')).toBeInTheDocument();
+	renderReadonly({
+	  field: { field_type: 'portalcustomer', name: 'Customer' },
+	  value: { id: 5 },
+	});
+	expect(screen.getByText('Customer #5')).toBeInTheDocument();
   });
 });
 
@@ -476,11 +486,11 @@ describe('customerorganisation field', () => {
   });
 
   test('object without a name falls back to its id', () => {
-    renderReadonly({
-      field: { field_type: 'customerorganisation', name: 'Org' },
-      value: { id: 6 },
-    });
-    expect(screen.getByText('Organisation #6')).toBeInTheDocument();
+	renderReadonly({
+	  field: { field_type: 'customerorganisation', name: 'Org' },
+	  value: { id: 6 },
+	});
+	expect(screen.getByText('Organisation #6')).toBeInTheDocument();
   });
 });
 
@@ -506,6 +516,14 @@ describe('combobox field', () => {
 });
 
 describe('linking field', () => {
+  test('interactive variant uses the shared linked-item count', () => {
+    renderReadonly({
+      field: { field_type: 'linking', name: 'Blocked by' },
+      value: [{ id: 1 }, { id: 2 }],
+    });
+    expect(screen.getByText('2 linked')).toBeInTheDocument();
+  });
+
   test('static variant shows count of linked items (array)', () => {
     renderStatic({
       field: { field_type: 'linking', name: 'Blocked by' },
@@ -537,16 +555,28 @@ describe('linking field', () => {
   });
 
   test('empty array renders the em-dash (no links)', () => {
-    // Regression guard for a former bug: the renderer used to check
-    //   else if value && typeof value === 'object' → "1 linked"
-    // after the empty-or-positive-array check, but `[]` is truthy AND
-    // typeof 'object', so it incorrectly matched the "1 linked" branch.
-    // The fix excludes arrays from that branch — see CustomFieldRenderer.svelte.
+    // Arrays must not fall through to the single-object branch.
     renderStatic({
       field: { field_type: 'linking', name: 'Blocked by' },
       value: [],
     });
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+});
+
+describe('read-only wrapper selection', () => {
+  test('disabled editable display uses the static wrapper and keeps its test id', () => {
+    const { container } = renderReadonly({
+      field: { field_type: 'text', name: 'Notes' },
+      value: 'Locked',
+      disabled: true,
+      displayTestId: 'custom-field-display',
+    });
+
+    const wrapper = container.querySelector('[data-testid="custom-field-display"]');
+    expect(wrapper?.tagName).toBe('DIV');
+    expect(wrapper).toHaveClass('opacity-50');
+    expect(screen.getByText('Locked')).toBeInTheDocument();
   });
 });
 
@@ -597,6 +627,31 @@ describe('edit mode — scalar inputs', () => {
 
     expect(onCommit).toHaveBeenCalledOnce();
     expect(onCommit).toHaveBeenCalledWith('AB');
+  });
+
+  test('number input keeps focus while typing digits and commits on blur', async () => {
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    const { container } = renderEdit({
+      field: { id: 23, field_type: 'number', name: 'Points' },
+      value: '',
+      onChange,
+      onCommit,
+    });
+
+    const input = container.querySelector('[data-testid="custom-field-input-23"]');
+    input.focus();
+    await fireEvent.input(input, { target: { value: '2' } });
+    await fireEvent.input(input, { target: { value: '23' } });
+
+    expect(input).toHaveFocus();
+    expect(input.value).toBe('23');
+    expect(onCommit).not.toHaveBeenCalled();
+
+    await fireEvent.blur(input);
+
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledWith('23');
   });
 
   test('date input strips time-like persisted values to YYYY-MM-DD', () => {
@@ -663,5 +718,161 @@ describe('unset / placeholder behavior', () => {
     // pattern in the per-type tests above. Here we just confirm the
     // placeholder branch fires (vs rendering an empty span).
     expect(screen.getByText('setField:label')).toBeInTheDocument();
+  });
+});
+
+describe('self-editing mode (list cells)', () => {
+  const assetField = {
+    id: 9,
+    field_type: 'asset',
+    name: 'Machine',
+    options: JSON.stringify({ asset_set_id: 3 }),
+  };
+
+  function renderSelfEditing(props) {
+    return render(CustomFieldRenderer, {
+      props: {
+        readonly: true,
+        selfEditing: true,
+        disabled: false,
+        onChange: vi.fn(),
+        ...props,
+      },
+    });
+  }
+
+  test('asset object value renders its display label as a clickable cell', () => {
+    renderSelfEditing({
+      field: assetField,
+      value: { id: 5, asset_tag: 'A-005', title: 'Press' },
+    });
+    const label = screen.getByText('A-005 - Press');
+    expect(label.closest('button')).not.toBeNull();
+  });
+
+  test('clicking the cell opens the picker labeled with the current value', async () => {
+    const onChange = vi.fn();
+    renderSelfEditing({
+      field: assetField,
+      value: { id: 5, asset_tag: 'A-005', title: 'Press' },
+      onChange,
+    });
+    fireEvent.click(screen.getByText('A-005 - Press'));
+    // The stored value object is the label source while options load lazily.
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('A-005 - Press')).toBeInTheDocument()
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test('picking an asset commits the object value and returns to display', async () => {
+    const onChange = vi.fn();
+    renderSelfEditing({
+      field: assetField,
+      value: null,
+      onChange,
+      loadAssetOptions: async () => ({
+        assets: [{ id: 7, title: 'Lathe', asset_tag: 'A-007' }],
+        total: 1,
+      }),
+    });
+    fireEvent.click(screen.getByText('setField:machine'));
+    const option = await screen.findByText('Lathe');
+    fireEvent.click(option);
+    expect(onChange).toHaveBeenCalledWith({ id: 7, title: 'Lathe', asset_tag: 'A-007' });
+    // The editor closes; the display would show the committed value once the
+    // parent applies the change.
+    await waitFor(() =>
+      expect(screen.getByText('setField:machine')).toBeInTheDocument()
+    );
+  });
+
+  test('portalcustomer editor shows the stored name while options load', async () => {
+    renderSelfEditing({
+      field: { id: 3, field_type: 'portalcustomer', name: 'Contact' },
+      value: { id: 12, name: 'Acme Corp', email: 'a@acme.io' },
+    });
+    fireEvent.click(screen.getByText('Acme Corp'));
+    await waitFor(() => expect(screen.getByDisplayValue('Acme Corp')).toBeInTheDocument());
+  });
+
+  test('text commits once on Enter instead of per keystroke', async () => {
+    const onChange = vi.fn();
+    renderSelfEditing({
+      field: { field_type: 'text', name: 'Notes' },
+      value: 'Hello',
+      onChange,
+    });
+    fireEvent.click(screen.getByText('Hello'));
+    const input = await screen.findByDisplayValue('Hello');
+    fireEvent.input(input, { target: { value: 'Hello world' } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('Hello world');
+  });
+
+  test('blur commits the staged draft once focus leaves', () => {
+    const onChange = vi.fn();
+    renderSelfEditing({
+      field: { field_type: 'text', name: 'Notes' },
+      value: 'Hello',
+      onChange,
+    });
+    fireEvent.click(screen.getByText('Hello'));
+    const input = screen.getByDisplayValue('Hello');
+    fireEvent.input(input, { target: { value: 'Hello world' } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('Hello world');
+  });
+
+  test('blur without changes does not fire onChange', () => {
+    const onChange = vi.fn();
+    renderSelfEditing({
+      field: { field_type: 'text', name: 'Notes' },
+      value: 'Hello',
+      onChange,
+    });
+    fireEvent.click(screen.getByText('Hello'));
+    fireEvent.blur(screen.getByDisplayValue('Hello'));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+  });
+
+  test('boolean renders a live checkbox that commits on toggle', () => {
+    const onChange = vi.fn();
+    renderSelfEditing({
+      field: { field_type: 'checkbox', name: 'Done' },
+      value: true,
+      onChange,
+    });
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+
+  test('empty cell prompts and opens the editor on click', () => {
+    renderSelfEditing({
+      field: { field_type: 'text', name: 'Notes' },
+      value: null,
+    });
+    fireEvent.click(screen.getByText('setField:notes'));
+    expect(screen.getByPlaceholderText('setField:notes')).toBeInTheDocument();
+  });
+
+  test('disabled self-editing renders static text without a button', () => {
+    render(CustomFieldRenderer, {
+      props: {
+        field: { field_type: 'text', name: 'Notes' },
+        value: 'Frozen',
+        readonly: true,
+        selfEditing: true,
+        disabled: true,
+      },
+    });
+    expect(screen.getByText('Frozen')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });

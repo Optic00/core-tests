@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"windshift/internal/models"
 	"windshift/internal/services"
@@ -32,24 +33,26 @@ func TestGetCompletedItemsExcludesWorkspacesWithoutItemView(t *testing.T) {
 		INSERT INTO statuses (name, category_id)
 		VALUES ('Review Complete Status', ?)
 	`, categoryID)
-	visibleItemID := testutils.InsertID(t, tdb.GetDatabase(), `
-		INSERT INTO items
-			(workspace_id, workspace_item_number, title, description, status_id, assignee_id, creator_id, frac_index)
-		VALUES (?, 1, 'Visible completed item', 'Visible details', ?, ?, ?, ?)
-	`, visibleWorkspaceID, statusID, viewerID, viewerID, testutils.NextTestFracIndex())
-	hiddenItemID := testutils.InsertID(t, tdb.GetDatabase(), `
-		INSERT INTO items
-			(workspace_id, workspace_item_number, title, description, status_id, assignee_id, creator_id, frac_index)
-		VALUES (?, 1, 'Restricted completed item', 'Restricted details', ?, ?, ?, ?)
-	`, hiddenWorkspaceID, statusID, viewerID, otherID, testutils.NextTestFracIndex())
-	for _, itemID := range []int{visibleItemID, hiddenItemID} {
-		if _, err := tdb.ExecWrite(`
-			INSERT INTO item_history (item_id, user_id, changed_at, field_name, old_value, new_value)
-			VALUES (?, ?, '2026-08-25 12:00:00', 'status_id', NULL, ?)
-		`, itemID, viewerID, statusID); err != nil {
-			t.Fatalf("insert completion history for item %d: %v", itemID, err)
+	completedAt := time.Date(2026, time.August, 25, 12, 0, 0, 0, time.UTC)
+	createItem := func(workspaceID, creatorID int, title, description string) int {
+		t.Helper()
+		itemID, err := services.CreateItem(tdb.GetDatabase(), services.ItemCreationParams{
+			WorkspaceID: workspaceID,
+			Title:       title,
+			Description: description,
+			StatusID:    &statusID,
+			AssigneeID:  &viewerID,
+			CreatorID:   &creatorID,
+			CreatedAt:   &completedAt,
+			UpdatedAt:   &completedAt,
+		})
+		if err != nil {
+			t.Fatalf("create %q: %v", title, err)
 		}
+		return int(itemID)
 	}
+	visibleItemID := createItem(visibleWorkspaceID, viewerID, "Visible completed item", "Visible details")
+	createItem(hiddenWorkspaceID, otherID, "Restricted completed item", "Restricted details")
 
 	permissionService, err := services.NewPermissionService(tdb.GetDatabase(), services.PermissionCacheConfig{
 		TTL: 0, MaxCacheSize: 8, WarmupOnStartup: false, PreWarmActive: false, BatchSize: 10,

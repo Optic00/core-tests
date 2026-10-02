@@ -32,6 +32,7 @@ func TestCreateRecord_NullsItemIDForBrandingTypes(t *testing.T) {
 			mime_type TEXT,
 			file_size INTEGER,
 			uploaded_by INTEGER,
+			uploaded_by_portal_customer_id INTEGER,
 			has_thumbnail INTEGER,
 			thumbnail_path TEXT,
 			category TEXT

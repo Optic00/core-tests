@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -172,7 +173,8 @@ func TestCustomFieldEdgeCases(t *testing.T) {
 		AssertStatusCode(t, resp, http.StatusOK)
 		var field map[string]interface{}
 		DecodeJSON(t, resp, &field)
-		optionsStr, _ := field["options"].(string)
+		optionsJSON, _ := json.Marshal(field["options"])
+		optionsStr := string(optionsJSON)
 		if !containsLabel(optionsStr, "Trivial") {
 			t.Errorf("expected renamed label 'Trivial' to be in field.options, got %q", optionsStr)
 		}

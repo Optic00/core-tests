@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"windshift/internal/models"
@@ -27,6 +28,7 @@ type recordingRunner struct {
 	status     string
 	sawPath    string
 	sawPrepped bool
+	wsConfig   string
 	called     bool
 }
 
@@ -37,6 +39,9 @@ func (r *recordingRunner) Run(_ context.Context, input RunInput, _ EventSink) Ru
 		if _, err := os.Stat(filepath.Join(input.WorkspacePath, "PREPARED")); err == nil {
 			r.sawPrepped = true
 		}
+		if config, err := os.ReadFile(filepath.Join(input.WorkspacePath, "ws.toml")); err == nil {
+			r.wsConfig = string(config)
+		}
 	}
 	return RunnerResult{Status: r.status}
 }
@@ -46,8 +51,12 @@ func noopEmit(string, string) error { return nil }
 func repoInput(runID int) RunInput {
 	return RunInput{
 		RunID: runID,
-		Env:   map[string]string{"WS_TOKEN": "run-tok"},
-		Repo:  &JobRepo{WorkspaceID: 3, Slug: "acme/widget", BaseRef: "main"},
+		Env: map[string]string{
+			"WS_TOKEN":         "run-tok",
+			"WS_URL":           "http://orch.local",
+			"WS_WORKSPACE_KEY": "WI",
+		},
+		Repo: &JobRepo{WorkspaceID: 3, Slug: "acme/widget", BaseRef: "main"},
 	}
 }
 
@@ -66,6 +75,12 @@ func TestTriageRunner_PreparesRunsAndPushesOnSuccess(t *testing.T) {
 	}
 	if !inner.called || !inner.sawPrepped {
 		t.Fatalf("inner runner did not see a prepared checkout (called=%v prepped=%v path=%q)", inner.called, inner.sawPrepped, inner.sawPath)
+	}
+	if !strings.Contains(inner.wsConfig, `url = "http://orch.local"`) || !strings.Contains(inner.wsConfig, `workspace_key = "WI"`) {
+		t.Errorf("inner runner saw unexpected ws.toml: %q", inner.wsConfig)
+	}
+	if strings.Contains(inner.wsConfig, "run-tok") {
+		t.Errorf("ws.toml must not contain the run token: %q", inner.wsConfig)
 	}
 	// Push ran: faketriage drops a sibling marker that survives the checkout's
 	// post-run cleanup.

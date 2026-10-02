@@ -134,7 +134,6 @@ func TestDiagnosticsGlobalRankMigrationControlRefusesSplitReset(t *testing.T) {
 		itemID, err := testFactory.CreateItem(factory.CreateItemOpts{
 			WorkspaceID: workspaceID,
 			Title:       fmt.Sprintf("Split item %d", number+1),
-			IsTask:      true,
 		})
 		if err != nil {
 			t.Fatalf("create split-reset item %d: %v", number+1, err)
@@ -246,7 +245,6 @@ func TestDiagnosticsFracIndexReportsFailedMigrationReason(t *testing.T) {
 		itemID, err := testFactory.CreateItem(factory.CreateItemOpts{
 			WorkspaceID: workspaceID,
 			Title:       fmt.Sprintf("Diagnostics item %d", number+1),
-			IsTask:      true,
 		})
 		if err != nil {
 			t.Fatalf("create diagnostics item %d: %v", number+1, err)

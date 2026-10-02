@@ -1,24 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
-});
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../api.js', () => ({
   api: {
     getUsers: vi.fn(),
+    getAdminUsers: vi.fn(),
     groups: {
-      getAll: vi.fn(),
+      getAdminAll: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -53,13 +41,14 @@ describe('settings update state preservation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.getUsers.mockResolvedValue([]);
+    api.getAdminUsers.mockResolvedValue([]);
     api.groups.update.mockResolvedValue({});
     api.notificationSettings.getAvailableEvents.mockResolvedValue([]);
     api.notificationSettings.update.mockResolvedValue({});
   });
 
   it('keeps an inactive group inactive when editing its details', async () => {
-    api.groups.getAll.mockResolvedValue([
+    api.groups.getAdminAll.mockResolvedValue([
       {
         id: 41,
         name: 'Inactive Group',

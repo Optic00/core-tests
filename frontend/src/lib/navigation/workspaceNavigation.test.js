@@ -8,7 +8,10 @@ import {
 describe("Agent Studio workspace navigation", () => {
 	test("keeps Agents in the workspace tools group", () => {
 		expect(workspaceViewItems.some((item) => item.id === "agents")).toBe(false);
-		expect(workspaceOnlyViews[0]).toEqual(
+		// The queue is also a workspace-only tool, so locate Agents by id
+		// rather than by position in the list.
+		const agents = workspaceOnlyViews.find((item) => item.id === "agents");
+		expect(agents).toEqual(
 			expect.objectContaining({
 				id: "agents",
 				labelKey: "users.agents.title",

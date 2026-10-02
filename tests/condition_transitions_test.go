@@ -122,18 +122,16 @@ func setupConditionTestData(t *testing.T) *conditionTestEnv {
 func (e *conditionTestEnv) findTransitionID(t *testing.T, fromStatusID, toStatusID int) int {
 	t.Helper()
 	for _, tr := range e.transitions {
-		fromID := tr["from_status_id"]
-		toID := tr["to_status_id"]
-
-		var from int
-		switch v := fromID.(type) {
-		case float64:
-			from = int(v)
-		case nil:
+		fromStatus, ok := tr["from"].(map[string]interface{})
+		if !ok {
 			continue
 		}
-
-		to := int(toID.(float64))
+		toStatus, ok := tr["to"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		from := int(fromStatus["id"].(float64))
+		to := int(toStatus["id"].(float64))
 		if from == fromStatusID && to == toStatusID {
 			return int(tr["id"].(float64))
 		}
@@ -179,6 +177,43 @@ func (e *conditionTestEnv) createConditionSet(t *testing.T, name string, transit
 	return ExtractIDFromResponse(t, result)
 }
 
+// createConditionSetWithRules posts a condition set binding a transition to an
+// explicit logic mode and condition list, so tests can mix condition and
+// validator modes under OR/AND.
+func (e *conditionTestEnv) createConditionSetWithRules(t *testing.T, name string, transitionID int, logicMode string, conditions []map[string]interface{}) int {
+	t.Helper()
+	if logicMode == "" {
+		logicMode = "and"
+	}
+	condSetData := map[string]interface{}{
+		"name":        name,
+		"workflow_id": e.workflowID,
+		"transition_conditions": []map[string]interface{}{
+			{
+				"transition_id": transitionID,
+				"logic_mode":    logicMode,
+				"conditions":    conditions,
+			},
+		},
+	}
+	resp := MakeAuthRequest(t, e.server, http.MethodPost, "/condition-sets", condSetData)
+	defer resp.Body.Close()
+	AssertStatusCode(t, resp, http.StatusCreated)
+	var result map[string]interface{}
+	DecodeJSON(t, resp, &result)
+	return ExtractIDFromResponse(t, result)
+}
+
+func scriptRule(script, mode, errorMessage string, order int) map[string]interface{} {
+	return map[string]interface{}{
+		"condition_type": "script",
+		"config":         json.RawMessage(fmt.Sprintf(`{"script":%q}`, script)),
+		"display_order":  order,
+		"mode":           mode,
+		"error_message":  errorMessage,
+	}
+}
+
 // associateConditionSet updates the config set to use the given condition set.
 func (e *conditionTestEnv) associateConditionSet(t *testing.T, conditionSetID int) {
 	t.Helper()
@@ -211,7 +246,7 @@ func (e *conditionTestEnv) associateConditionSet(t *testing.T, conditionSetID in
 func (e *conditionTestEnv) getAvailableTransitions(t *testing.T) (currentStatus string, transitions []map[string]interface{}) {
 	t.Helper()
 
-	resp := MakeAuthRequest(t, e.server, http.MethodGet, fmt.Sprintf("/items/%d/available-status-transitions", e.itemID), nil)
+	resp := MakeAuthRequest(t, e.server, http.MethodGet, fmt.Sprintf("/v2/items/%d/available-transitions", e.itemID), nil)
 	defer resp.Body.Close()
 	AssertStatusCode(t, resp, http.StatusOK)
 
@@ -355,4 +390,168 @@ func TestItemUpdate_RejectsStatusIDEvenWhenConditionsWouldAllow(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400 regardless of condition outcome; got %d", resp.StatusCode)
 	}
+}
+
+// TestConditionSet_OrLogicValidatorBlocksWhenConditionPasses verifies that a
+// passing condition-mode rule under OR logic cannot override a failing
+// validator. Before the fix the validator was treated as an OR alternative, so
+// the transition committed.
+func TestConditionSet_OrLogicValidatorBlocksWhenConditionPasses(t *testing.T) {
+	env := setupConditionTestData(t)
+
+	trID := env.findTransitionID(t, env.openID, env.inProgressID)
+	csID := env.createConditionSetWithRules(t, "OR Validator Blocks", trID, "or", []map[string]interface{}{
+		scriptRule("return false", "validator", "validator must pass", 0),
+		scriptRule("return true", "condition", "", 1),
+	})
+	env.associateConditionSet(t, csID)
+
+	resp := MakeAuthRequest(t, env.server, http.MethodPost, fmt.Sprintf("/items/%d/transition", env.itemID), map[string]interface{}{
+		"to_status_id": env.inProgressID,
+	})
+	defer resp.Body.Close()
+
+	AssertStatusCode(t, resp, http.StatusBadRequest)
+}
+
+// TestConditionSet_OrLogicFailingConditionBlocksWhenValidatorPasses verifies
+// that a passing validator under OR logic cannot override a failing
+// condition. Before the fix the transition committed on the validator alone.
+func TestConditionSet_OrLogicFailingConditionBlocksWhenValidatorPasses(t *testing.T) {
+	env := setupConditionTestData(t)
+
+	trID := env.findTransitionID(t, env.openID, env.inProgressID)
+	csID := env.createConditionSetWithRules(t, "OR Condition Blocks", trID, "or", []map[string]interface{}{
+		scriptRule("return true", "validator", "", 0),
+		scriptRule("return false", "condition", "condition failed", 1),
+	})
+	env.associateConditionSet(t, csID)
+
+	resp := MakeAuthRequest(t, env.server, http.MethodPost, fmt.Sprintf("/items/%d/transition", env.itemID), map[string]interface{}{
+		"to_status_id": env.inProgressID,
+	})
+	defer resp.Body.Close()
+
+	AssertStatusCode(t, resp, http.StatusBadRequest)
+}
+
+// TestConditionSet_RejectsInvalidRegexPattern verifies that a field_value
+// condition with an uncompilable regex is rejected at write time instead of
+// being persisted and turned into a 500 on every later transition.
+func TestConditionSet_RejectsInvalidRegexPattern(t *testing.T) {
+	env := setupConditionTestData(t)
+
+	trID := env.findTransitionID(t, env.openID, env.inProgressID)
+	payload := map[string]interface{}{
+		"name":        "Bad Regex",
+		"workflow_id": env.workflowID,
+		"transition_conditions": []map[string]interface{}{
+			{
+				"transition_id": trID,
+				"logic_mode":    "and",
+				"conditions": []map[string]interface{}{
+					{
+						"condition_type": "field_value",
+						"config":         json.RawMessage(`{"field_identifier":"title","pattern":"("}`),
+						"display_order":  0,
+						"mode":           "condition",
+					},
+				},
+			},
+		},
+	}
+
+	resp := MakeAuthRequest(t, env.server, http.MethodPost, "/condition-sets", payload)
+	defer resp.Body.Close()
+
+	AssertStatusCode(t, resp, http.StatusBadRequest)
+}
+
+// TestConditionSet_AvailableTransitionsFailsClosedOnInvalidStoredCondition
+// documents the corruption fixture: a legacy/imported row with an
+// uncompilable regex (the API now rejects these at write time) must not
+// silently ungating transitions in the available-transitions list.
+func TestConditionSet_AvailableTransitionsFailsClosedOnInvalidStoredCondition(t *testing.T) {
+	env := setupConditionTestData(t)
+
+	trID := env.findTransitionID(t, env.openID, env.inProgressID)
+	csID := env.createConditionSetWithRules(t, "Corrupt Regex", trID, "and", []map[string]interface{}{
+		{
+			"condition_type": "field_value",
+			"config":         json.RawMessage(`{"field_identifier":"title","pattern":".*"}`),
+			"display_order":  0,
+			"mode":           "condition",
+		},
+	})
+	env.associateConditionSet(t, csID)
+
+	// Direct DB write: deliberate corruption fixture the API can no longer
+	// create, simulating a bad row already in the database.
+	if _, err := env.server.DB().Exec(`
+		UPDATE conditions SET config = ?
+		WHERE condition_type = 'field_value'
+		  AND condition_set_transition_id IN (
+		    SELECT id FROM condition_set_transitions WHERE condition_set_id = ?
+		  )
+	`, `{"field_identifier":"title","pattern":"("}`, csID); err != nil {
+		t.Fatalf("corrupt condition: %v", err)
+	}
+
+	resp := MakeAuthRequest(t, env.server, http.MethodGet, fmt.Sprintf("/v2/items/%d/available-transitions", env.itemID), nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500 (fail closed) when condition evaluation fails; got %d", resp.StatusCode)
+	}
+}
+
+// TestConfigSetUpdate_RejectsConditionSetFromAnotherWorkflow verifies that a
+// condition set bound to a different workflow cannot be attached to a
+// configuration set, where its transition bindings could never match.
+func TestConfigSetUpdate_RejectsConditionSetFromAnotherWorkflow(t *testing.T) {
+	env := setupConditionTestData(t)
+
+	wfResp := MakeAuthRequest(t, env.server, http.MethodPost, "/workflows", map[string]interface{}{
+		"name":       "Unrelated Workflow",
+		"is_default": false,
+	})
+	var wfResult map[string]interface{}
+	DecodeJSON(t, wfResp, &wfResult)
+	wfResp.Body.Close()
+	otherWorkflowID := ExtractIDFromResponse(t, wfResult)
+
+	csResp := MakeAuthRequest(t, env.server, http.MethodPost, "/condition-sets", map[string]interface{}{
+		"name":                  "Unrelated Workflow Conditions",
+		"workflow_id":           otherWorkflowID,
+		"transition_conditions": []map[string]interface{}{},
+	})
+	var csResult map[string]interface{}
+	DecodeJSON(t, csResp, &csResult)
+	csResp.Body.Close()
+	AssertStatusCode(t, csResp, http.StatusCreated)
+	otherConditionSetID := ExtractIDFromResponse(t, csResult)
+
+	getResp := MakeAuthRequest(t, env.server, http.MethodGet, fmt.Sprintf("/configuration-sets/%d", env.configSetID), nil)
+	var currentCS map[string]interface{}
+	DecodeJSON(t, getResp, &currentCS)
+	getResp.Body.Close()
+
+	updateData := map[string]interface{}{
+		"name":             currentCS["name"],
+		"description":      currentCS["description"],
+		"is_default":       true,
+		"workflow_id":      env.workflowID,
+		"workspace_ids":    []int{env.workspaceID},
+		"condition_set_id": otherConditionSetID,
+	}
+	for _, key := range []string{"create_screen_id", "edit_screen_id", "view_screen_id"} {
+		if v, ok := currentCS[key]; ok && v != nil {
+			updateData[key] = v
+		}
+	}
+
+	resp := MakeAuthRequest(t, env.server, http.MethodPut, fmt.Sprintf("/configuration-sets/%d", env.configSetID), updateData)
+	defer resp.Body.Close()
+
+	AssertStatusCode(t, resp, http.StatusBadRequest)
 }

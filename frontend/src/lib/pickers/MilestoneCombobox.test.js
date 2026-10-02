@@ -73,16 +73,6 @@ import MilestoneCombobox from './MilestoneCombobox.svelte';
 const { canAdminWorkspace, create, getAll, hasPermission, permissionStore } = mocks;
 
 beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
   if (!globalThis.ResizeObserver) {
     globalThis.ResizeObserver = class {
@@ -126,6 +116,25 @@ async function openCreateAction({ workspaceId = 23, onSelect = vi.fn() } = {}) {
 }
 
 describe('MilestoneCombobox creation', () => {
+  test('cancels an internal milestone load when unmounted', async () => {
+    getAll.mockResolvedValue([]);
+
+    const view = render(MilestoneCombobox, {
+      props: {
+        workspaceId: 23,
+      },
+    });
+
+    await waitFor(() => expect(getAll).toHaveBeenCalledOnce());
+    const requestOptions = getAll.mock.calls[0][1];
+    expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
+    expect(requestOptions.signal.aborted).toBe(false);
+
+    view.unmount();
+
+    expect(requestOptions.signal.aborted).toBe(true);
+  });
+
   test('opens the native dialog with the typed name and creates a workspace milestone', async () => {
     hasPermission.mockImplementation(
       (workspaceId, permission) => workspaceId === 23 && permission === 'item.edit'
@@ -191,5 +200,43 @@ describe('MilestoneCombobox creation', () => {
 
     expect(screen.queryByTestId('milestone-create-option')).not.toBeInTheDocument();
     expect(screen.queryByTestId('milestone-form-dialog')).not.toBeInTheDocument();
+  });
+});
+
+// A saved milestone id missing from the (lazily loaded) options must stay
+// visible in the multi-select trigger. MilestoneCombobox has to declare and
+// forward resolveMissingLabel — Svelte silently drops unknown props, so an
+// undeclared prop would strand the value without a label (and ItemPicker
+// would hide the chip entirely).
+describe('MilestoneCombobox — resolveMissingLabel forwarding', () => {
+  test('labels a selected value that is not in the loaded milestones', async () => {
+    render(MilestoneCombobox, {
+      props: {
+        multiple: true,
+        workspaceId: 23,
+        milestones: [{ id: 5, name: 'Sprint 5' }],
+        value: [5, 42],
+        resolveMissingLabel: (v) => (v === 42 ? 'Milestone #42' : null),
+        onSelect: vi.fn(),
+      },
+    });
+
+    expect(screen.getByText('Sprint 5')).toBeInTheDocument();
+    expect(screen.getByText('Milestone #42')).toBeInTheDocument();
+  });
+
+  test('an unlabeled missing value falls back to the placeholder instead of a bare chip', async () => {
+    render(MilestoneCombobox, {
+      props: {
+        multiple: true,
+        workspaceId: 23,
+        milestones: [{ id: 5, name: 'Sprint 5' }],
+        value: [5],
+        resolveMissingLabel: () => null,
+        onSelect: vi.fn(),
+      },
+    });
+
+    expect(screen.getByText('Sprint 5')).toBeInTheDocument();
   });
 });

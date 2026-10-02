@@ -1,24 +1,27 @@
+import { expect, test } from '../fixtures/context-path';
 import {
   createItemViaAPI,
   createLinkViaAPI,
   createWorkspaceViaAPI,
+  deleteLinkViaAPI,
   listLinksForItemViaAPI,
   listLinkTypesViaAPI,
 } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
 import { generateItem, generateWorkspace } from '../fixtures/test-data';
-import { ItemPage } from '../pages/item.page';
 import { ItemLinksPage } from '../pages/item-links.page';
+import { ItemPage } from '../pages/item.page';
+import { WorkspacePage } from '../pages/workspace.page';
 
 /**
  * Item linking — e2e coverage for the LinkItemModal UI and the underlying
- * /api/links surface. All scenarios run as the seeded admin user so we
+ * /api/v2/links surface. All scenarios run as the seeded admin user so we
  * exercise the happy-path + validation layers; permission-boundary tests
  * (alice without W1 access) would need a second authenticated context and
  * live outside this file.
  */
 
 test.describe('Item linking', () => {
+  let workspacePage: WorkspacePage;
   let itemPage: ItemPage;
   let linksPage: ItemLinksPage;
   let workspaceId: string;
@@ -35,6 +38,7 @@ test.describe('Item linking', () => {
   });
 
   test.beforeEach(async ({ page, request }) => {
+    workspacePage = new WorkspacePage(page);
     itemPage = new ItemPage(page);
     linksPage = new ItemLinksPage(page);
 
@@ -134,9 +138,12 @@ test.describe('Item linking', () => {
     await linksPage.searchAndSelect(target.title);
 
     const postResponsePromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/links') && r.request().method() === 'POST'
+      (r) => r.url().endsWith('/api/v2/links') && r.request().method() === 'POST'
     );
-    await page.getByTestId('link-modal').getByRole('button', { name: 'Add Link' }).click();
+    await page
+      .getByTestId('link-modal')
+      .getByRole('button', { name: 'Add Link' })
+      .click();
     const postResponse = await postResponsePromise;
     expect(postResponse.status()).toBe(409);
 
@@ -145,7 +152,10 @@ test.describe('Item linking', () => {
     expect(links.outgoing).toHaveLength(1);
   });
 
-  test('search filters by link type (work items for "Relates To")', async ({ page, request }) => {
+  test('search filters by link type (work items for "Relates To")', async ({
+    page,
+    request,
+  }) => {
     // Per-run token so the search query can't be polluted by items left
     // behind by previous test runs / Playwright retries — admin sees items
     // across every workspace.

@@ -7,8 +7,8 @@ import (
 )
 
 // TestWorkspaceRoles_Tester tests that users with the Tester role have correct permissions.
-// The Tester role should grant test.view, test.execute, and test.manage permissions
-// but NOT grant item CRUD permissions (create/edit/delete).
+// The Tester role grants test.view, test.execute, and test.manage plus item.view,
+// item.create (file defects), and item.comment — but NOT item.edit / item.delete.
 func TestWorkspaceRoles_Tester(t *testing.T) {
 	server, _ := StartTestServer(t, GetDBType())
 	adminToken := CreateBearerToken(t, server)
@@ -43,7 +43,7 @@ func TestWorkspaceRoles_Tester(t *testing.T) {
 	})
 
 	t.Run("Tester_CanViewTestSets", func(t *testing.T) {
-		endpoint := fmt.Sprintf("/workspaces/%d/test-sets", workspaceID)
+		endpoint := fmt.Sprintf("/workspaces/%d/test-plans", workspaceID)
 		resp := MakeAuthRequestWithToken(t, server, testerToken, http.MethodGet, endpoint, nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -61,9 +61,9 @@ func TestWorkspaceRoles_Tester(t *testing.T) {
 	t.Run("Tester_CanCreateTestCase", func(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d/test-cases", workspaceID)
 		testCase := map[string]interface{}{
-			"title":       "Login Test Case",
-			"description": "Test that login works correctly",
-			"priority":    "high",
+			"title":         "Login Test Case",
+			"preconditions": "Test that login works correctly",
+			"priority":      "high",
 		}
 		resp := MakeAuthRequestWithToken(t, server, testerToken, http.MethodPost, endpoint, testCase)
 		defer resp.Body.Close()
@@ -82,11 +82,11 @@ func TestWorkspaceRoles_Tester(t *testing.T) {
 
 	// testSetID is captured by Tester_CanCreateTestSet and consumed by
 	// Tester_CanCreateTestRun — test_runs has a NOT NULL FK to test_sets, so a
-	// run cannot be created without a set_id.
+	// run cannot be created without a plan_id.
 	var testSetID int
 
 	t.Run("Tester_CanCreateTestSet", func(t *testing.T) {
-		endpoint := fmt.Sprintf("/workspaces/%d/test-sets", workspaceID)
+		endpoint := fmt.Sprintf("/workspaces/%d/test-plans", workspaceID)
 		set := map[string]interface{}{
 			"name":        "Smoke Test Set",
 			"description": "Basic smoke tests",
@@ -107,17 +107,17 @@ func TestWorkspaceRoles_Tester(t *testing.T) {
 		}
 		endpoint := fmt.Sprintf("/workspaces/%d/test-runs", workspaceID)
 		run := map[string]interface{}{
-			"name":   "Sprint 1 Test Run",
-			"set_id": testSetID,
+			"name":    "Sprint 1 Test Run",
+			"plan_id": testSetID,
 		}
 		resp := MakeAuthRequestWithToken(t, server, testerToken, http.MethodPost, endpoint, run)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusCreated)
 	})
 
-	// --- Item permissions (should NOT be granted to Tester role) ---
+	// --- Item permissions (create granted, edit/delete denied) ---
 
-	t.Run("Tester_CannotCreateItems", func(t *testing.T) {
+	t.Run("Tester_CanCreateItems", func(t *testing.T) {
 		configSetID := GetDefaultConfigurationSet(t, server)
 		itemTypes := GetItemTypes(t, server, configSetID)
 		itemTypeID := RequireItemTypeID(t, itemTypes, "Task")
@@ -129,7 +129,19 @@ func TestWorkspaceRoles_Tester(t *testing.T) {
 		}
 		resp := MakeAuthRequestWithToken(t, server, testerToken, http.MethodPost, "/items", itemData)
 		defer resp.Body.Close()
-		AssertRejected(t, resp)
+		AssertStatusCode(t, resp, http.StatusCreated)
+
+		var result map[string]interface{}
+		DecodeJSON(t, resp, &result)
+		createdID := ExtractIDFromResponse(t, result)
+		if createdID == 0 {
+			t.Fatal("item create returned no id")
+		}
+
+		// The created item must be readable afterwards.
+		getResp := MakeAuthRequestWithToken(t, server, testerToken, http.MethodGet, fmt.Sprintf("/items/%d", createdID), nil)
+		defer getResp.Body.Close()
+		AssertStatusCode(t, getResp, http.StatusOK)
 	})
 
 	t.Run("Tester_CannotEditItems", func(t *testing.T) {
@@ -153,7 +165,6 @@ func TestWorkspaceRoles_Tester(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d", workspaceID)
 		updateData := map[string]interface{}{
 			"name":        "Updated by Tester",
-			"key":         shortKey("TRW"),
 			"description": "Should fail",
 		}
 		resp := MakeAuthRequestWithToken(t, server, testerToken, http.MethodPut, endpoint, updateData)
@@ -187,8 +198,8 @@ func TestWorkspaceRoles_Tester_NoRole(t *testing.T) {
 	t.Run("NoRole_CannotCreateTestCase", func(t *testing.T) {
 		endpoint := fmt.Sprintf("/workspaces/%d/test-cases", workspaceID)
 		testCase := map[string]interface{}{
-			"title":       "Unauthorized Test Case",
-			"description": "Should not be created",
+			"title":         "Unauthorized Test Case",
+			"preconditions": "Should not be created",
 		}
 		resp := MakeAuthRequestWithToken(t, server, noRoleToken, http.MethodPost, endpoint, testCase)
 		defer resp.Body.Close()

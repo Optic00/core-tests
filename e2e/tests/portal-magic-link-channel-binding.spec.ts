@@ -1,4 +1,4 @@
-import { expect, test } from '../fixtures/mail';
+import { test, expect } from '../fixtures/mail';
 import { createPortalChannel } from '../helpers/portal-setup';
 
 /**
@@ -50,7 +50,10 @@ test.describe('Portal magic-link channel binding', () => {
       headers: SEC_FETCH,
       data: { email: customerEmail },
     });
-    expect(reqResp.ok(), `magic-link request to portal A: ${reqResp.status()}`).toBeTruthy();
+    expect(
+      reqResp.ok(),
+      `magic-link request to portal A: ${reqResp.status()}`
+    ).toBeTruthy();
 
     const msg = await mail.waitForLast({
       to: customerEmail,
@@ -59,10 +62,11 @@ test.describe('Portal magic-link channel binding', () => {
       timeoutMs: 5000,
     });
     const tokenMatch = msg.Text.match(/[?#&]token=([A-Za-z0-9_=-]+)/);
-    if (!tokenMatch) {
-      throw new Error(`token not found in body: ${msg.Text.slice(0, 200)}`);
-    }
-    const token = tokenMatch[1];
+    expect(
+      tokenMatch,
+      `token not found in body: ${msg.Text.slice(0, 200)}`
+    ).toBeTruthy();
+    const token = tokenMatch![1];
 
     // Try to redeem the token via portal B's verify endpoint. The frontend
     // verify URL puts the token in the URL fragment (#token=...). The
@@ -71,19 +75,22 @@ test.describe('Portal magic-link channel binding', () => {
     // Magic-link tokens are single-use, so we capture the response from the
     // FIRST verify call (the one the page makes on load). A second hit on
     // the same token would return code:used regardless of channel binding.
-    const verifyURL = `${BASE_URL}/portal/${slugB}/verify#token=${encodeURIComponent(token)}`;
+    const verifyURL =
+      `${BASE_URL}/portal/${slugB}/verify#token=${encodeURIComponent(token)}`;
     const verifyResponsePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes(`/api/portal/${slugB}/auth/verify`) && resp.request().method() === 'GET'
+        resp.url().includes(`/api/portal/${slugB}/auth/verify`) &&
+        resp.request().method() === 'GET'
     );
     await page.goto(verifyURL);
     const verifyResp = await verifyResponsePromise;
     expect(verifyResp.status(), `mismatched-channel verify must be 401`).toBe(401);
     const verifyBody = await verifyResp.json();
     expect(verifyBody.success).toBe(false);
-    expect(verifyBody.code, 'expected code:invalid for channel mismatch (not used/expired)').toBe(
-      'invalid'
-    );
+    expect(
+      verifyBody.code,
+      'expected code:invalid for channel mismatch (not used/expired)'
+    ).toBe('invalid');
 
     // Error UI lands. The container has data-testid to keep the assertion
     // stable across localized copy.

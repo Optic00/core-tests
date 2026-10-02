@@ -2,20 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 
-// jsdom does not implement the Web Animations API. Svelte 5 transitions
-// call element.animate during outro. Stub it with a Promise-shaped result
-// so transitions resolve immediately and don't crash the test runner.
 beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
   // jsdom also lacks scrollIntoView, which the picker uses to keep the
   // highlighted row visible.
   if (!Element.prototype.scrollIntoView) {
@@ -285,5 +272,126 @@ describe('BasePicker — popover trigger accessibility', () => {
     const dropdown = await screen.findByTestId('picker-dropdown');
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(dropdown.id).toBe(trigger.getAttribute('aria-controls'));
+  });
+});
+
+// A multi-select value missing from the (lazily loaded) items renders as an
+// "unresolved" chip labeled via resolveMissingLabel. The chip must behave
+// like any other: removable, and keyed so several unresolved chips never
+// collide.
+describe('BasePicker — unresolved multi-select chips', () => {
+  function renderWithUnresolved(onChange, values = [1, 99]) {
+    return render(BasePicker, {
+      props: {
+        items,
+        multiple: true,
+        value: values,
+        resolveMissingLabel: (v) => (v === 99 ? 'Legacy option' : v === 98 ? 'Older option' : null),
+        onChange,
+      },
+    });
+  }
+
+  test('a value missing from items renders as a labeled chip', async () => {
+    renderWithUnresolved(vi.fn());
+
+    expect(screen.getByText('Apple')).toBeInTheDocument();
+    expect(screen.getByText('Legacy option')).toBeInTheDocument();
+  });
+
+  test('removing an unresolved chip removes its raw value', async () => {
+    const onChange = vi.fn();
+    renderWithUnresolved(onChange);
+
+    const chip = screen.getByText('Legacy option').closest('div');
+    await fireEvent.click(chip.querySelector('button.picker-clear'));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith([1]);
+  });
+
+  test('two unresolved chips render side by side and stay individually removable', async () => {
+    const onChange = vi.fn();
+    renderWithUnresolved(onChange, [98, 99]);
+
+    expect(screen.getByText('Older option')).toBeInTheDocument();
+    expect(screen.getByText('Legacy option')).toBeInTheDocument();
+
+    await fireEvent.click(
+      screen.getByText('Older option').closest('div').querySelector('button.picker-clear')
+    );
+
+    expect(onChange).toHaveBeenCalledWith([99]);
+    expect(screen.getByText('Legacy option')).toBeInTheDocument();
+    expect(screen.queryByText('Older option')).not.toBeInTheDocument();
+  });
+});
+
+describe('BasePicker — rendered option cap (WI-1445)', () => {
+  function makeItems(count) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: i + 1,
+      name: `Workspace ${String(i + 1).padStart(4, '0')}`,
+    }));
+  }
+
+  test('mounts only the first page of options and shows the truncation hint', async () => {
+    render(BasePicker, { props: { items: makeItems(250) } });
+
+    const input = screen.getByRole('combobox');
+    await fireEvent.click(input);
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-option-value="1"]')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('picker-more-hint')).toBeInTheDocument();
+    // Options past the cap are not mounted.
+    expect(document.querySelector('[data-option-value="101"]')).toBeNull();
+    expect(document.querySelectorAll('[data-melt-combobox-option]').length).toBe(100);
+  });
+
+  test('narrowing the search resets the window and hides the hint', async () => {
+    render(BasePicker, { props: { items: makeItems(250) } });
+
+    const input = screen.getByRole('combobox');
+    await fireEvent.click(input);
+    await fireEvent.input(input, { target: { value: 'Workspace 024' } });
+
+    // Matches 0240..0249 — ten items, well under the cap.
+    await waitFor(() => {
+      expect(screen.queryByTestId('picker-more-hint')).toBeNull();
+    });
+    expect(document.querySelector('[data-option-value="1"]')).toBeNull();
+    expect(document.querySelector('[data-option-value="241"]')).toBeInTheDocument();
+  });
+
+  test('ArrowDown at the cap reveals the next page instead of wrapping', async () => {
+    const onSelect = vi.fn();
+    render(BasePicker, {
+      props: { items: makeItems(150), maxVisibleOptions: 100, onSelect },
+    });
+
+    const input = screen.getByRole('combobox');
+    await fireEvent.click(input);
+    await waitFor(() => {
+      expect(document.querySelector('[data-option-value="1"]')).toBeInTheDocument();
+    });
+
+    // Walk to the end of the first page (99 ArrowDowns from index 0).
+    for (let i = 0; i < 99; i++) {
+      await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    }
+    // One more ArrowDown at the last visible option reveals the rest and the
+    // highlight moves onto the first newly revealed option (index 100).
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-option-value="101"]')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('picker-more-hint')).toBeNull();
+
+    // Enter selects the highlighted newly revealed option.
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith(makeItems(150)[100]);
   });
 });

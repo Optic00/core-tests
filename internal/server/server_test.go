@@ -12,10 +12,13 @@ func TestIsAPIPath(t *testing.T) {
 		{"/api/items", true},
 		{"/rest", true},
 		{"/rest/api/v1/items", true},
+		{"/scim", true},
+		{"/scim/v2/Users", true},
 		// SPA client routes that look API-shaped must NOT be classified as API.
 		{"/api-docs", false},
 		{"/apifoo", false},
 		{"/rest-stop", false},
+		{"/scim-thing", false},
 		// Other client routes
 		{"/", false},
 		{"/workspaces/1", false},

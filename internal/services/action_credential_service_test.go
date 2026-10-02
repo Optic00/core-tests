@@ -55,7 +55,7 @@ func TestActionCredentialService_CreateEncryptsAndStripsPlaintext(t *testing.T) 
 	created, err := svc.Create(models.CreateActionCredentialRequest{
 		Name:           "GitHub PAT",
 		CredentialType: models.CredentialBearerToken,
-		Secret:         "ghp_example-test-token",
+		Secret:         "ghp_AbCdEfGhIjKlMnOpQrStUv",
 	}, ptrInt(10))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -117,7 +117,7 @@ func TestActionCredentialService_CreateScopedRequiresWorkspaceIDs(t *testing.T) 
 
 func TestActionCredentialService_ResolveDecrypts(t *testing.T) {
 	svc, _ := newTestCredentialService(t)
-	const plaintext = "ghp_example-test-token"
+	const plaintext = "ghp_AbCdEfGhIjKlMnOpQrStUv"
 	created, err := svc.Create(models.CreateActionCredentialRequest{
 		Name:           "GitHub PAT",
 		CredentialType: models.CredentialBearerToken,

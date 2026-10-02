@@ -50,7 +50,7 @@ func TestStartFIDOLoginDoesNotEnumerateAccountOrCredentialState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	sessionManager := auth.NewSessionManager(db, false, false, nil, "webauthn-test-secret", "strict")
+	sessionManager := auth.NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "webauthn-test-secret", "strict", auth.DefaultSessionValidationCacheTTL)
 	handler := NewWebAuthnHandler(db, nil, sessionManager, config, utils.NewIPExtractor(false, nil))
 
 	for _, identifier := range []string{"active", "no-passkey", "inactive", "unknown"} {

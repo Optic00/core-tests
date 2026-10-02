@@ -22,14 +22,14 @@ func TestRunGrants_AllowsHTTP_Boundaries(t *testing.T) {
 	}
 
 	denied := []string{
-		"https://api.example.com.evil/v1",            // suffix-extended host
+		"https://api.example.com.evil/v1",          // suffix-extended host
 		"https://api.example.com@169.254.169.254/v1", // userinfo smuggling
-		"https://api.example.comX/v1",                // host not boundary-terminated
-		"https://api.example.com/v1evil",             // path not boundary-terminated
-		"https://api.example.com/v2",                 // different path
-		"http://api.example.com/v1",                  // scheme mismatch
-		"https://api.example.com:8443/v1",            // port mismatch
-		"https://evil.com/v1",                        // different host
+		"https://api.example.comX/v1",              // host not boundary-terminated
+		"https://api.example.com/v1evil",           // path not boundary-terminated
+		"https://api.example.com/v2",               // different path
+		"http://api.example.com/v1",                // scheme mismatch
+		"https://api.example.com:8443/v1",          // port mismatch
+		"https://evil.com/v1",                      // different host
 	}
 	for _, u := range denied {
 		if g.AllowsHTTP(u) {

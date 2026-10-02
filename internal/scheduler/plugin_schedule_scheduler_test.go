@@ -58,6 +58,17 @@ func (s *stubInvoker) callCount() int {
 
 // newSchedulerRunsDB returns an in-memory SQLite DB with just the
 // scheduler_runs table created — enough for SchedulerRunRepository.Insert.
+// waitForCalls polls the stub until it recorded at least want calls or the
+// timeout elapses.
+func waitForCalls(stub *stubInvoker, want int) {
+	deadline := time.Now().Add(500 * time.Millisecond)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for stub.callCount() < want && time.Now().Before(deadline) {
+		<-tick.C
+	}
+}
+
 func newSchedulerRunsDB(t *testing.T) database.Database {
 	t.Helper()
 	dsn := "file:scheduler_test_" + t.Name() + "?mode=memory&cache=shared"
@@ -99,8 +110,11 @@ func TestPluginScheduleScheduler_FiresQueuedSchedules(t *testing.T) {
 	stub := &stubInvoker{}
 	stub.queueDue(plugins.DueSchedule{PluginName: "p", ScheduleID: "drain", Handler: "on_tick"})
 
-	s := NewPluginScheduleScheduler(stub, db)
-	s.processTick()
+	s := NewPluginScheduleSchedulerWithInterval(stub, db, 5*time.Millisecond)
+	s.Start()
+	defer s.Stop()
+
+	waitForCalls(stub, 1)
 
 	if got := stub.callCount(); got < 1 {
 		t.Fatalf("CallPluginFunction call count = %d, want >= 1", got)
@@ -123,8 +137,11 @@ func TestPluginScheduleScheduler_FailingFireDoesNotCrashOrBlock(t *testing.T) {
 		plugins.DueSchedule{PluginName: "p", ScheduleID: "b", Handler: "h"},
 	)
 
-	s := NewPluginScheduleScheduler(stub, db)
-	s.processTick()
+	s := NewPluginScheduleSchedulerWithInterval(stub, db, 5*time.Millisecond)
+	s.Start()
+	defer s.Stop()
+
+	waitForCalls(stub, 2)
 
 	// Both queued entries must have been attempted even though the first one
 	// errored — a failing fire must not abort the tick.
@@ -153,8 +170,12 @@ func TestPluginScheduleScheduler_NoDueNoCall(t *testing.T) {
 	db := newSchedulerRunsDB(t)
 	stub := &stubInvoker{} // queueDue NOT called
 
-	s := NewPluginScheduleScheduler(stub, db)
-	s.processTick()
+	s := NewPluginScheduleSchedulerWithInterval(stub, db, 5*time.Millisecond)
+	s.Start()
+	// No observable signals a scheduler tick, so let a fixed window of ticks
+	// elapse via a channel receive before asserting nothing fired.
+	<-time.After(30 * time.Millisecond)
+	s.Stop()
 
 	if got := stub.callCount(); got != 0 {
 		t.Errorf("CallPluginFunction called %d times with no due schedules, want 0", got)

@@ -12,11 +12,18 @@ import (
 // startup or first API call.
 func TestRegistry_LoadsWithoutError(t *testing.T) {
 	all := Registry()
-	if err := LoadError(); err != nil {
-		t.Fatalf("template registry load error: %v", err)
-	}
 	if len(all) == 0 {
 		t.Fatal("registry empty — no templates shipped?")
+	}
+	// Every embedded template file must have parsed and validated into the
+	// registry; production load() silently skips bad files, so compare the
+	// counts to catch a typo'd file at test time.
+	entries, err := templateFS.ReadDir("templates")
+	if err != nil {
+		t.Fatalf("read embedded template dir: %v", err)
+	}
+	if len(all) != len(entries) {
+		t.Fatalf("registry has %d templates but %d embedded template files — one failed to parse/validate and was skipped", len(all), len(entries))
 	}
 }
 

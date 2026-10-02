@@ -10,14 +10,6 @@ vi.mock('../stores/i18n.svelte.js', () => ({
 }));
 
 beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    });
-  }
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
   if (!globalThis.ResizeObserver) {
     globalThis.ResizeObserver = class {

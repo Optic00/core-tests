@@ -1,14 +1,14 @@
+import { test, expect } from '../fixtures/errors';
+import { createWorkspaceViaAPI, listLinkTypesViaAPI } from '../fixtures/api-helpers';
 import {
-  chooseSelectOption,
   createActionViaAPI,
   getActionViaAPI,
-  nodeConfigByType,
   openActionEditor,
-  saveAction,
   selectNodeByType,
+  saveAction,
+  chooseSelectOption,
+  nodeConfigByType,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI, listLinkTypesViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
 
 // P0-3: related_items "linked" relation exposes link type, direction, and a max
 // items cap; all persist.

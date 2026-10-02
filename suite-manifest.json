@@ -1,9 +1,13 @@
 {
   "go": {
     "fast_packages": [
+      "internal/businesstime",
       "internal/cql",
       "internal/fileserve",
+      "internal/ldap",
+      "internal/licensing",
       "internal/markdown",
+      "internal/objecttranslation",
       "internal/testsummary",
       "internal/utils"
     ],

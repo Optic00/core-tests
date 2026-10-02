@@ -1,12 +1,13 @@
-import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
+import { test, expect, type APIRequestContext, type BrowserContext, type Page } from '../fixtures/context-path';
 import {
-  type APIRequestContext,
-  type BrowserContext,
-  expect,
-  type Page,
-  test,
-} from '../fixtures/context-path';
-import { generateItem, generateUser, generateWorkspace } from '../fixtures/test-data';
+  createItemViaAPI,
+  createWorkspaceViaAPI,
+} from '../fixtures/api-helpers';
+import {
+  generateItem,
+  generateUser,
+  generateWorkspace,
+} from '../fixtures/test-data';
 
 /**
  * Two-user item collaboration — live comment visibility and stale-state safety.
@@ -89,9 +90,10 @@ async function setUpMember(
     `user create failed (${createResp.status()}): ${await createResp.text()}`
   ).toBeTruthy();
   const member = await createResp.json();
-  const activateResp = await adminRequest.post(`${BASE_URL}/api/users/${member.id}/activate`, {
-    headers: SEC_FETCH,
-  });
+  const activateResp = await adminRequest.post(
+    `${BASE_URL}/api/users/${member.id}/activate`,
+    { headers: SEC_FETCH }
+  );
   expect(
     activateResp.ok(),
     `user activate failed (${activateResp.status()}): ${await activateResp.text()}`
@@ -105,9 +107,7 @@ async function setUpMember(
   expect(rolesResp.ok()).toBeTruthy();
   const rolesBody = await rolesResp.json();
   const roles: Array<{ id: number; name: string }> = rolesBody.data ?? rolesBody;
-  const editorRole = roles.find((r) => r.name === 'Editor');
-  if (!editorRole) throw new Error('Editor workspace role not found');
-  const editorId = editorRole.id;
+  const editorId = roles.find((r) => r.name === 'Editor')!.id;
   const assignResp = await adminRequest.post('/api/workspace-roles/assign', {
     headers: SEC_FETCH,
     data: {
@@ -116,7 +116,10 @@ async function setUpMember(
       role_id: editorId,
     },
   });
-  expect(assignResp.ok(), `assign Editor failed: ${assignResp.status()}`).toBeTruthy();
+  expect(
+    assignResp.ok(),
+    `assign Editor failed: ${assignResp.status()}`
+  ).toBeTruthy();
 
   // Browser context: empty storageState so the member's browser is not
   // accidentally logged in as the admin via the project-level cookie file.
@@ -194,34 +197,46 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
       });
       await member.page.goto(`/workspaces/${ws.id}/items/${item.id}`);
       await memberEventsReady;
-      await expect(member.page.locator('[data-testid="comments-section"]')).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(member.page.locator('[data-testid="comment-item"]')).toHaveCount(0);
+      await expect(
+        member.page.locator('[data-testid="comments-section"]')
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        member.page.locator('[data-testid="comment-item"]')
+      ).toHaveCount(0);
 
       // ── Direction 1: member posts; admin's tab picks it up. ───────────
       const fromMember = `From member ${Date.now()}`;
-      const memberPost = await member.apiCtx.post(`/api/items/${item.id}/comments`, {
-        headers: SEC_FETCH,
-        data: { content: fromMember, is_private: false },
-      });
-      expect(memberPost.ok(), `member comment POST failed (${memberPost.status()})`).toBeTruthy();
+      const memberPost = await member.apiCtx.post(
+        `/api/v2/items/${item.id}/comments`,
+        {
+          headers: SEC_FETCH,
+          data: { content: fromMember, is_private: false },
+        }
+      );
+      expect(
+        memberPost.ok(),
+        `member comment POST failed (${memberPost.status()})`
+      ).toBeTruthy();
 
       // Admin's tab — comment + "new" badge (because admin is not the author).
       await expect(page.locator('[data-testid="comment-item"]')).toHaveCount(1, {
         timeout: POLL_WAIT_MS,
       });
-      await expect(page.locator('[data-testid="comment-item"]')).toContainText(fromMember);
+      await expect(page.locator('[data-testid="comment-item"]')).toContainText(
+        fromMember
+      );
       const adminBadge = page.locator('[data-testid="new-comments-badge"]');
       await expect(adminBadge).toBeVisible({ timeout: 5_000 });
       await expect(adminBadge).toHaveAttribute('data-new-count', '1');
 
       // Member's tab — the same comment shows up (member is the author, so
       // no "new" badge on their side).
-      await expect(member.page.locator('[data-testid="comment-item"]')).toHaveCount(1, {
-        timeout: POLL_WAIT_MS,
-      });
-      await expect(member.page.locator('[data-testid="new-comments-badge"]')).toHaveCount(0);
+      await expect(
+        member.page.locator('[data-testid="comment-item"]')
+      ).toHaveCount(1, { timeout: POLL_WAIT_MS });
+      await expect(
+        member.page.locator('[data-testid="new-comments-badge"]')
+      ).toHaveCount(0);
 
       // ── Direction 2: admin posts; member's tab picks it up. ───────────
       // Admin clicks the badge to clear it before posting, so the next badge
@@ -230,20 +245,27 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
       await expect(adminBadge).toHaveCount(0);
 
       const fromAdmin = `From admin ${Date.now()}`;
-      const adminPost = await request.post(`/api/items/${item.id}/comments`, {
+      const adminPost = await request.post(`/api/v2/items/${item.id}/comments`, {
         headers: SEC_FETCH,
         data: { content: fromAdmin, is_private: false },
       });
-      expect(adminPost.ok(), `admin comment POST failed (${adminPost.status()})`).toBeTruthy();
+      expect(
+        adminPost.ok(),
+        `admin comment POST failed (${adminPost.status()})`
+      ).toBeTruthy();
 
       // Member's tab — picks up the new comment + raises the badge.
-      await expect(member.page.locator('[data-testid="comment-item"]')).toHaveCount(2, {
-        timeout: POLL_WAIT_MS,
-      });
       await expect(
-        member.page.locator('[data-testid="comment-item"]').filter({ hasText: fromAdmin })
+        member.page.locator('[data-testid="comment-item"]')
+      ).toHaveCount(2, { timeout: POLL_WAIT_MS });
+      await expect(
+        member.page
+          .locator('[data-testid="comment-item"]')
+          .filter({ hasText: fromAdmin })
       ).toBeVisible();
-      const memberBadge = member.page.locator('[data-testid="new-comments-badge"]');
+      const memberBadge = member.page.locator(
+        '[data-testid="new-comments-badge"]'
+      );
       await expect(memberBadge).toBeVisible({ timeout: 5_000 });
       await expect(memberBadge).toHaveAttribute('data-new-count', '1');
 
@@ -252,7 +274,9 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
       await expect(page.locator('[data-testid="comment-item"]')).toHaveCount(2, {
         timeout: POLL_WAIT_MS,
       });
-      await expect(page.locator('[data-testid="new-comments-badge"]')).toHaveCount(0);
+      await expect(
+        page.locator('[data-testid="new-comments-badge"]')
+      ).toHaveCount(0);
     } finally {
       await teardownMember(member);
     }
@@ -287,15 +311,15 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
         );
       });
       await member.page.goto(`/workspaces/${ws.id}/items/${item.id}`);
-      await expect(member.page.locator('[data-testid="comments-section"]')).toBeVisible({
-        timeout: 15_000,
-      });
+      await expect(
+        member.page.locator('[data-testid="comments-section"]')
+      ).toBeVisible({ timeout: 15_000 });
       await itemEventsResponse;
 
       // Admin deletes the item from their own session. The member's tab is
       // about to receive the `deleted` SSE event (WI-484) and close the detail;
       // we assert both the backend rejection and that UI tear-down below.
-      const deleteResp = await request.delete(`/api/items/${item.id}`, {
+      const deleteResp = await request.delete(`/api/v2/items/${item.id}`, {
         headers: SEC_FETCH,
       });
       expect(
@@ -307,13 +331,16 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
       // API context (same session that the browser tab is authenticated
       // against) — this is the exact request the browser would issue when the
       // user hits "Comment" in the composer.
-      const staleComment = await member.apiCtx.post(`/api/items/${item.id}/comments`, {
-        headers: SEC_FETCH,
-        data: {
-          content: 'Trying to comment on a deleted item',
-          is_private: false,
-        },
-      });
+      const staleComment = await member.apiCtx.post(
+        `/api/v2/items/${item.id}/comments`,
+        {
+          headers: SEC_FETCH,
+          data: {
+            content: 'Trying to comment on a deleted item',
+            is_private: false,
+          },
+        }
+      );
 
       // Backend must refuse: the item no longer exists. Either 404 (not
       // found) or 403 (permission resolution against a missing item) is
@@ -326,7 +353,7 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
 
       // Server view of the comment list should be empty too (defensive
       // check: nothing got written despite the failed POST).
-      const list = await request.get(`/api/items/${item.id}/comments`, {
+      const list = await request.get(`/api/v2/items/${item.id}/comments`, {
         headers: SEC_FETCH,
       });
       // The item is gone — list also 404s. Either way, no comments were
@@ -345,11 +372,13 @@ test.describe('Two-user collaboration: live comments + stale state', () => {
       // `deleted` SSE event close the detail outright, so there is no longer a
       // stale composer to type into — which is a strictly stronger guarantee
       // against a fake-success state. Assert the composer is gone instead.
-      await expect(member.page.locator('[data-testid="comments-section"]')).toBeHidden({
-        timeout: 15_000,
-      });
+      await expect(
+        member.page.locator('[data-testid="comments-section"]')
+      ).toBeHidden({ timeout: 15_000 });
       // And nothing optimistically appended a phantom comment before tear-down.
-      await expect(member.page.locator('[data-testid="comment-item"]')).toHaveCount(0);
+      await expect(
+        member.page.locator('[data-testid="comment-item"]')
+      ).toHaveCount(0);
     } finally {
       await teardownMember(member);
     }

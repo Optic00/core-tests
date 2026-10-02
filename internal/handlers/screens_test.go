@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"windshift/internal/models"
+	"windshift/internal/services"
 )
 
 func TestEnsureAlwaysVisibleScreenFieldsAddsDescriptionBetweenTitleAndStatus(t *testing.T) {
@@ -13,7 +14,7 @@ func TestEnsureAlwaysVisibleScreenFieldsAddsDescriptionBetweenTitleAndStatus(t *
 		{FieldType: "custom", FieldIdentifier: "42", DisplayOrder: 9},
 	}
 
-	got := ensureAlwaysVisibleScreenFields(12, fields)
+	got := services.EnsureAlwaysVisibleScreenFields(12, fields)
 	gotIdentifiers := fieldIdentifiers(got)
 	wantIdentifiers := []string{"title", "description", "status", "42"}
 	if !equalStrings(gotIdentifiers, wantIdentifiers) {
@@ -35,7 +36,7 @@ func TestEnsureAlwaysVisibleScreenFieldsAddsAllLockedFieldsToCustomOnlyScreen(t 
 		{FieldType: "custom", FieldIdentifier: "42"},
 	}
 
-	got := ensureAlwaysVisibleScreenFields(12, fields)
+	got := services.EnsureAlwaysVisibleScreenFields(12, fields)
 	gotIdentifiers := fieldIdentifiers(got)
 	wantIdentifiers := []string{"title", "description", "status", "42"}
 	if !equalStrings(gotIdentifiers, wantIdentifiers) {
@@ -50,7 +51,7 @@ func TestEnsureAlwaysVisibleScreenFieldsNormalizesStatusRequiredFalse(t *testing
 		{FieldType: "system", FieldIdentifier: "status", IsRequired: true, FieldWidth: "full"},
 	}
 
-	got := ensureAlwaysVisibleScreenFields(12, fields)
+	got := services.EnsureAlwaysVisibleScreenFields(12, fields)
 	if !got[0].IsRequired || got[0].FieldWidth != "full" {
 		t.Fatalf("title = required %v width %q, want required true width full", got[0].IsRequired, got[0].FieldWidth)
 	}

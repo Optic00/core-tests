@@ -66,12 +66,14 @@ export class KnowledgePage {
 
   async gotoIndex(workspaceId: string) {
     await this.page.goto(`/workspaces/${workspaceId}/pages`);
-    await this.page.waitForLoadState('networkidle');
+    // Bounded settle: the pages index fetch + font swap shift the sidebar
+    // layout; geometry-reading tests need it stable before measuring.
+    await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   }
 
   async gotoPage(workspaceId: string, pageId: number | string) {
     await this.page.goto(`/workspaces/${workspaceId}/pages/${pageId}`);
-    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   }
 
   /**
@@ -99,8 +101,13 @@ export class KnowledgePage {
   async createChildPage(workspaceId: string, title: string): Promise<number> {
     const parentId = this.getCurrentPageId();
     return this.createPage(workspaceId, title, async () => {
-      await this.treeItem(parentId).locator('[data-testid="page-kebab"]').click();
-      await this.page.locator('[data-menu-item]', { hasText: 'Add child' }).first().click();
+      await this.treeItem(parentId)
+        .locator('[data-testid="page-kebab"]')
+        .click();
+      await this.page
+        .locator('[data-menu-item]', { hasText: 'Add child' })
+        .first()
+        .click();
     });
   }
 
@@ -116,30 +123,31 @@ export class KnowledgePage {
   private async createPage(
     workspaceId: string,
     title: string,
-    triggerCreate: () => Promise<void>
+    triggerCreate: () => Promise<void>,
   ): Promise<number> {
     const createResponse = this.page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        /\/api\/workspaces\/\d+\/pages$/.test(res.url()) &&
+        /\/api\/v2\/workspaces\/\d+\/pages$/.test(res.url()) &&
         res.ok(),
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
 
     await triggerCreate();
     const response = await createResponse;
-    const body = (await response.json()) as { id: number };
-    const newId = body.id;
+    const body = (await response.json()) as { data: { id: number } };
+    const newId = body.data.id;
 
-    await this.page.waitForURL(new RegExp(`/workspaces/${workspaceId}/pages/${newId}\\b`), {
-      timeout: 10000,
-    });
+    await this.page.waitForURL(
+      new RegExp(`/workspaces/${workspaceId}/pages/${newId}\\b`),
+      { timeout: 10000 },
+    );
     // The placeholder title ("Untitled") is what the server stored;
     // wait until PagesView mounts the title input then replace it.
     await this.titleInput.waitFor({ state: 'visible', timeout: 10000 });
     await this.titleInput.fill(title);
     // Autosave debounces ~1.2s after the last input — wait for the
-    // resulting PUT before returning so subsequent assertions see the
+    // resulting PATCH before returning so subsequent assertions see the
     // persisted title.
     await this.waitForAutosave(workspaceId, newId);
     await expect(this.titleInput).toHaveValue(title, { timeout: 10000 });
@@ -147,17 +155,17 @@ export class KnowledgePage {
   }
 
   /**
-   * Wait for the next autosave PUT to land for the given page. Used
+   * Wait for the next autosave PATCH to land for the given page. Used
    * after a programmatic title/content edit when the assertion needs
    * the server state to catch up.
    */
   async waitForAutosave(workspaceId: string, pageId: number) {
     await this.page.waitForResponse(
       (res) =>
-        res.request().method() === 'PUT' &&
-        res.url().endsWith(`/api/workspaces/${workspaceId}/pages/${pageId}`) &&
+        res.request().method() === 'PATCH' &&
+        res.url().endsWith(`/api/v2/workspaces/${workspaceId}/pages/${pageId}`) &&
         res.ok(),
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
     await expect(this.saveStatus).toHaveAttribute('data-status', 'saved', {
       timeout: 5000,
@@ -172,14 +180,20 @@ export class KnowledgePage {
    * via the API and reload to assert end-to-end persistence.
    */
   async setContentViaAPI(workspaceId: string, pageId: number, title: string, content: string) {
-    const response = await this.page.request.put(`/api/workspaces/${workspaceId}/pages/${pageId}`, {
-      data: { title, content },
-    });
+    const response = await this.page.request.patch(
+      `/api/v2/workspaces/${workspaceId}/pages/${pageId}`,
+      {
+        headers: { 'Content-Type': 'application/merge-patch+json' },
+        data: { title, content },
+      },
+    );
     if (!response.ok()) {
-      throw new Error(`setContentViaAPI failed: ${response.status()} ${await response.text()}`);
+      throw new Error(
+        `setContentViaAPI failed: ${response.status()} ${await response.text()}`,
+      );
     }
     await this.page.reload();
-    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
     await expect(this.titleInput).toHaveValue(title, { timeout: 10000 });
   }
 
@@ -218,7 +232,9 @@ export class KnowledgePage {
   async setContent(markdown: string) {
     await this.editor.waitFor({ state: 'visible', timeout: 10000 });
     await this.editor.click();
-    await this.page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await this.page.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+A' : 'Control+A',
+    );
     await this.page.keyboard.press('Delete');
     await this.page.keyboard.insertText(markdown);
   }
@@ -245,8 +261,10 @@ export class KnowledgePage {
     const archiveResponse = this.page.waitForResponse(
       (res) =>
         res.request().method() === 'DELETE' &&
-        res.url().endsWith(`/api/workspaces/${workspaceId}/pages/${pageId}`),
-      { timeout: 10000 }
+        res
+          .url()
+          .endsWith(`/api/v2/workspaces/${workspaceId}/pages/${pageId}`),
+      { timeout: 10000 },
     );
     await this.openToolbarMenuItem('Archive');
     await this.page
@@ -254,22 +272,25 @@ export class KnowledgePage {
       .waitFor({ state: 'visible', timeout: 5000 });
     await this.page.locator('[data-testid="dialog-confirm"]').click();
     await archiveResponse;
-    await this.page.waitForURL(new RegExp(`/workspaces/${workspaceId}/pages$`), { timeout: 10000 });
+    await this.page.waitForURL(
+      new RegExp(`/workspaces/${workspaceId}/pages$`),
+      { timeout: 10000 },
+    );
   }
 
   async openMoveDialog() {
-    // PageMoveDialog fires a /pages/tree GET via its loadCandidates effect
-    // the moment isOpen flips true. Wait for that response so the picker's
-    // options array is populated before the test interacts with it.
+    // Wait for PageMoveDialog to load its options before using the picker.
     const candidatesLoaded = this.page.waitForResponse(
       (res) =>
         res.request().method() === 'GET' &&
-        /\/api\/workspaces\/\d+\/pages\/tree$/.test(res.url()) &&
+        /\/api\/v2\/workspaces\/\d+\/pages(?:\?.*)?$/.test(res.url()) &&
         res.ok(),
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
     await this.openToolbarMenuItem('Move');
-    await this.page.locator('#page-move-picker').waitFor({ state: 'visible', timeout: 5000 });
+    await this.page
+      .locator('#page-move-picker')
+      .waitFor({ state: 'visible', timeout: 5000 });
     await candidatesLoaded;
   }
 
@@ -280,9 +301,11 @@ export class KnowledgePage {
     const moveResponse = this.page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        res.url().includes(`/api/workspaces/${workspaceId}/pages/${pageId}/move`) &&
+        res
+          .url()
+          .includes(`/api/v2/workspaces/${workspaceId}/pages/${pageId}/move`) &&
         res.ok(),
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
     await this.page.locator('[data-testid="page-move-confirm"]').click();
     await moveResponse;
@@ -298,9 +321,11 @@ export class KnowledgePage {
     const moveResponse = this.page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        res.url().includes(`/api/workspaces/${workspaceId}/pages/${pageId}/move`) &&
+        res
+          .url()
+          .includes(`/api/v2/workspaces/${workspaceId}/pages/${pageId}/move`) &&
         res.ok(),
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
     await this.page.locator('#page-move-picker').press('Enter');
     await moveResponse;

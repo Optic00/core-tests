@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   clearError: vi.fn(),
   getPublicStatus: vi.fn(),
   initStatus: vi.fn(),
+  startLogin: vi.fn(),
 }));
 
 vi.mock('../stores', async () => {
@@ -14,11 +15,16 @@ vi.mock('../stores', async () => {
     login: vi.fn(),
   });
   const ssoStore = Object.assign(
-    writable({ enabled: false, providers: [], statusLoading: false }),
+    writable({
+      enabled: true,
+      providerName: 'Acme SSO',
+      providers: [{ slug: 'acme', name: 'Acme SSO', provider_type: 'oidc' }],
+      statusLoading: false,
+    }),
     {
       initStatus: mocks.initStatus,
       checkForError: vi.fn().mockReturnValue(null),
-      startLogin: vi.fn(),
+      startLogin: mocks.startLogin,
     }
   );
   return { authStore, ssoStore };
@@ -48,25 +54,30 @@ vi.mock('../utils/loginUtils.js', () => ({
   performFidoLogin: vi.fn(),
 }));
 vi.mock('../stores/i18n.svelte.js', () => ({
-  t: (key) => key,
+  t: (key, params = {}) => {
+    if (key === 'auth.staySignedIn') return 'Keep me signed in to Windshift for 30 days';
+    if (key === 'auth.continueWith') return `Continue with ${params.provider}`;
+    return key;
+  },
 }));
 
 import LoginDialog from './LoginDialog.svelte';
 
 beforeEach(() => {
   mocks.clearError.mockClear();
+  mocks.startLogin.mockClear();
   mocks.initStatus.mockReset().mockResolvedValue(undefined);
   mocks.getPublicStatus.mockReset().mockResolvedValue({
-    hide_password_form: false,
-    sso_enabled: false,
+    hide_password_form: true,
+    sso_enabled: true,
     passkey_required: false,
   });
 });
 
-describe('LoginDialog option loading', () => {
+describe('LoginDialog SSO remember-me', () => {
   test('keeps the password form unavailable until login options finish loading', async () => {
     let resolvePolicy;
-    let resolveOptions;
+    let resolveSSO;
     mocks.getPublicStatus.mockReturnValue(
       new Promise((resolve) => {
         resolvePolicy = resolve;
@@ -74,7 +85,7 @@ describe('LoginDialog option loading', () => {
     );
     mocks.initStatus.mockReturnValue(
       new Promise((resolve) => {
-        resolveOptions = resolve;
+        resolveSSO = resolve;
       })
     );
 
@@ -88,8 +99,27 @@ describe('LoginDialog option loading', () => {
       sso_enabled: false,
       passkey_required: false,
     });
-    resolveOptions();
+    resolveSSO();
 
     await waitFor(() => expect(screen.getByTestId('login-password-form')).toBeInTheDocument());
+  });
+
+  test('shows the 30-day choice before SSO and forwards it in SSO-only mode', async () => {
+    render(LoginDialog, { props: { isOpen: true } });
+
+    const rememberMe = await screen.findByRole('checkbox', {
+      name: 'Keep me signed in to Windshift for 30 days',
+    });
+    const ssoButton = screen.getByRole('button', { name: 'Continue with Acme SSO' });
+
+    expect(
+      rememberMe.compareDocumentPosition(ssoButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Password login is disabled')).toBeInTheDocument());
+
+    await fireEvent.click(rememberMe);
+    await fireEvent.click(ssoButton);
+
+    expect(mocks.startLogin).toHaveBeenCalledWith(true);
   });
 });

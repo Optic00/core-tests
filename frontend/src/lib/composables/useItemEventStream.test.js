@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { createConnectionReconcileTracker } from './useItemEventStream.svelte.js';
+import {
+  createConnectionReconcileTracker,
+  normalizeItemEventStreamID,
+} from './useItemEventStream.svelte.js';
+
+describe('normalizeItemEventStreamID', () => {
+  it('keeps route and API representations on the same stream key', () => {
+    expect(normalizeItemEventStreamID('42')).toBe('42');
+    expect(normalizeItemEventStreamID(42)).toBe('42');
+  });
+
+  it('rejects missing item IDs', () => {
+    expect(normalizeItemEventStreamID(null)).toBeNull();
+    expect(normalizeItemEventStreamID(0)).toBeNull();
+  });
+});
 
 describe('createConnectionReconcileTracker', () => {
   it('does not reconcile the initial healthy connection', () => {

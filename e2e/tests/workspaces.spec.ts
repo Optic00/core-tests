@@ -53,7 +53,7 @@ test.describe('Workspace Management', () => {
       await workspacePage.clickCreate();
       await workspacePage.fillForm(duplicateWorkspace);
       const createResponse = workspacePage.page.waitForResponse(
-        (res) => res.request().method() === 'POST' && res.url().includes('/api/workspaces'),
+        (res) => res.request().method() === 'POST' && res.url().includes('/api/v2/workspaces'),
         { timeout: 10000 }
       );
       await workspacePage.clickSave();
@@ -97,7 +97,7 @@ test.describe('Workspace Management', () => {
       await workspacePage.clickWorkspace(testWorkspace.name);
 
       // Should navigate to workspace detail page (URL uses numeric ID)
-      await workspacePage.page.waitForLoadState('networkidle');
+
 
       // Verify we're on a workspace page
       await expect(workspacePage.page).toHaveURL(/\/workspaces\/\d+/);
@@ -142,17 +142,15 @@ test.describe('Workspace Management', () => {
       // the settings textarea directly.
       const workspaceId = await workspacePage.getWorkspaceId(testWorkspace.name);
       await page.goto(`/workspaces/${workspaceId}/settings/general`);
-      await page.waitForLoadState('networkidle');
+
       await expect(page.locator('#workspace-description')).toHaveValue(newDescription, {
         timeout: 5000,
       });
     });
 
-    test('should update all workspace fields', async () => {
-      // Key max length is 10 chars, so use a short updated key
+    test('should update all workspace fields', async ({ page }) => {
       const updatedData = {
         name: `${testWorkspace.name} - Fully Updated`,
-        key: 'UPDWS',
         description: 'Completely updated workspace',
       };
 
@@ -161,6 +159,14 @@ test.describe('Workspace Management', () => {
       // Verify name was updated
       await workspacePage.goto();
       await workspacePage.verifyWorkspaceExists(updatedData.name);
+
+      // The key is immutable after creation: it must still hold the original value.
+      const workspaceId = await workspacePage.getWorkspaceId(updatedData.name);
+      await page.goto(`/workspaces/${workspaceId}/settings/general`);
+
+      const keyInput = page.getByTestId('workspace-key-input');
+      await expect(keyInput).toBeDisabled();
+      await expect(keyInput).toHaveValue(testWorkspace.key);
     });
   });
 
@@ -180,16 +186,13 @@ test.describe('Workspace Management', () => {
     test('should confirm before deleting', async () => {
       const workspaceId = await workspacePage.getWorkspaceId(testWorkspace.name);
       await workspacePage.page.goto(`/workspaces/${workspaceId}/settings/danger`);
-      await workspacePage.page.waitForLoadState('networkidle');
+
 
       // Reveal the confirmation form.
-      await workspacePage.page
-        .locator('button.bg-red-600')
-        .filter({ hasText: 'Remove Workspace' })
-        .click();
+      await workspacePage.page.getByTestId('delete-workspace-open').click();
 
       const confirmInput = workspacePage.page.locator('#delete-confirm');
-      const confirmButton = workspacePage.page.locator('button:has-text("Yes, Remove Workspace")');
+      const confirmButton = workspacePage.page.getByTestId('delete-workspace-confirm');
       await expect(confirmInput).toBeVisible({ timeout: 5000 });
 
       // The confirm button is wired to `disabled={deleteConfirmText !== workspace.name}`
@@ -210,12 +213,9 @@ test.describe('Workspace Management', () => {
     test('should cancel workspace deletion', async () => {
       const workspaceId = await workspacePage.getWorkspaceId(testWorkspace.name);
       await workspacePage.page.goto(`/workspaces/${workspaceId}/settings/danger`);
-      await workspacePage.page.waitForLoadState('networkidle');
 
-      await workspacePage.page
-        .locator('button.bg-red-600')
-        .filter({ hasText: 'Remove Workspace' })
-        .click();
+
+      await workspacePage.page.getByTestId('delete-workspace-open').click();
 
       const confirmInput = workspacePage.page.locator('#delete-confirm');
       await expect(confirmInput).toBeVisible({ timeout: 5000 });
@@ -330,7 +330,7 @@ test.describe('Workspace Management', () => {
       const backlogLink = workspacePage.page.locator('a:has-text("Backlog")');
       await expect(backlogLink).toBeVisible({ timeout: 5000 });
       await backlogLink.click();
-      await workspacePage.page.waitForLoadState('networkidle');
+
 
       // Should be on backlog page (URL uses numeric ID, not key)
       await expect(workspacePage.page).toHaveURL(/\/workspaces\/\d+\/backlog/);

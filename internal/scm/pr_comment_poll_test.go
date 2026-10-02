@@ -37,7 +37,7 @@ func (p *prCommentProvider) UpdateIssue(_ context.Context, _, _ string, _ int, _
 func (p *prCommentProvider) CreateIssueComment(_ context.Context, _, _ string, _ int, _ string) (int64, error) {
 	panic("CreateIssueComment not implemented for prCommentProvider")
 }
-func (p *prCommentProvider) UpdateIssueComment(_ context.Context, _, _ string, _ int64, _ string) error {
+func (p *prCommentProvider) UpdateIssueComment(_ context.Context, _, _ string, _ int, _ int64, _ string) error {
 	panic("UpdateIssueComment not implemented for prCommentProvider")
 }
 func (p *prCommentProvider) ListRepoLabels(_ context.Context, _, _ string) ([]IssueLabel, error) {

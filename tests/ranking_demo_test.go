@@ -17,7 +17,7 @@ func TestRankingDemo(t *testing.T) {
 		"key":  shortKey("DEMO"),
 	}
 
-	resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+	resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 	var workspace map[string]interface{}
 	DecodeJSON(t, resp, &workspace)
 	resp.Body.Close()
@@ -31,8 +31,6 @@ func TestRankingDemo(t *testing.T) {
 			"workspace_id": workspaceID,
 			"title":        fmt.Sprintf("Demo Item %d", i+1),
 			"description":  fmt.Sprintf("Item for demonstrating rerank logging"),
-			"status":       "open",
-			"priority":     "medium",
 		}
 
 		resp := MakeAuthRequest(t, server, http.MethodPost, "/items", itemData)
@@ -88,8 +86,8 @@ func TestRankingDemo(t *testing.T) {
 			"next_item_id": int(itemMaps[0]["id"].(float64)),
 		}
 
-		rerankResp := MakeAuthRequest(t, server, http.MethodPut,
-			fmt.Sprintf("/items/%d/frac-index", itemID), rerankData)
+		rerankResp := MakeAuthRequest(t, server, http.MethodPatch,
+			fmt.Sprintf("/v2/items/%d/rank", itemID), rerankData)
 
 		var result map[string]interface{}
 		DecodeJSON(t, rerankResp, &result)
@@ -121,11 +119,11 @@ func TestRankingDemo(t *testing.T) {
 		}
 
 		rerankData := map[string]interface{}{
-			"prev_item_id": int(itemMaps[len(itemMaps)-1]["id"].(float64)),
+			"previous_item_id": int(itemMaps[len(itemMaps)-1]["id"].(float64)),
 		}
 
-		rerankResp := MakeAuthRequest(t, server, http.MethodPut,
-			fmt.Sprintf("/items/%d/frac-index", itemID), rerankData)
+		rerankResp := MakeAuthRequest(t, server, http.MethodPatch,
+			fmt.Sprintf("/v2/items/%d/rank", itemID), rerankData)
 
 		var result map[string]interface{}
 		DecodeJSON(t, rerankResp, &result)
@@ -161,12 +159,12 @@ func TestRankingDemo(t *testing.T) {
 		}
 
 		rerankData := map[string]interface{}{
-			"prev_item_id": int(itemMaps[2]["id"].(float64)),
-			"next_item_id": int(itemMaps[3]["id"].(float64)),
+			"previous_item_id": int(itemMaps[2]["id"].(float64)),
+			"next_item_id":     int(itemMaps[3]["id"].(float64)),
 		}
 
-		rerankResp := MakeAuthRequest(t, server, http.MethodPut,
-			fmt.Sprintf("/items/%d/frac-index", itemID), rerankData)
+		rerankResp := MakeAuthRequest(t, server, http.MethodPatch,
+			fmt.Sprintf("/v2/items/%d/rank", itemID), rerankData)
 
 		var result map[string]interface{}
 		DecodeJSON(t, rerankResp, &result)

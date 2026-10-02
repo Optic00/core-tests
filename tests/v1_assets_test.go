@@ -139,11 +139,12 @@ func TestV1Assets_HappyPath_AdminToken(t *testing.T) {
 			fmt.Sprintf("/rest/api/v1/asset-sets/%d/assets", setID), nil)
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusOK)
-		var out map[string]interface{}
+		var out struct {
+			Data []map[string]interface{} `json:"data"`
+		}
 		DecodeJSON(t, resp, &out)
-		data, _ := out["data"].([]interface{})
-		if len(data) != 1 {
-			t.Fatalf("expected 1 row, got %d", len(data))
+		if len(out.Data) != 1 {
+			t.Fatalf("expected 1 row, got %d", len(out.Data))
 		}
 	})
 

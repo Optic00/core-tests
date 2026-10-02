@@ -62,7 +62,10 @@ describe('findDeployedBuild', () => {
     await expect(
       findDeployedBuild({ fetchImpl, doc: shellDoc('./_app/index-B2i45HSq.js'), url: SHELL_URL })
     ).resolves.toBe('./_app/index-DCj0I5Rh.js');
-    expect(fetchImpl).toHaveBeenCalledWith(SHELL_URL, expect.objectContaining({ cache: 'reload' }));
+    expect(fetchImpl).toHaveBeenCalledWith(
+      SHELL_URL,
+      expect.objectContaining({ cache: 'reload' })
+    );
   });
 
   it('reports nothing while the page runs the deployed build', async () => {

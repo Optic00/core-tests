@@ -60,7 +60,7 @@ test.describe('Create-modal picker keyboard flow (WI-445 / WI-455)', () => {
       const trigger = page.getByTestId(chip);
       const option = page.getByTestId(`${chip}-option`).first();
       const pickerFocusTarget = page.getByTestId(
-        chip === 'create-workspace-chip' ? `${chip}-search` : `${chip}-listbox`
+        chip === 'create-workspace-chip' ? `${chip}-search` : `${chip}-listbox`,
       );
 
       // A user may open the picker with the pointer and continue from the

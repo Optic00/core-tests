@@ -37,7 +37,7 @@ test.describe('Page tree drag-and-drop reparenting', () => {
     const reparented = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().endsWith(`/api/workspaces/${workspaceId}/pages/${firstId}/move`) &&
+        response.url().endsWith(`/api/v2/workspaces/${workspaceId}/pages/${firstId}/move`) &&
         response.ok()
     );
     await first.dragTo(second, {
@@ -58,15 +58,19 @@ test.describe('Page tree drag-and-drop reparenting', () => {
     const reordered = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().endsWith(`/api/workspaces/${workspaceId}/pages/${thirdId}/move`) &&
+        response.url().endsWith(`/api/v2/workspaces/${workspaceId}/pages/${thirdId}/move`) &&
         response.ok()
     );
-    await page.mouse.move(thirdBox.x + thirdBox.width / 2, thirdBox.y + thirdBox.height / 2);
+    await third.hover();
     await page.mouse.down();
     await page.mouse.move(
       collapsedSecondBox.x + collapsedSecondBox.width / 2,
       collapsedSecondBox.y + collapsedSecondBox.height / 2,
       { steps: 8 }
+    );
+    await page.mouse.move(
+      collapsedSecondBox.x + collapsedSecondBox.width / 2,
+      collapsedSecondBox.y + collapsedSecondBox.height / 2
     );
 
     await expect(second).toHaveAttribute('data-expanded', 'true', {

@@ -466,8 +466,11 @@ func TestWorkflowService_IsValidStatusTransition_NoWorkflow(t *testing.T) {
 		VALUES ('No Workflow Workspace', 'NWW', 'No workflow', TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`)
 
-	// Remove default workflow
+	// Remove every workflow binding: no default workflow flag and no config
+	// set workflow, so the full canonical chain (assigned → default config
+	// set → global default workflow) resolves to nothing.
 	db.Exec("UPDATE workflows SET is_default = false")
+	db.Exec("UPDATE configuration_sets SET workflow_id = NULL")
 
 	// Without any workflow, any transition should be allowed
 	valid, err := service.IsValidStatusTransition(workspaceID, nil, 1, 2)
@@ -579,8 +582,11 @@ func TestWorkflowService_GetAvailableTransitions_NoWorkflow(t *testing.T) {
 		VALUES ('No Workflow Workspace 2', 'NW2', 'No workflow', TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`)
 
-	// Remove default workflow
+	// Remove every workflow binding: no default workflow flag and no config
+	// set workflow, so the full canonical chain (assigned → default config
+	// set → global default workflow) resolves to nothing.
 	db.Exec("UPDATE workflows SET is_default = false")
+	db.Exec("UPDATE configuration_sets SET workflow_id = NULL")
 
 	transitions, err := service.GetAvailableTransitions(workspaceID, nil, 1)
 	if err != nil {

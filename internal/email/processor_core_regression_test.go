@@ -63,13 +63,13 @@ func TestTrackingPreclaimRecoversOnlyStaleIncompleteClaims(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	claimed, err := processor.preclaimTracking(ctx, message, channelID, message.MessageID)
-	if err != nil || !claimed {
-		t.Fatalf("first preclaim = (%v, %v), want (true, nil)", claimed, err)
+	claim, err := processor.preclaimTracking(ctx, message, channelID, message.MessageID, 0)
+	if err != nil || claim != trackingClaimAcquired {
+		t.Fatalf("first preclaim = (%v, %v), want (acquired, nil)", claim, err)
 	}
-	claimed, err = processor.preclaimTracking(ctx, message, channelID, message.MessageID)
-	if err != nil || claimed {
-		t.Fatalf("fresh duplicate preclaim = (%v, %v), want (false, nil)", claimed, err)
+	claim, err = processor.preclaimTracking(ctx, message, channelID, message.MessageID, 0)
+	if err != nil || claim != trackingClaimInProgress {
+		t.Fatalf("fresh duplicate preclaim = (%v, %v), want (in progress, nil)", claim, err)
 	}
 
 	if _, err := db.ExecWrite(`
@@ -78,9 +78,9 @@ func TestTrackingPreclaimRecoversOnlyStaleIncompleteClaims(t *testing.T) {
 	`, time.Now().Add(-trackingClaimStaleAfter-time.Minute), channelID, message.MessageID); err != nil {
 		t.Fatalf("age incomplete claim: %v", err)
 	}
-	claimed, err = processor.preclaimTracking(ctx, message, channelID, message.MessageID)
-	if err != nil || !claimed {
-		t.Fatalf("stale incomplete preclaim = (%v, %v), want (true, nil)", claimed, err)
+	claim, err = processor.preclaimTracking(ctx, message, channelID, message.MessageID, 0)
+	if err != nil || claim != trackingClaimAcquired {
+		t.Fatalf("stale incomplete preclaim = (%v, %v), want (acquired, nil)", claim, err)
 	}
 
 	var workspaceID, itemID int
@@ -99,9 +99,9 @@ func TestTrackingPreclaimRecoversOnlyStaleIncompleteClaims(t *testing.T) {
 	`, itemID, time.Now().Add(-trackingClaimStaleAfter-time.Minute), channelID, message.MessageID); err != nil {
 		t.Fatalf("complete claim: %v", err)
 	}
-	claimed, err = processor.preclaimTracking(ctx, message, channelID, message.MessageID)
-	if err != nil || claimed {
-		t.Fatalf("completed preclaim = (%v, %v), want (false, nil)", claimed, err)
+	claim, err = processor.preclaimTracking(ctx, message, channelID, message.MessageID, 0)
+	if err != nil || claim != trackingClaimCompleted {
+		t.Fatalf("completed preclaim = (%v, %v), want (completed, nil)", claim, err)
 	}
 }
 

@@ -25,7 +25,7 @@ func TestAgentRunner_ReviewFlagged_UnrecoveredUnknownTool(t *testing.T) {
 	var events []string
 	result := r.Run(ctx, RunInput{RunID: 1}, collectEvents(&events))
 	if result.Status != models.AgentRunStatusSucceeded {
-		t.Fatalf("status: want succeeded, got %q (err=%q)", result.Status, result.Error)
+		t.Fatalf("status: want succeeded, got %q (err=%q); events=%q", result.Status, result.Error, events)
 	}
 
 	var flagged []string
@@ -57,7 +57,7 @@ func TestAgentRunner_ReviewFlagged_RecoveredNoFlag(t *testing.T) {
 	var events []string
 	result := r.Run(ctx, RunInput{RunID: 2}, collectEvents(&events))
 	if result.Status != models.AgentRunStatusSucceeded {
-		t.Fatalf("status: want succeeded, got %q (err=%q)", result.Status, result.Error)
+		t.Fatalf("status: want succeeded, got %q (err=%q); events=%q", result.Status, result.Error, events)
 	}
 	for _, ev := range events {
 		if strings.HasPrefix(ev, "review_flagged|") {

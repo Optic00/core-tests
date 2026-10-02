@@ -1,4 +1,4 @@
-import { expect, test } from '../fixtures/context-path';
+import { test, expect } from '../fixtures/context-path';
 
 /**
  * WI-51: the "A" and "T" keyboard hints on the Security page must actually
@@ -12,7 +12,7 @@ const DIALOG = '[role="dialog"]';
 test.describe('Security page shortcuts', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/security');
-    await page.waitForLoadState('networkidle');
+
     // The page header is the deterministic settle signal — wait for it
     // before pressing keys.
     await expect(page.getByRole('heading', { name: /security/i }).first()).toBeVisible();

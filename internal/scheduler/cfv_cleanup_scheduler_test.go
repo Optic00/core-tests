@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"windshift/internal/services"
 	"windshift/internal/testutils"
 )
 
@@ -32,12 +33,15 @@ func TestFieldScrubRemovesDeletedFieldFromItemsAndAssets(t *testing.T) {
 	if err := db.QueryRow(`INSERT INTO asset_types (set_id, name) VALUES (?, 'Server') RETURNING id`, assetSetID).Scan(&assetTypeID); err != nil {
 		t.Fatalf("insert asset type: %v", err)
 	}
-	if err := db.QueryRow(`
-		INSERT INTO items (workspace_id, workspace_item_number, title, description, frac_index, custom_field_values)
-		VALUES (?, 1, 'Cleanup item', '', 'a', '{"91":"remove","7":"keep"}') RETURNING id
-	`, workspaceID).Scan(&itemID); err != nil {
-		t.Fatalf("insert item: %v", err)
+	createdItemID, err := services.CreateItem(db, services.ItemCreationParams{
+		WorkspaceID:           workspaceID,
+		Title:                 "Cleanup item",
+		CustomFieldValuesJSON: `{"91":"remove","7":"keep"}`,
+	})
+	if err != nil {
+		t.Fatalf("create item: %v", err)
 	}
+	itemID = int(createdItemID)
 	if err := db.QueryRow(`
 		INSERT INTO assets (set_id, asset_type_id, title, custom_field_values)
 		VALUES (?, ?, 'Cleanup asset', '{"91":"remove","7":"keep"}') RETURNING id

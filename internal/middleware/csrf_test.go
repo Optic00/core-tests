@@ -210,3 +210,11 @@ func TestCSRFProtection(t *testing.T) {
 		})
 	}
 }
+
+func TestDisabledCSRFValidatorAllowsUnsafeRequestWithoutOriginHeaders(t *testing.T) {
+	request := httptest.NewRequest(http.MethodDelete, "/api/v2/items/1", nil)
+
+	if !NewDisabledCSRFValidator().Allows(request) {
+		t.Fatal("disabled validator rejected request")
+	}
+}

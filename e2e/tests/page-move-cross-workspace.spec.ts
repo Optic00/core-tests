@@ -1,5 +1,5 @@
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { generateWorkspace } from '../fixtures/test-data';
 import { KnowledgePage } from '../pages/knowledge.page';
 
@@ -7,15 +7,19 @@ test('moves a page subtree to a selected workspace and parent', async ({ page, r
   const source = await createWorkspaceViaAPI(request, generateWorkspace('page-move-source'));
   const destination = await createWorkspaceViaAPI(
     request,
-    generateWorkspace('page-move-destination')
+    generateWorkspace('page-move-destination'),
   );
 
-  const createPage = async (workspaceId: number, title: string, parentId: number | null = null) => {
-    const response = await request.post(`/api/workspaces/${workspaceId}/pages`, {
+  const createPage = async (
+    workspaceId: number,
+    title: string,
+    parentId: number | null = null,
+  ) => {
+    const response = await request.post(`/api/v2/workspaces/${workspaceId}/pages`, {
       data: { title, content: `${title} body`, parent_id: parentId },
     });
     expect(response.ok(), await response.text()).toBeTruthy();
-    return response.json() as Promise<{ id: number }>;
+    return (await response.json()).data as { id: number };
   };
 
   const sourceRoot = await createPage(source.id, 'Portable handbook');
@@ -29,8 +33,8 @@ test('moves a page subtree to a selected workspace and parent', async ({ page, r
   const destinationTreeLoaded = page.waitForResponse(
     (response) =>
       response.request().method() === 'GET' &&
-      response.url().endsWith(`/api/workspaces/${destination.id}/pages/tree`) &&
-      response.ok()
+      response.url().endsWith(`/api/v2/workspaces/${destination.id}/pages`) &&
+      response.ok(),
   );
   await page.locator('#page-move-workspace-picker').click();
   await page.getByTestId(`page-move-workspace-option-${destination.id}`).click();
@@ -46,8 +50,8 @@ test('moves a page subtree to a selected workspace and parent', async ({ page, r
   const moveResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      response.url().endsWith(`/api/workspaces/${source.id}/pages/${sourceRoot.id}/move`) &&
-      response.ok()
+      response.url().endsWith(`/api/v2/workspaces/${source.id}/pages/${sourceRoot.id}/move`) &&
+      response.ok(),
   );
   await page.getByTestId('page-move-confirm').click();
   await moveResponse;
@@ -60,6 +64,6 @@ test('moves a page subtree to a selected workspace and parent', async ({ page, r
   await expect(knowledge.treeItem(sourceChild.id)).toBeVisible();
   await expect(knowledge.treeItem(sourceChild.id)).toHaveAttribute(
     'style',
-    /padding-left:\s*2\.5rem/
+    /padding-left:\s*2\.5rem/,
   );
 });

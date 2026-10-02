@@ -42,22 +42,13 @@ func TestItemDeletion_CookieCascadeAndRESTV1Contract(t *testing.T) {
 
 			var response *http.Response
 			if surface == "cookie" {
-				response = MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/items/%d/cascade", parentID), nil)
+				response = MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/v2/items/%d?cascade=true", parentID), nil)
 			} else {
 				response = MakeBearerRequest(t, server, http.MethodDelete, fmt.Sprintf("/rest/api/v1/items/%d", parentID), nil)
 			}
 			defer response.Body.Close()
 
-			if surface == "cookie" {
-				AssertStatusCode(t, response, http.StatusOK)
-				var result map[string]interface{}
-				DecodeJSON(t, response, &result)
-				if result["deletedCount"] != float64(2) {
-					t.Fatalf("cookie deletedCount = %v, want 2", result["deletedCount"])
-				}
-			} else {
-				AssertStatusCode(t, response, http.StatusNoContent)
-			}
+			AssertStatusCode(t, response, http.StatusNoContent)
 
 			for _, itemID := range []int{parentID, childID} {
 				getResponse := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/items/%d", itemID), nil)

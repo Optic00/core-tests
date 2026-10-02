@@ -90,7 +90,7 @@ func newRefreshSessionFixture(t *testing.T) (*testutils.TestDB, *auth.SessionMan
 	if err := db.QueryRow(`SELECT id FROM users ORDER BY id LIMIT 1`).Scan(&userID); err != nil {
 		t.Fatalf("find fixture user: %v", err)
 	}
-	manager := auth.NewSessionManager(db, false, false, nil, "auth-refresh-test-secret", "strict")
+	manager := auth.NewSessionManagerWithValidationCacheTTL(db, false, false, nil, "auth-refresh-test-secret", "strict", auth.DefaultSessionValidationCacheTTL)
 	session, err := manager.CreateSession(userID, refreshSessionTestIP, "test-agent", false)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)

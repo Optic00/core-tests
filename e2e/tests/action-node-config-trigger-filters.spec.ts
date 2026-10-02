@@ -1,29 +1,30 @@
+import { test, expect } from '../fixtures/errors';
+import type { APIRequestContext } from '../fixtures/context-path';
+import { createWorkspaceViaAPI, listLinkTypesViaAPI } from '../fixtures/api-helpers';
 import {
-  chooseSelectOption,
   createActionViaAPI,
   getActionViaAPI,
   openActionEditor,
-  saveAction,
   selectNodeByType,
+  saveAction,
+  chooseSelectOption,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI, listLinkTypesViaAPI } from '../fixtures/api-helpers';
-import type { APIRequestContext } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/errors';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 const headers = { 'Sec-Fetch-Site': 'same-origin' };
 
 async function workspaceItemTypes(request: APIRequestContext, wsId: number) {
-  const resp = await request.get(`${BASE_URL}/api/item-types?workspace_id=${wsId}`, { headers });
+  const resp = await request.get(`${BASE_URL}/api/v2/workspaces/${wsId}/item-types`, { headers });
   expect(resp.ok(), `item types fetch failed: ${resp.status()}`).toBeTruthy();
   const body = await resp.json();
   return (body.data ?? body) as Array<{ id: number; name: string }>;
 }
 
 async function workspaceStatuses(request: APIRequestContext, wsId: number) {
-  const resp = await request.get(`${BASE_URL}/api/workspaces/${wsId}/statuses`, { headers });
+  const resp = await request.get(`${BASE_URL}/api/v2/workspaces/${wsId}/statuses`, { headers });
   expect(resp.ok()).toBeTruthy();
-  return (await resp.json()) as Array<{ id: number; name: string }>;
+  const body = await resp.json();
+  return (body.data ?? body) as Array<{ id: number; name: string }>;
 }
 
 function triggerOnlyAction(stamp: number, triggerType: string, triggerConfig: object = {}) {
@@ -63,11 +64,7 @@ test.describe('Action editor — trigger filters', () => {
     expect(itemTypes.length, 'workspace has item types').toBeGreaterThan(0);
     const chosen = itemTypes[0];
 
-    const action = await createActionViaAPI(
-      request,
-      ws.id,
-      triggerOnlyAction(stamp, 'item_created')
-    );
+    const action = await createActionViaAPI(request, ws.id, triggerOnlyAction(stamp, 'item_created'));
 
     await openActionEditor(page, ws.id, action.id);
     await selectNodeByType(page, 'trigger');
@@ -98,11 +95,7 @@ test.describe('Action editor — trigger filters', () => {
     const linkTypes = await listLinkTypesViaAPI(request);
     const chosen = linkTypes.find((lt) => lt.name === 'Relates To') ?? linkTypes[0];
 
-    const action = await createActionViaAPI(
-      request,
-      ws.id,
-      triggerOnlyAction(stamp, 'item_linked')
-    );
+    const action = await createActionViaAPI(request, ws.id, triggerOnlyAction(stamp, 'item_linked'));
 
     await openActionEditor(page, ws.id, action.id);
     await selectNodeByType(page, 'trigger');

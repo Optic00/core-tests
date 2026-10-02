@@ -229,7 +229,7 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(null)).toBe('');
   });
 
-  test('uses the locale relative term within 60 seconds', () => {
+  test('"now" within 60 seconds', () => {
     expect(formatRelativeTime('2026-05-12T11:59:30Z')).toBe('now');
   });
 

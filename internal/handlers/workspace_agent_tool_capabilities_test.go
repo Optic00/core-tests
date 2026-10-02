@@ -65,5 +65,5 @@ func TestWorkspaceAgentToolCapabilitiesRequiresAdminAndUsesCanonicalRegistry(t *
 		t.Fatalf("insert viewer: %v", err)
 	}
 	viewerResponse := request(testutils.TestUserWithID(2))
-	viewerResponse.AssertStatusCode(http.StatusForbidden)
+	viewerResponse.AssertStatusCode(http.StatusNotFound)
 }

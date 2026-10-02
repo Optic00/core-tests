@@ -32,6 +32,7 @@ func newTestUserHandler(tdb *testutils.TestDB, permService *services.PermissionS
 			return services.AgentDeactivationResult{}, nil
 		},
 		nil,
+		nil,
 	)
 }
 

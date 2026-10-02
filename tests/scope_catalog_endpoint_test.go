@@ -99,6 +99,47 @@ func TestScopeCatalogEndpointExposesTimeScopes(t *testing.T) {
 	}
 }
 
+func TestScopeCatalogExposesV2ScopesAndOmitsUnusedProjects(t *testing.T) {
+	server, _ := StartTestServer(t, GetDBType())
+	cookie := CreateBearerToken(t, server)
+
+	_, catalog := fetchScopeCatalog(t, server, cookie)
+	byScope := make(map[string]scopeCatalogEntry, len(catalog))
+	for _, entry := range catalog {
+		byScope[entry.Scope] = entry
+	}
+
+	v2Scopes := []string{
+		"statuses:write", "workflows:write", "item-types:write", "priorities:write",
+		"agent-skills:write", "approvals:read", "approvals:write", "links:read", "links:write",
+	}
+	for _, scope := range v2Scopes {
+		entry, ok := byScope[scope]
+		if !ok {
+			t.Errorf("v2 scope %q is not exposed to token minting", scope)
+			continue
+		}
+		if entry.Label == "" || entry.Description == "" || entry.ResourceLabel == "" {
+			t.Errorf("v2 scope %q lacks picker metadata: %+v", scope, entry)
+		}
+	}
+
+	for _, scope := range []string{"projects:read", "projects:write", "projects:delete"} {
+		if _, ok := byScope[scope]; ok {
+			t.Errorf("unused scope %q is still exposed to token minting", scope)
+		}
+	}
+
+	response := makeRequest(t, http.MethodPost, server.APIBase+"/api-tokens", "",
+		map[string]any{"name": "v2-scope-contract", "permissions": v2Scopes},
+		map[string]string{"Cookie": cookie})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("minting a token with all exposed v2 scopes failed: %d - %s", response.StatusCode, string(body))
+	}
+}
+
 // A token minted with the scopes the catalog marks as defaults must be
 // accepted verbatim by the mint endpoint — otherwise the picker's
 // "Agent default" preset would produce a 400.

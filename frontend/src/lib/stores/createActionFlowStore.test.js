@@ -42,21 +42,17 @@ function actionWithNotifyConfig(config) {
 describe('createActionFlowStore notify-user config', () => {
   it('persists one or many recipients using the shared recipients schema', () => {
     const store = notifyStore();
-    store.init(
-      actionWithNotifyConfig({
-        recipient_type: 'specific',
-        recipients: ['21'],
-        message: 'Review it',
-      })
-    );
+    store.init(actionWithNotifyConfig({
+      recipient_type: 'specific',
+      recipients: ['21'],
+      message: 'Review it',
+    }));
 
     const notifyNode = store.nodes.find((node) => node.type === 'notify_user');
     store.updateNodeConfig(notifyNode.id, { recipients: ['21', '22'] });
 
     const saved = store.toApiFormat();
-    const config = JSON.parse(
-      saved.nodes.find((node) => node.node_type === 'notify_user').node_config
-    );
+    const config = JSON.parse(saved.nodes.find((node) => node.node_type === 'notify_user').node_config);
     expect(config).toMatchObject({
       recipient_type: 'specific',
       recipients: ['21', '22'],
@@ -76,27 +72,21 @@ describe('createActionFlowStore notify-user config', () => {
     });
 
     const saved = store.toApiFormat();
-    const config = JSON.parse(
-      saved.nodes.find((node) => node.node_type === 'notify_user').node_config
-    );
+    const config = JSON.parse(saved.nodes.find((node) => node.node_type === 'notify_user').node_config);
     expect(config.recipients).toEqual(['23']);
     expect(config).not.toHaveProperty('user_id');
   });
 
   it('keeps an empty specific-recipient selection empty', () => {
     const store = notifyStore();
-    store.init(
-      actionWithNotifyConfig({
-        recipient_type: 'specific',
-        recipients: [],
-        message: 'Nobody',
-      })
-    );
+    store.init(actionWithNotifyConfig({
+      recipient_type: 'specific',
+      recipients: [],
+      message: 'Nobody',
+    }));
 
     const saved = store.toApiFormat();
-    const config = JSON.parse(
-      saved.nodes.find((node) => node.node_type === 'notify_user').node_config
-    );
+    const config = JSON.parse(saved.nodes.find((node) => node.node_type === 'notify_user').node_config);
     expect(config.recipient_type).toBe('specific');
     expect(config.recipients).toEqual([]);
   });

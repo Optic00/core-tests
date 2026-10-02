@@ -44,14 +44,10 @@ const customFieldDefinitions = [{ id: 43, field_type: 'boolean', name: 'Approved
 describe('shared form model', () => {
   it('initializes default, custom, and virtual values and preserves supplied values', () => {
     expect(
-      initializeFormValues(
-        fields,
-        {
-          title: 'Printer issue',
-          custom_fields: { 42: 'Office blocked', confirmed: true },
-        },
-        customFieldDefinitions
-      )
+      initializeFormValues(fields, {
+        title: 'Printer issue',
+        custom_fields: { 42: 'Office blocked', confirmed: true },
+      }, customFieldDefinitions)
     ).toEqual({
       formData: { title: 'Printer issue', description: '' },
       customFieldValues: { 42: 'Office blocked', confirmed: true, 43: false },
@@ -97,15 +93,15 @@ describe('shared form model', () => {
   });
 
   it('requires a configured title even when its schema flag is false', () => {
-    const optionalTitle = [{ ...fields[0], is_required: false }];
-    expect(
-      validateFormStep({
-        fields: optionalTitle,
-        step: 1,
-        formData: { title: '   ', description: '' },
-        customFieldValues: {},
-      })
-    ).toBe('Summary is required');
+	const optionalTitle = [{ ...fields[0], is_required: false }];
+	expect(
+	  validateFormStep({
+		fields: optionalTitle,
+		step: 1,
+		formData: { title: '   ', description: '' },
+		customFieldValues: {},
+	  })
+	).toBe('Summary is required');
   });
 
   it('normalizes virtual select options and rejects malformed JSON', () => {

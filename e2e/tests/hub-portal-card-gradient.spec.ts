@@ -1,5 +1,5 @@
+import { test, expect } from '../fixtures/context-path';
 import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
 import { generateWorkspace } from '../fixtures/test-data';
 
 /**

@@ -4,6 +4,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,103 +15,110 @@ import (
 // SQLite in-memory + initialized schema (which seeds the permissions table
 // including 'system.admin' and the default workspace roles).
 type permTestEnv struct {
-	t       *testing.T
+	tb      testing.TB
 	db      database.Database
 	service *PermissionService
 }
 
-func newPermTestEnv(t *testing.T) *permTestEnv {
-	t.Helper()
+func newPermTestEnv(tb testing.TB) *permTestEnv {
+	tb.Helper()
 
-	dsn := fmt.Sprintf("file:permcache-%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
+	dsn := fmt.Sprintf("file:permcache-%s?mode=memory&cache=shared", strings.ReplaceAll(tb.Name(), "/", "_"))
 	db, err := database.NewSQLiteDB(dsn)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		tb.Fatalf("open sqlite: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	tb.Cleanup(func() { _ = db.Close() })
 	if err := db.Initialize(); err != nil {
-		t.Fatalf("init schema: %v", err)
+		tb.Fatalf("init schema: %v", err)
 	}
 	svc, err := NewPermissionService(db, DefaultPermissionCacheConfig())
 	if err != nil {
-		t.Fatalf("permission service: %v", err)
+		tb.Fatalf("permission service: %v", err)
 	}
-	return &permTestEnv{t: t, db: db, service: svc}
+	return &permTestEnv{tb: tb, db: db, service: svc}
 }
 
 func (e *permTestEnv) insertUser(email string) int {
-	e.t.Helper()
+	e.tb.Helper()
 	res, err := e.db.Exec(`INSERT INTO users (email, username, first_name, last_name) VALUES (?, ?, ?, '')`, email, email, email)
 	if err != nil {
-		e.t.Fatalf("insert user %s: %v", email, err)
+		e.tb.Fatalf("insert user %s: %v", email, err)
 	}
 	uid, _ := res.LastInsertId()
 	return int(uid)
 }
 
 func (e *permTestEnv) insertGroup(name string, active bool) int {
-	e.t.Helper()
+	e.tb.Helper()
 	res, err := e.db.Exec(`INSERT INTO groups (name, is_active) VALUES (?, ?)`, name, active)
 	if err != nil {
-		e.t.Fatalf("insert group %s: %v", name, err)
+		e.tb.Fatalf("insert group %s: %v", name, err)
 	}
 	gid, _ := res.LastInsertId()
 	return int(gid)
 }
 
 func (e *permTestEnv) addGroupMember(groupID, userID int) {
-	e.t.Helper()
+	e.tb.Helper()
 	if _, err := e.db.Exec(`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, groupID, userID); err != nil {
-		e.t.Fatalf("add group member: %v", err)
+		e.tb.Fatalf("add group member: %v", err)
 	}
 }
 
 func (e *permTestEnv) permissionID(key string) int {
-	e.t.Helper()
+	e.tb.Helper()
 	var id int
 	if err := e.db.QueryRow(`SELECT id FROM permissions WHERE permission_key = ?`, key).Scan(&id); err != nil {
-		e.t.Fatalf("permission %s: %v", key, err)
+		e.tb.Fatalf("permission %s: %v", key, err)
 	}
 	return id
 }
 
 func (e *permTestEnv) grantUserGlobal(userID int, permKey string) {
-	e.t.Helper()
+	e.tb.Helper()
 	if _, err := e.db.Exec(`INSERT INTO user_global_permissions (user_id, permission_id) VALUES (?, ?)`, userID, e.permissionID(permKey)); err != nil {
-		e.t.Fatalf("grant user global %s: %v", permKey, err)
+		e.tb.Fatalf("grant user global %s: %v", permKey, err)
 	}
 }
 
 func (e *permTestEnv) grantGroupGlobal(groupID int, permKey string) {
-	e.t.Helper()
+	e.tb.Helper()
 	if _, err := e.db.Exec(`INSERT INTO group_global_permissions (group_id, permission_id) VALUES (?, ?)`, groupID, e.permissionID(permKey)); err != nil {
-		e.t.Fatalf("grant group global %s: %v", permKey, err)
+		e.tb.Fatalf("grant group global %s: %v", permKey, err)
 	}
 }
 
 func (e *permTestEnv) insertWorkspace(name string) int {
-	e.t.Helper()
+	e.tb.Helper()
 	res, err := e.db.Exec(`INSERT INTO workspaces (name, key, active, is_personal) VALUES (?, ?, true, false)`, name, name)
 	if err != nil {
-		e.t.Fatalf("insert workspace: %v", err)
+		e.tb.Fatalf("insert workspace: %v", err)
 	}
 	wid, _ := res.LastInsertId()
 	return int(wid)
 }
 
 func (e *permTestEnv) roleID(name string) int {
-	e.t.Helper()
+	e.tb.Helper()
 	var id int
 	if err := e.db.QueryRow(`SELECT id FROM workspace_roles WHERE name = ?`, name).Scan(&id); err != nil {
-		e.t.Fatalf("role %s: %v", name, err)
+		e.tb.Fatalf("role %s: %v", name, err)
 	}
 	return id
 }
 
 func (e *permTestEnv) assignGroupWorkspaceRole(groupID, workspaceID, roleID int) {
-	e.t.Helper()
+	e.tb.Helper()
 	if _, err := e.db.Exec(`INSERT INTO group_workspace_roles (group_id, workspace_id, role_id) VALUES (?, ?, ?)`, groupID, workspaceID, roleID); err != nil {
-		e.t.Fatalf("assign group workspace role: %v", err)
+		e.tb.Fatalf("assign group workspace role: %v", err)
+	}
+}
+
+func (e *permTestEnv) assignUserWorkspaceRole(userID, workspaceID, roleID int) {
+	e.tb.Helper()
+	if _, err := e.db.Exec(`INSERT INTO user_workspace_roles (user_id, workspace_id, role_id) VALUES (?, ?, ?)`, userID, workspaceID, roleID); err != nil {
+		e.tb.Fatalf("assign user workspace role: %v", err)
 	}
 }
 
@@ -157,6 +165,63 @@ func TestPermissionCache_IsSystemAdmin_ViaInactiveGroup(t *testing.T) {
 	}
 	if got {
 		t.Fatal("expected inactive group not to confer system admin")
+	}
+}
+
+// Regression for issue #290: system admins used to short-circuit the permission
+// snapshot build, leaving GroupMemberships empty so a user_in_group condition on
+// the very group that grants System Administrator could never pass.
+func TestPermissionCache_SystemAdminGroupGrant_RetainsGroupMembership(t *testing.T) {
+	env := newPermTestEnv(t)
+	uid := env.insertUser("admin-via-group@example.com")
+	gid := env.insertGroup("admin-granting", true)
+	env.addGroupMember(gid, uid)
+	env.grantGroupGlobal(gid, "system.admin")
+
+	cache, err := env.service.GetUserEffectivePermissions(uid)
+	if err != nil {
+		t.Fatalf("GetUserEffectivePermissions: %v", err)
+	}
+	if !cache.IsSystemAdmin {
+		t.Fatal("expected group grant to make user system admin")
+	}
+	if !slices.Contains(cache.GroupMemberships, gid) {
+		t.Fatalf("expected group %d in admin memberships; got %v", gid, cache.GroupMemberships)
+	}
+}
+
+// Regression for issue #290: admins must still expose direct workspace role
+// assignments so a user_in_role condition resolves for them.
+func TestPermissionCache_SystemAdmin_RetainsRoleAssignments(t *testing.T) {
+	env := newPermTestEnv(t)
+	uid := env.insertUser("admin-with-role@example.com")
+	env.grantUserGlobal(uid, "system.admin")
+	gid := env.insertGroup("admin-extra", true)
+	env.addGroupMember(gid, uid)
+	wsID := env.insertWorkspace("ws-admin-role")
+	roleID := env.roleID("Viewer")
+	env.assignUserWorkspaceRole(uid, wsID, roleID)
+
+	cache, err := env.service.GetUserEffectivePermissions(uid)
+	if err != nil {
+		t.Fatalf("GetUserEffectivePermissions: %v", err)
+	}
+	if !cache.IsSystemAdmin {
+		t.Fatal("expected direct grant to make user system admin")
+	}
+	if !slices.Contains(cache.GroupMemberships, gid) {
+		t.Fatalf("expected group %d in admin memberships; got %v", gid, cache.GroupMemberships)
+	}
+	if !slices.Contains(cache.RoleAssignments[wsID], roleID) {
+		t.Fatalf("expected role %d in admin role assignments for workspace %d; got %v", roleID, wsID, cache.RoleAssignments)
+	}
+
+	hasRole, err := env.service.HasWorkspaceRole(uid, wsID, roleID)
+	if err != nil {
+		t.Fatalf("HasWorkspaceRole: %v", err)
+	}
+	if !hasRole {
+		t.Fatal("expected user_in_role check to pass for admin with direct role assignment")
 	}
 }
 

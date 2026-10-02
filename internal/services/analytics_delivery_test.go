@@ -361,3 +361,8 @@ func TestAnalyticsServiceHonorsCanceledRequest(t *testing.T) {
 		t.Fatal("GetAnalyticsContext ignored a canceled request")
 	}
 }
+
+// GetAnalytics computes analytics without an external request context.
+func (s *AnalyticsService) GetAnalytics(params ResolveDatasetParams) (*AnalyticsResult, error) {
+	return s.GetAnalyticsContext(context.Background(), params)
+}

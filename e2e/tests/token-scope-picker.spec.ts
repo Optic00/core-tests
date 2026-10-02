@@ -1,4 +1,4 @@
-import { expect, test } from '../fixtures/context-path';
+import { test, expect } from '../fixtures/context-path';
 
 /**
  * WI-961: the token scope picker renders the server scope catalog
@@ -41,7 +41,8 @@ test.describe('Token scope picker', () => {
     await page.getByTestId('token-scope-preset-agent-default').click();
 
     const created = page.waitForResponse(
-      (response) => response.url().includes('/api-tokens') && response.request().method() === 'POST'
+      (response) =>
+        response.url().includes('/api-tokens') && response.request().method() === 'POST'
     );
     await page.getByTestId('create-token-submit').click();
 
@@ -50,13 +51,7 @@ test.describe('Token scope picker', () => {
 
     const sent = JSON.parse(response.request().postData() ?? '{}');
     expect(sent.permissions).toEqual(
-      expect.arrayContaining([
-        'time:read',
-        'time:write',
-        'mcp:access',
-        'items:write',
-        'actions:write',
-      ])
+      expect.arrayContaining(['time:read', 'time:write', 'mcp:access', 'items:write', 'actions:write'])
     );
     expect(sent.permissions).not.toEqual(
       expect.arrayContaining(['items:delete', 'time:delete', 'workspaces:delete'])
@@ -88,7 +83,8 @@ test.describe('Token scope picker', () => {
     await page.locator('#token-expiry').fill('2030-06-15');
 
     const created = page.waitForResponse(
-      (response) => response.url().includes('/api-tokens') && response.request().method() === 'POST'
+      (response) =>
+        response.url().includes('/api-tokens') && response.request().method() === 'POST'
     );
     await page.getByTestId('create-token-submit').click();
 

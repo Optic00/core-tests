@@ -7,8 +7,10 @@
 package tests
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -141,6 +143,45 @@ func TestTimeWorklog_MalformedDurationIsRejectedNotSilentlyTruncated(t *testing.
 			}
 			if status != http.StatusBadRequest {
 				t.Fatalf("%q produced status %d, want 400", tc.duration, status)
+			}
+		})
+	}
+}
+
+// TestWorklogAggregateRangeBound proves the aggregate endpoint caps the
+// report span: a full leap year is accepted, a longer span is a client
+// error naming the limit (WI-1598).
+func TestWorklogAggregateRangeBound(t *testing.T) {
+	server, cleanup := StartTestServer(t, GetDBType())
+	defer cleanup()
+	CreateBearerToken(t, server)
+
+	cases := []struct {
+		name       string
+		from, to   string
+		wantStatus int
+	}{
+		{"full leap year is allowed", "2026-01-01", "2026-12-31", http.StatusOK},
+		{"exactly the cap is allowed", "2026-01-01", "2027-01-01", http.StatusOK},
+		{"beyond the cap is rejected", "2026-01-01", "2027-01-02", http.StatusBadRequest},
+		{"years-long span is rejected", "2020-01-01", "2027-01-01", http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := MakeAuthRequest(t, server, http.MethodGet,
+				fmt.Sprintf("/time/worklogs/aggregate?from=%s&to=%s", tc.from, tc.to), nil)
+			defer resp.Body.Close()
+			AssertStatusCode(t, resp, tc.wantStatus)
+			if tc.wantStatus == http.StatusBadRequest {
+				var errBody struct {
+					Error struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				DecodeJSON(t, resp, &errBody)
+				if !strings.Contains(errBody.Error.Message, "366") {
+					t.Fatalf("rejection message = %q, want the range limit", errBody.Error.Message)
+				}
 			}
 		})
 	}

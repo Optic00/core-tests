@@ -1,12 +1,12 @@
+import { expect, test, type APIRequestContext } from '../fixtures/context-path';
 import {
   createItemViaAPI,
   createWorkspaceViaAPI,
   listLinkTypesViaAPI,
 } from '../fixtures/api-helpers';
-import { type APIRequestContext, expect, test } from '../fixtures/context-path';
 import { generateItem, generateWorkspace } from '../fixtures/test-data';
-import { ItemPage } from '../pages/item.page';
 import { ItemLinksPage } from '../pages/item-links.page';
+import { ItemPage } from '../pages/item.page';
 import { KnowledgePage } from '../pages/knowledge.page';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
@@ -25,12 +25,15 @@ async function createPageViaAPI(
   title: string,
   content = ''
 ): Promise<{ id: number; title: string; workspace_id: number }> {
-  const response = await request.post(`${BASE_URL}/api/workspaces/${workspaceId}/pages`, {
-    headers: { 'Sec-Fetch-Site': 'same-origin' },
-    data: { title, content, parent_id: null, is_home: false },
-  });
+  const response = await request.post(
+    `${BASE_URL}/api/v2/workspaces/${workspaceId}/pages`,
+    {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+      data: { title, content, parent_id: null, is_home: false },
+    }
+  );
   expect(response.ok()).toBeTruthy();
-  return response.json();
+  return (await response.json()).data;
 }
 
 test.describe('Item ↔ page linking', () => {
@@ -99,7 +102,7 @@ test.describe('Item ↔ page linking', () => {
     await expect(linkTypePicker).toHaveValue('Page', { timeout: 5000 });
 
     // Selecting "Page" swaps the inline target search for the PagePicker —
-    // typing into its input must hit /api/workspaces/{id}/pages/search.
+    // typing into its input must hit /api/v2/workspaces/{id}/pages/search.
     // Click the input first so the BasePicker combobox opens — Playwright's
     // fill() doesn't always trigger the focus/open path the melt-ui
     // combobox expects on its own.
@@ -111,7 +114,7 @@ test.describe('Item ↔ page linking', () => {
       .waitForResponse(
         (res) =>
           res.request().method() === 'GET' &&
-          res.url().includes(`/api/workspaces/${workspaceNumericId}/pages/search`),
+          res.url().includes(`/api/v2/workspaces/${workspaceNumericId}/pages/search`),
         { timeout: 10000 }
       )
       .catch(() => null);
@@ -126,17 +129,21 @@ test.describe('Item ↔ page linking', () => {
 
     await linksPage.submitLink();
 
-    const pagesRow = page.getByTestId('linked-page-row').filter({ hasText: knowledgePage.title });
+    const pagesRow = page
+      .getByTestId('linked-page-row')
+      .filter({ hasText: knowledgePage.title });
     await expect(pagesRow.first()).toBeVisible({ timeout: 10000 });
 
     // Server-side: the link landed with target_type=page.
-    const linksResp = await request.get(`${BASE_URL}/api/items/${srcItem.id}/links`);
+    const linksResp = await request.get(`${BASE_URL}/api/v2/items/${srcItem.id}/links`);
     expect(linksResp.ok()).toBeTruthy();
-    const links = (await linksResp.json()) as {
+    const links = (await linksResp.json()).data as {
       outgoing: Array<{ target_type: string; target_id: number }>;
     };
     expect(
-      links.outgoing.some((l) => l.target_type === 'page' && l.target_id === knowledgePage.id)
+      links.outgoing.some(
+        (l) => l.target_type === 'page' && l.target_id === knowledgePage.id
+      )
     ).toBeTruthy();
   });
 
@@ -155,7 +162,7 @@ test.describe('Item ↔ page linking', () => {
     );
 
     // Seed an item↔page link via the API so the popover starts populated.
-    const linkResp = await request.post(`${BASE_URL}/api/links`, {
+    const linkResp = await request.post(`${BASE_URL}/api/v2/links`, {
       headers: { 'Sec-Fetch-Site': 'same-origin' },
       data: {
         link_type_id: pageLinkTypeId,
@@ -181,7 +188,9 @@ test.describe('Item ↔ page linking', () => {
     const popover = page.getByTestId('page-work-items-popover');
     await expect(popover).toBeVisible({ timeout: 5000 });
 
-    const itemRow = popover.getByTestId('page-work-items-row').filter({ hasText: source.title });
+    const itemRow = popover
+      .getByTestId('page-work-items-row')
+      .filter({ hasText: source.title });
     await expect(itemRow).toBeVisible({ timeout: 5000 });
 
     // Unlink via the per-row trash.
@@ -200,13 +209,16 @@ test.describe('Item ↔ page linking', () => {
 
     const searchResponsePromise = page.waitForResponse(
       (response) =>
-        response.request().method() === 'GET' && response.url().includes('/api/links/search?')
+        response.request().method() === 'GET' &&
+        response.url().includes('/api/v2/links/search?')
     );
     await searchInput.fill(source.title);
     const searchResponse = await searchResponsePromise;
     expect(searchResponse.ok()).toBeTruthy();
 
-    const result = page.getByTestId('page-work-items-add-result').filter({ hasText: source.title });
+    const result = page
+      .getByTestId('page-work-items-add-result')
+      .filter({ hasText: source.title });
     await expect(result.first()).toBeVisible();
     await result.first().click();
 
@@ -215,4 +227,5 @@ test.describe('Item ↔ page linking', () => {
       timeout: 10000,
     });
   });
+
 });

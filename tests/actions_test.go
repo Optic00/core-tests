@@ -30,7 +30,8 @@ func createTestAction(t *testing.T, server *TestServer, workspaceKey string, pay
 func setupActionWorkspace(t *testing.T, server *TestServer) (workspaceID int, workspaceKey string, statusIDs []int, workflowID int) {
 	t.Helper()
 
-	workspaceID, workspaceKey = CreateTestWorkspace(t, server, "Action Test Workspace", shortKey("ACT"))
+	workspaceID, _ = CreateTestWorkspace(t, server, "Action Test Workspace", shortKey("ACT"))
+	workspaceKey = fmt.Sprint(workspaceID)
 
 	// Use default workflow (ID 1) and its statuses (Open=1, InProgress=2, Done=3)
 	workflowID = 1
@@ -44,9 +45,12 @@ func setupActionWorkspace(t *testing.T, server *TestServer) (workspaceID int, wo
 func waitForActionLog(t *testing.T, server *TestServer, workspaceKey string, actionID int, expectedStatus string, timeout time.Duration) map[string]interface{} {
 	t.Helper()
 
+	deadline := time.Now().Add(timeout)
 	endpoint := fmt.Sprintf("/workspaces/%s/actions/%d/logs", workspaceKey, actionID)
-	var matchingLog map[string]interface{}
-	waitForCondition(t, timeout, fmt.Sprintf("action %d log with status %q", actionID, expectedStatus), func() bool {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+
+	for time.Now().Before(deadline) {
 		resp := MakeAuthRequest(t, server, http.MethodGet, endpoint, nil)
 		var logs []map[string]interface{}
 		DecodeJSON(t, resp, &logs)
@@ -54,13 +58,39 @@ func waitForActionLog(t *testing.T, server *TestServer, workspaceKey string, act
 
 		for _, log := range logs {
 			if log["status"] == expectedStatus {
-				matchingLog = log
-				return true
+				return log
 			}
 		}
-		return false
-	})
-	return matchingLog
+		<-tick.C
+	}
+
+	t.Fatalf("Timed out waiting for action %d log with status %q", actionID, expectedStatus)
+	return nil
+}
+
+// waitForCascadeSettle polls workspace action logs until the count is
+// unchanged for several consecutive polls, meaning the cascade finished.
+func waitForCascadeSettle(t *testing.T, server *TestServer, workspaceKey string) {
+	t.Helper()
+	endpoint := fmt.Sprintf("/workspaces/%s/action-logs", workspaceKey)
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.Now().Add(10 * time.Second)
+	last := -1
+	stable := 0
+	for stable < 5 && time.Now().Before(deadline) {
+		resp := MakeAuthRequest(t, server, http.MethodGet, endpoint, nil)
+		var logs []map[string]interface{}
+		DecodeJSON(t, resp, &logs)
+		resp.Body.Close()
+		if len(logs) > 0 && len(logs) == last {
+			stable++
+		} else {
+			stable = 0
+		}
+		last = len(logs)
+		<-tick.C
+	}
 }
 
 // getItem fetches a single item by ID.
@@ -91,10 +121,44 @@ func makeSimpleSetFieldAction(name, triggerType, fieldName, value string) map[st
 
 // --- tests ---
 
+func TestActionValidationDryRun(t *testing.T) {
+	server, _ := StartTestServer(t, GetDBType())
+	CreateBearerToken(t, server)
+	workspaceID, _ := CreateTestWorkspace(t, server, "Action validation WS", shortKey("AVD"))
+	workspaceKey := fmt.Sprint(workspaceID)
+	payload := map[string]interface{}{
+		"name":         "invalid action",
+		"trigger_type": "manual",
+		"nodes": []map[string]interface{}{{
+			"id": -1, "node_type": "not_a_real_node", "node_config": "{}",
+		}},
+	}
+
+	resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%s/actions/validate", workspaceKey), payload)
+	defer resp.Body.Close()
+	AssertStatusCode(t, resp, http.StatusOK)
+	var result map[string]interface{}
+	DecodeJSON(t, resp, &result)
+	errors, ok := result["errors"].([]interface{})
+	if !ok || len(errors) == 0 {
+		t.Fatalf("validation errors = %#v, want at least one error", result["errors"])
+	}
+
+	list := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/v2/workspaces/%s/actions", workspaceKey), nil)
+	defer list.Body.Close()
+	AssertStatusCode(t, list, http.StatusOK)
+	var actions []interface{}
+	DecodeJSON(t, list, &actions)
+	if len(actions) != 0 {
+		t.Fatalf("validation dry-run persisted %d actions", len(actions))
+	}
+}
+
 func TestActionCRUD(t *testing.T) {
 	server, _ := StartTestServer(t, GetDBType())
 	CreateBearerToken(t, server)
-	_, workspaceKey := CreateTestWorkspace(t, server, "Action CRUD WS", shortKey("ACR"))
+	workspaceID, _ := CreateTestWorkspace(t, server, "Action CRUD WS", shortKey("ACR"))
+	workspaceKey := fmt.Sprint(workspaceID)
 
 	payload := makeSimpleSetFieldAction("CRUD Action", "manual", "description", "auto")
 
@@ -172,16 +236,17 @@ func TestActionCRUD(t *testing.T) {
 	})
 }
 
-func TestActionToggle(t *testing.T) {
+func TestActionEnabledStateUsesPatch(t *testing.T) {
 	server, _ := StartTestServer(t, GetDBType())
 	CreateBearerToken(t, server)
-	_, workspaceKey := CreateTestWorkspace(t, server, "Toggle WS", shortKey("TGL"))
+	workspaceID, _ := CreateTestWorkspace(t, server, "Toggle WS", shortKey("TGL"))
+	workspaceKey := fmt.Sprint(workspaceID)
 
 	actionID := createTestAction(t, server, workspaceKey, makeSimpleSetFieldAction("Toggle Action", "manual", "description", "x"))
 
-	// Newly created actions are enabled by default
+	// Newly created actions are enabled by default.
 	t.Run("DisableAction", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/workspaces/%s/actions/%d/toggle", workspaceKey, actionID),
+		resp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/workspaces/%s/actions/%d", workspaceKey, actionID),
 			map[string]interface{}{"is_enabled": false})
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -192,7 +257,7 @@ func TestActionToggle(t *testing.T) {
 	})
 
 	t.Run("EnableAction", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/workspaces/%s/actions/%d/toggle", workspaceKey, actionID),
+		resp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/workspaces/%s/actions/%d", workspaceKey, actionID),
 			map[string]interface{}{"is_enabled": true})
 		defer resp.Body.Close()
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -201,12 +266,20 @@ func TestActionToggle(t *testing.T) {
 		DecodeJSON(t, resp, &result)
 		AssertJSONField(t, result, "is_enabled", true)
 	})
+
+	t.Run("ToggleRouteIsNotAvailable", func(t *testing.T) {
+		resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/workspaces/%s/actions/%d/toggle", workspaceKey, actionID),
+			map[string]interface{}{"is_enabled": false})
+		defer resp.Body.Close()
+		AssertStatusCode(t, resp, http.StatusNotFound)
+	})
 }
 
 func TestActionValidation(t *testing.T) {
 	server, _ := StartTestServer(t, GetDBType())
 	CreateBearerToken(t, server)
-	_, workspaceKey := CreateTestWorkspace(t, server, "Validation WS", shortKey("VAL"))
+	workspaceID, _ := CreateTestWorkspace(t, server, "Validation WS", shortKey("VAL"))
+	workspaceKey := fmt.Sprint(workspaceID)
 
 	t.Run("MissingName", func(t *testing.T) {
 		resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/workspaces/%s/actions", workspaceKey),
@@ -229,7 +302,7 @@ func TestActionValidation(t *testing.T) {
 	t.Run("WrongWorkspace", func(t *testing.T) {
 		resp := MakeAuthRequest(t, server, http.MethodGet, "/workspaces/NONEXIST/actions", nil)
 		defer resp.Body.Close()
-		AssertStatusCode(t, resp, http.StatusNotFound)
+		AssertStatusCode(t, resp, http.StatusBadRequest)
 	})
 }
 
@@ -608,4 +681,73 @@ func TestActionCascadeChain(t *testing.T) {
 	if item["description"] != "cascaded" {
 		t.Errorf("Expected description='cascaded', got %v", item["description"])
 	}
+}
+
+func TestActionCascadeDepthLimit(t *testing.T) {
+	server, _ := StartTestServer(t, GetDBType())
+	CreateBearerToken(t, server)
+	workspaceID, workspaceKey, statusIDs, _ := setupActionWorkspace(t, server)
+
+	// Loop between InProgress(statusIDs[1]) and Done(statusIDs[2]):
+	// Action A: transition to InProgress → set_status to Done, respond_to_cascades=true
+	triggerConfigA := fmt.Sprintf(`{"to_status_id":%d,"respond_to_cascades":true}`, statusIDs[1])
+	payloadA := map[string]interface{}{
+		"name":           "Loop A",
+		"trigger_type":   "status_transition",
+		"trigger_config": triggerConfigA,
+		"nodes": []map[string]interface{}{
+			{"id": -1, "node_type": "trigger", "node_config": "{}", "position_x": 0, "position_y": 0},
+			{"id": -2, "node_type": "set_status", "node_config": fmt.Sprintf(`{"status_id":%d}`, statusIDs[2]), "position_x": 100, "position_y": 0},
+		},
+		"edges": []map[string]interface{}{
+			{"source_node_id": -1, "target_node_id": -2, "edge_type": "default"},
+		},
+	}
+	createTestAction(t, server, workspaceKey, payloadA)
+
+	// Action B: transition to Done → set_status to InProgress, respond_to_cascades=true
+	triggerConfigB := fmt.Sprintf(`{"to_status_id":%d,"respond_to_cascades":true}`, statusIDs[2])
+	payloadB := map[string]interface{}{
+		"name":           "Loop B",
+		"trigger_type":   "status_transition",
+		"trigger_config": triggerConfigB,
+		"nodes": []map[string]interface{}{
+			{"id": -1, "node_type": "trigger", "node_config": "{}", "position_x": 0, "position_y": 0},
+			{"id": -2, "node_type": "set_status", "node_config": fmt.Sprintf(`{"status_id":%d}`, statusIDs[1]), "position_x": 100, "position_y": 0},
+		},
+		"edges": []map[string]interface{}{
+			{"source_node_id": -1, "target_node_id": -2, "edge_type": "default"},
+		},
+	}
+	createTestAction(t, server, workspaceKey, payloadB)
+
+	// Create item (starts at Open). Transition Open→InProgress to start the loop.
+	itemID := CreateTestItem(t, server, workspaceID, "Loop Item")
+	resp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/items/%d/transition", itemID),
+		map[string]interface{}{"to_status_id": statusIDs[1]})
+	AssertStatusCode(t, resp, http.StatusOK)
+	resp.Body.Close()
+
+	// Poll the workspace logs until the cascade settles (count unchanged for
+	// several consecutive polls), proving it is depth-limited rather than
+	// still running.
+	waitForCascadeSettle(t, server, workspaceKey)
+	wsLogResp := MakeAuthRequest(t, server, http.MethodGet,
+		fmt.Sprintf("/workspaces/%s/action-logs", workspaceKey), nil)
+	defer wsLogResp.Body.Close()
+	AssertStatusCode(t, wsLogResp, http.StatusOK)
+
+	var logs []map[string]interface{}
+	DecodeJSON(t, wsLogResp, &logs)
+
+	// MaxCascadeDepth is 5, so we should see bounded executions (not infinite)
+	// The exact count depends on depth limit enforcement, but should be finite and > 0
+	if len(logs) == 0 {
+		t.Error("Expected at least some execution logs from the cascade")
+	}
+	// With depth limit of 5, we should see at most ~5 executions
+	if len(logs) > 12 {
+		t.Errorf("Expected bounded executions due to cascade depth limit, got %d logs", len(logs))
+	}
+	t.Logf("Cascade depth limit test: %d execution logs recorded", len(logs))
 }

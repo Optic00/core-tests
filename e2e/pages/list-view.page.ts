@@ -20,7 +20,6 @@ export class ListViewPage {
    */
   async goto(workspaceKey: string) {
     await this.page.goto(`/workspaces/${workspaceKey}/list`);
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -53,7 +52,6 @@ export class ListViewPage {
     // Click the item key link within the row (title cells are inline-editable, not links)
     const keyLink = row.locator('a').first();
     await keyLink.click();
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -68,9 +66,7 @@ export class ListViewPage {
    * Sort by column header
    */
   async sortByColumn(columnName: string) {
-    const header = this.page
-      .locator(`[data-testid="list-header"] button:has-text("${columnName}")`)
-      .first();
+    const header = this.page.locator(`[data-testid="list-header"] button:has-text("${columnName}")`).first();
     await header.click();
     // Sort re-fetches the list; wait for the network to settle
     await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
@@ -98,6 +94,7 @@ export class ListViewPage {
    */
   async getColumnHeaders(): Promise<string[]> {
     const headers = this.page.locator(this.tableHeader);
+    await expect(headers.first()).toBeVisible({ timeout: 10000 });
     const count = await headers.count();
     const names: string[] = [];
     for (let i = 0; i < count; i++) {

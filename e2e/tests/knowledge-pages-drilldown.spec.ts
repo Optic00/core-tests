@@ -44,6 +44,30 @@ test.describe('Knowledge Pages — drilldown sidebar', () => {
     await expect(knowledge.addButton).toBeVisible();
   });
 
+  test('resizes and collapses the pages navigation with the shared handle', async ({ page }) => {
+    await knowledge.gotoIndex(workspaceId);
+
+    const sidebar = page.getByTestId('workspace-pages-sidebar');
+    const handle = page.getByTestId('workspace-sidebar-resize');
+    const initialBox = await sidebar.boundingBox();
+    if (!initialBox) throw new Error('Pages navigation sidebar has no layout box');
+
+    await handle.hover();
+    await page.mouse.down();
+    await page.mouse.move(initialBox.x + initialBox.width + 80, initialBox.y + 40);
+    await page.mouse.up();
+
+    const resizedBox = await sidebar.boundingBox();
+    expect(resizedBox?.width).toBeGreaterThan(initialBox.width + 70);
+    expect(resizedBox?.width).toBeLessThan(initialBox.width + 90);
+
+    await handle.press('Home');
+    await expect(page.getByTestId('workspace-pages-sidebar')).toHaveCount(0);
+
+    await page.getByTestId('workspace-sidebar-resize').press('ArrowRight');
+    await expect(page.getByTestId('workspace-pages-sidebar')).toHaveCSS('width', '180px');
+  });
+
   test('+ creates an Untitled page, navigates to it, and focuses the title input', async ({
     page,
   }) => {
@@ -52,11 +76,12 @@ test.describe('Knowledge Pages — drilldown sidebar', () => {
     const createResponse = page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        /\/api\/workspaces\/\d+\/pages$/.test(res.url()) &&
+        /\/api\/v2\/workspaces\/\d+\/pages$/.test(res.url()) &&
         res.ok()
     );
     await knowledge.addButton.click();
-    const created = (await (await createResponse).json()) as { id: number; title: string };
+    const createdBody = await (await createResponse).json();
+    const created = createdBody.data as { id: number; title: string };
 
     await page.waitForURL(new RegExp(`/workspaces/${workspaceId}/pages/${created.id}\\b`), {
       timeout: 10000,
@@ -87,7 +112,7 @@ test.describe('Knowledge Pages — drilldown sidebar', () => {
     const createResponse = page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        /\/api\/workspaces\/\d+\/pages$/.test(res.url()) &&
+        /\/api\/v2\/workspaces\/\d+\/pages$/.test(res.url()) &&
         res.ok()
     );
     await knowledge.addButton.click();
@@ -95,7 +120,7 @@ test.describe('Knowledge Pages — drilldown sidebar', () => {
     const postBody = JSON.parse(resp.request().postData() || '{}');
     expect(postBody.parent_id ?? null).toBeNull();
 
-    const created = (await resp.json()) as { id: number };
+    const created = (await resp.json()).data as { id: number };
     await page.waitForURL(new RegExp(`/workspaces/${workspaceId}/pages/${created.id}\\b`), {
       timeout: 10000,
     });
@@ -115,7 +140,7 @@ test.describe('Knowledge Pages — drilldown sidebar', () => {
     await knowledge.confirmMove(workspaceId, moverId);
 
     await page.reload();
-    await page.waitForLoadState('networkidle');
+
 
     await expect(knowledge.treeItem(moverId)).toHaveAttribute('style', /padding-left:\s*1\.75rem/);
   });

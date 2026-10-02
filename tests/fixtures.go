@@ -361,11 +361,10 @@ func createIterationFx(t *testing.T, ts *TestServer, workspaceID int, name, stat
 func createLabelFx(t *testing.T, ts *TestServer, workspaceID int, name, color string) LabelFx {
 	t.Helper()
 	body := map[string]interface{}{
-		"name":         name,
-		"color":        color,
-		"workspace_id": workspaceID,
+		"name":  name,
+		"color": color,
 	}
-	resp := MakeAuthRequest(t, ts, http.MethodPost, "/labels", body)
+	resp := MakeAuthRequest(t, ts, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/labels", workspaceID), body)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
@@ -461,18 +460,8 @@ func listWorkspaceKeys(t *testing.T, ts *TestServer) []wsKeyPair {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list workspaces: %d", resp.StatusCode)
 	}
-	bodyBytes, _ := io.ReadAll(resp.Body)
 	var arr []map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &arr); err != nil {
-		// Workspaces endpoint may return paginated struct. Fall back to that.
-		var paged struct {
-			Workspaces []map[string]interface{} `json:"workspaces"`
-		}
-		if jerr := json.Unmarshal(bodyBytes, &paged); jerr != nil {
-			t.Fatalf("decode workspaces: %v", err)
-		}
-		arr = paged.Workspaces
-	}
+	DecodeJSON(t, resp, &arr)
 	out := make([]wsKeyPair, 0, len(arr))
 	for _, m := range arr {
 		idF, _ := m["id"].(float64)

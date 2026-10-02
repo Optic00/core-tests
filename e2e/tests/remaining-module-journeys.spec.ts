@@ -283,7 +283,7 @@ test.describe('Remaining 0.8.5 module journeys (WI-706)', () => {
     allowConsoleError,
   }) => {
     allowConsoleError(/Cancelled/);
-    allowConsoleError(/\/api\/collections\/\d+\/board-configuration/);
+    allowConsoleError(/\/api\/v2\/collections\/\d+\/board-configuration/);
     const stamp = Date.now();
     const workspace = await createWorkspaceViaAPI(
       request,
@@ -301,12 +301,12 @@ test.describe('Remaining 0.8.5 module journeys (WI-706)', () => {
     const createdResponse = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        new URL(response.url()).pathname.endsWith('/api/collections')
+        new URL(response.url()).pathname.endsWith('/api/v2/collections')
     );
     await page.locator('#create-modal-submit').click();
     const collectionResponse = await createdResponse;
     expect(collectionResponse.ok()).toBeTruthy();
-    const collection = (await collectionResponse.json()) as { id: number };
+    const collection = (await collectionResponse.json()).data as { id: number };
     await expect(page).toHaveURL(new RegExp(`/collections/${collection.id}$`));
 
     await page.getByTestId('collection-search-open').click();
@@ -318,14 +318,14 @@ test.describe('Remaining 0.8.5 module journeys (WI-706)', () => {
     await page.getByTestId('collection-name').fill(revisedName);
 
     let saveAttempts = 0;
-    await page.route(`**/api/collections/${collection.id}`, async (route, req) => {
-      if (req.method() === 'PUT' && saveAttempts++ === 0) {
+    await page.route(`**/api/v2/collections/${collection.id}`, async (route, req) => {
+      if (req.method() === 'PATCH' && saveAttempts++ === 0) {
         await json(route, { error: 'Temporary collection failure' }, 503);
         return;
       }
       await route.continue();
     });
-    allowConsoleError(new RegExp(`/api/collections/${collection.id}`));
+    allowConsoleError(new RegExp(`/api/v2/collections/${collection.id}`));
     allowConsoleError(/Failed to update collection/);
 
     await page.getByTestId('collection-save').click();
@@ -334,8 +334,8 @@ test.describe('Remaining 0.8.5 module journeys (WI-706)', () => {
 
     const savedResponse = page.waitForResponse(
       (response) =>
-        response.request().method() === 'PUT' &&
-        new URL(response.url()).pathname.endsWith(`/api/collections/${collection.id}`)
+        response.request().method() === 'PATCH' &&
+        new URL(response.url()).pathname.endsWith(`/api/v2/collections/${collection.id}`)
     );
     await page.getByTestId('collection-save').click();
     expect((await savedResponse).ok()).toBeTruthy();

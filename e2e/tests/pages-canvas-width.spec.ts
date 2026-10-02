@@ -28,13 +28,21 @@ test.describe('Page canvas width', () => {
     await expect(canvas).toHaveAttribute('data-width', 'comfortable');
     await expect(widthToggle).toHaveAttribute('aria-pressed', 'false');
 
-    const [paneBox, comfortableBox] = await Promise.all([pane.boundingBox(), canvas.boundingBox()]);
-    if (!paneBox || !comfortableBox) {
-      throw new Error('page canvas dimensions were unavailable');
-    }
-    expect(comfortableBox.width).toBeGreaterThanOrEqual(paneBox.width * 0.75 - 2);
+    const [paneBox, comfortableBox] = await Promise.all([
+      pane.boundingBox(),
+      canvas.boundingBox(),
+    ]);
+    expect(paneBox).not.toBeNull();
+    expect(comfortableBox).not.toBeNull();
+    expect(comfortableBox!.width).toBeGreaterThanOrEqual(
+      paneBox!.width * 0.75 - 2,
+    );
     expect(
-      Math.abs(comfortableBox.x - paneBox.x - (paneBox.width - comfortableBox.width) / 2)
+      Math.abs(
+        comfortableBox!.x -
+          paneBox!.x -
+          (paneBox!.width - comfortableBox!.width) / 2,
+      ),
     ).toBeLessThanOrEqual(2);
 
     await widthToggle.click();
@@ -42,9 +50,7 @@ test.describe('Page canvas width', () => {
     await expect(canvas).toHaveAttribute('data-width', 'wide');
     await expect(widthToggle).toHaveAttribute('aria-pressed', 'true');
     const wideBox = await canvas.boundingBox();
-    if (!wideBox) {
-      throw new Error('wide page canvas dimensions were unavailable');
-    }
-    expect(wideBox.width).toBeGreaterThan(comfortableBox.width + 100);
+    expect(wideBox).not.toBeNull();
+    expect(wideBox!.width).toBeGreaterThan(comfortableBox!.width + 100);
   });
 });

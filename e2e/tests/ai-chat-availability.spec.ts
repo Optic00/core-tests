@@ -1,5 +1,5 @@
+import { test, expect } from '../fixtures/errors';
 import type { APIRequestContext } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/errors';
 
 /**
  * AI chat entry points are gated on aiStore.chatAvailable, which is hydrated
@@ -22,7 +22,7 @@ async function listConnections(request: APIRequestContext) {
   });
   expect(
     resp.ok(),
-    `list llm connections failed (${resp.status()}): ${await resp.text()}`
+    `list llm connections failed (${resp.status()}): ${await resp.text()}`,
   ).toBeTruthy();
   return (await resp.json()) ?? [];
 }
@@ -30,10 +30,14 @@ async function listConnections(request: APIRequestContext) {
 /** Leave no enabled connection behind — availability is global admin state. */
 async function deleteAllConnections(request: APIRequestContext) {
   for (const conn of await listConnections(request)) {
-    const resp = await request.delete(`${BASE_URL}/api/admin/llm-connections/${conn.id}`, {
-      headers: defaultHeaders,
-    });
-    expect(resp.ok(), `delete llm connection ${conn.id} failed (${resp.status()})`).toBeTruthy();
+    const resp = await request.delete(
+      `${BASE_URL}/api/admin/llm-connections/${conn.id}`,
+      { headers: defaultHeaders },
+    );
+    expect(
+      resp.ok(),
+      `delete llm connection ${conn.id} failed (${resp.status()})`,
+    ).toBeTruthy();
   }
 }
 
@@ -70,8 +74,6 @@ test.describe('AI chat availability follows LLM connection config', () => {
     await page
       .locator('[data-testid="llm-connection-provider-option"][data-option-id="openai"]')
       .click();
-
-    await page.locator('#llm-connection-api-key').fill('sk-e2e-not-a-real-key');
 
     // Model is a create-allowed picker: type an id and take the create option
     // rather than depending on a refreshed provider catalog.

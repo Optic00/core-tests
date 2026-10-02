@@ -6,7 +6,12 @@ import { expect, type Locator, type Page } from '../fixtures/context-path';
  * shows only the first 4 users by default — searching is required to surface
  * a newly-created e2e user.
  */
-export async function pickUser(page: Page, trigger: Locator, userId: number, searchTerm: string) {
+export async function pickUser(
+  page: Page,
+  trigger: Locator,
+  userId: number,
+  searchTerm: string,
+) {
   await trigger.click();
   const search = page.locator('[data-testid="user-picker-search"]');
   await search.waitFor({ state: 'visible', timeout: 5000 });
@@ -39,7 +44,6 @@ export class TeamsPage {
 
   async goto() {
     await this.page.goto('/teams');
-    await this.page.waitForLoadState('networkidle');
   }
 
   async clickCreate() {
@@ -84,16 +88,15 @@ export class TeamsPage {
 
   async openTeam(name: string) {
     await this.findTeamRow(name).click();
-    await this.page.waitForLoadState('networkidle');
   }
 
-  private async openRowDropdown(name: string) {
+  private async openRowDropdown(name: string, menuItemText: string) {
     const row = this.findTeamRow(name);
     await row.locator('button').last().click();
     await this.page
       .locator('button[role="menuitem"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 });
+      .filter({ hasText: menuItemText })
+      .waitFor({ state: 'visible', timeout: 10000 });
   }
 
   private async clickMenuItem(text: string) {
@@ -102,18 +105,17 @@ export class TeamsPage {
 
   async editTeam(currentName: string, newData: { name?: string; description?: string }) {
     await this.goto();
-    await this.openRowDropdown(currentName);
+    await this.openRowDropdown(currentName, 'Edit');
     await this.clickMenuItem('Edit');
     await this.page.waitForSelector(this.teamModal, { timeout: 5000 });
     if (newData.name) await this.page.fill(this.nameInput, newData.name);
-    if (newData.description !== undefined)
-      await this.page.fill(this.descriptionInput, newData.description);
+    if (newData.description !== undefined) await this.page.fill(this.descriptionInput, newData.description);
     await this.clickSave();
   }
 
   async deleteTeam(name: string) {
     await this.goto();
-    await this.openRowDropdown(name);
+    await this.openRowDropdown(name, 'Delete');
     await this.clickMenuItem('Delete');
 
     const confirmDialog = this.page.locator(this.teamModal);
@@ -126,7 +128,6 @@ export class TeamsPage {
     await this.goto();
     await this.openTeam(teamName);
     await this.page.locator('[data-testid="team-tab-members"]').click();
-    await this.page.waitForLoadState('networkidle');
   }
 
   async addMember(teamName: string, userId: number, searchTerm: string) {
@@ -137,12 +138,7 @@ export class TeamsPage {
     await this.page.locator('[data-testid="team-add-member"]').click();
     const modal = this.page.locator('[role="dialog"]');
     await modal.waitFor({ state: 'visible', timeout: 5000 });
-    await pickUser(
-      this.page,
-      modal.locator('[data-testid="user-picker-trigger"]'),
-      userId,
-      searchTerm
-    );
+    await pickUser(this.page, modal.locator('[data-testid="user-picker-trigger"]'), userId, searchTerm);
     await this.page.locator('[data-testid="add-member-confirm"]').click();
     await this.page
       .locator(`[data-testid="member-row"][data-user-id="${userId}"]`)
@@ -153,7 +149,6 @@ export class TeamsPage {
     await this.goto();
     await this.openTeam(teamName);
     await this.page.locator('[data-testid="team-tab-groups"]').click();
-    await this.page.waitForLoadState('networkidle');
   }
 
   async attachGroup(teamName: string, groupId: number) {
@@ -176,17 +171,15 @@ export class TeamsPage {
   private async pickFromBasePicker(comboIndex: number, optionValue: number | string) {
     const combo = this.page.getByRole('combobox').nth(comboIndex);
     await combo.click();
-    await this.page
-      .locator(`[data-option-value]`)
-      .first()
-      .waitFor({ state: 'visible', timeout: 15000 });
+    await this.page.locator(`[data-option-value]`).first().waitFor({ state: 'visible', timeout: 15000 });
     const option = this.page.locator(`[data-option-value="${optionValue}"]`).first();
     await option.waitFor({ state: 'visible', timeout: 15000 });
     await option.click();
   }
 
   async getTeamCount(): Promise<number> {
-    await this.goto();
+    // No goto here: the caller has already navigated (and usually verified
+    // rows). Re-navigating inside a polled getter resets the SPA mid-read.
     return this.page.locator(this.teamRow).count();
   }
 

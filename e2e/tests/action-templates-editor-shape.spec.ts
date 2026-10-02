@@ -1,6 +1,6 @@
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import type { Page } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/errors';
+import { test, expect } from '../fixtures/errors';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 
 /**
  * Editor-shape contract for action templates.
@@ -32,7 +32,11 @@ const cases: TemplateCase[] = [
   },
 ];
 
-async function applyTemplateAndOpenEditor(page: Page, workspaceId: number, tc: TemplateCase) {
+async function applyTemplateAndOpenEditor(
+  page: Page,
+  workspaceId: number,
+  tc: TemplateCase,
+) {
   await page.goto(`/workspaces/${workspaceId}/actions`);
   await page.getByTestId('actions-from-template').click();
 
@@ -67,7 +71,10 @@ test.describe('Action templates: editor shape after apply', () => {
       const flow = page.locator('.svelte-flow');
       await expect(flow).toBeVisible();
 
-      const expectedTotal = Object.values(tc.expectedNodeTypes).reduce((a, b) => a + b, 0);
+      const expectedTotal = Object.values(tc.expectedNodeTypes).reduce(
+        (a, b) => a + b,
+        0,
+      );
       // Wait for SvelteFlow to mount all nodes (it renders progressively as
       // the flow store hydrates from the fetched action).
       await expect(flow.locator('.svelte-flow__node')).toHaveCount(expectedTotal);
@@ -75,11 +82,13 @@ test.describe('Action templates: editor shape after apply', () => {
       for (const [nodeType, count] of Object.entries(tc.expectedNodeTypes)) {
         await expect(
           flow.locator(`.svelte-flow__node-${nodeType}`),
-          `expected ${count} ${nodeType} node(s) for template ${tc.templateKey}`
+          `expected ${count} ${nodeType} node(s) for template ${tc.templateKey}`,
         ).toHaveCount(count);
       }
 
-      await expect(flow.locator('.svelte-flow__edge')).toHaveCount(tc.expectedEdgeCount);
+      await expect(flow.locator('.svelte-flow__edge')).toHaveCount(
+        tc.expectedEdgeCount,
+      );
     });
   }
 });

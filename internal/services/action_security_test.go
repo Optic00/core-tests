@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"windshift/internal/logger"
 	"windshift/internal/models"
 	"windshift/internal/repository"
+	"windshift/internal/utils"
 )
 
 type selectiveAssetPermissionChecker struct {
@@ -802,4 +804,63 @@ func TestCreateAssetActionEnforcesSetSchemaAndDefaultStatus(t *testing.T) {
 	if correlationID != "asset-create-chain" || sourceRef != "workspace" || payload.Automation.CascadeDepth != 3 || payload.Automation.SourceApplication != "workspace" {
 		t.Fatalf("asset-created cascade context = correlation:%q source:%q automation:%#v", correlationID, sourceRef, payload.Automation)
 	}
+}
+
+//nolint:unused // retained as the error-only compatibility surface for white-box callers
+func (as *AssetActionService) executeAction(action *models.AssetAction, event *models.AssetActionEvent, chain *ExecutionChain) error {
+	_, err := as.executeActionWithResult(action, event, chain)
+	return err
+}
+
+func TestActionHTTPClientHonorsAllowLocalConnections(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	previous := utils.AllowLocalConnections()
+	t.Cleanup(func() { utils.SetAllowLocalConnections(previous) })
+
+	t.Run("allows loopback destination when enabled", func(t *testing.T) {
+		utils.SetAllowLocalConnections(true)
+		atomic.StoreInt32(&hits, 0)
+
+		got, err := doHTTPRequest(context.Background(), http.MethodGet, srv.URL, "", nil, nil, 5, []string{"http://**"})
+		if err != nil {
+			t.Fatalf("doHTTPRequest to loopback with ALLOW_LOCAL_CONNECTIONS=true: %v", err)
+		}
+		var payload struct {
+			StatusCode int    `json:"status_code"`
+			Body       string `json:"body"`
+		}
+		if err := json.Unmarshal([]byte(got), &payload); err != nil {
+			t.Fatalf("unmarshal doHTTPRequest result %q: %v", got, err)
+		}
+		if payload.StatusCode != http.StatusOK || payload.Body != `{"ok":true}` {
+			t.Fatalf("result = %#v, want status 200 and body {\"ok\":true}", payload)
+		}
+		if atomic.LoadInt32(&hits) != 1 {
+			t.Fatalf("server hits = %d, want 1", hits)
+		}
+	})
+
+	t.Run("blocks loopback destination when disabled", func(t *testing.T) {
+		utils.SetAllowLocalConnections(false)
+		atomic.StoreInt32(&hits, 0)
+
+		_, err := doHTTPRequest(context.Background(), http.MethodGet, srv.URL, "", nil, nil, 5, []string{"http://**"})
+		if err == nil {
+			t.Fatal("doHTTPRequest to loopback with ALLOW_LOCAL_CONNECTIONS=false succeeded")
+		}
+		if !strings.Contains(err.Error(), "blocked IP range") {
+			t.Fatalf("error = %v, want blocked-SSRF dial error", err)
+		}
+		if atomic.LoadInt32(&hits) != 0 {
+			t.Fatalf("blocked dial reached server: %d hits", hits)
+		}
+	})
 }

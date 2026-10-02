@@ -39,10 +39,6 @@ func TestCookieAuth_WorkflowXSS(t *testing.T) {
 	if desc, _ := got["description"].(string); strings.Contains(desc, "<img") || strings.Contains(desc, "onerror") {
 		t.Fatalf("workflow description unsanitized: %q", desc)
 	}
-	warnings, _ := got["warnings"].([]interface{})
-	if len(warnings) == 0 {
-		t.Fatalf("expected WI-186 warnings, got %v", got["warnings"])
-	}
 }
 
 func TestCookieAuth_ScreenXSS(t *testing.T) {

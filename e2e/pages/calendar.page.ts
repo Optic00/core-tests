@@ -26,7 +26,6 @@ export class CalendarPage {
    */
   async goto() {
     await this.page.goto('/personal/calendar');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -111,7 +110,6 @@ export class CalendarPage {
   async clickItem(title: string) {
     const item = await this.findItemByTitle(title);
     await item.click();
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**

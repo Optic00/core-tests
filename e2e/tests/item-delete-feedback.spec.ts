@@ -36,7 +36,9 @@ test.describe('item deletion feedback', () => {
 
     const deletionToast = page.getByTestId('toast').first();
     await expect(deletionToast).toContainText('This item was deleted.');
-    await expect.soft(deletionToast).toHaveAttribute('data-toast-variant', 'info');
+    await expect(deletionToast).toHaveAttribute('data-toast-variant', 'info');
+    await expect(page.getByTestId('toast')).toHaveCount(1);
+    await expect(page.getByTestId('item-detail-ready')).toBeHidden();
 
     await page.getByTestId('workspace-nav-board').click();
     await expect(page.getByTestId('board-view')).toBeVisible();

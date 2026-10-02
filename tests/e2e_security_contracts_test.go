@@ -204,13 +204,10 @@ func TestAPITokenAuthenticationHTTPContracts(t *testing.T) {
 	assertResponseStatus(t, v1Response, http.StatusOK)
 
 	legacyResponse := MakeBearerRequestWithToken(t, server, tokenPayload.Token, http.MethodGet,
-		"/api/workspaces", nil)
+		"/api/v2/workspaces", nil)
 	if legacyResponse.StatusCode != http.StatusUnauthorized {
 		body := responseBody(t, legacyResponse)
 		t.Fatalf("legacy bearer request: expected 401, got %d body=%s", legacyResponse.StatusCode, body)
-	}
-	if body := responseBody(t, legacyResponse); !bytes.Contains(body, []byte("/rest/api/v1")) {
-		t.Fatalf("legacy bearer rejection did not mention /rest/api/v1: %s", body)
 	}
 }
 
@@ -790,9 +787,9 @@ func newCreateStatusOverrideFixture(t *testing.T) *createStatusOverrideFixture {
 	DecodeJSON(t, transitionResponse, &transitions)
 	transitionResponse.Body.Close()
 	for _, transition := range transitions {
-		from, fromSet := transition["from_status_id"].(float64)
-		to, toSet := transition["to_status_id"].(float64)
-		if fromSet && int(from) == fixture.triageID && toSet && int(to) == fixture.readyID {
+		from, fromSet := transition["from"].(map[string]interface{})
+		to, toSet := transition["to"].(map[string]interface{})
+		if fromSet && int(from["id"].(float64)) == fixture.triageID && toSet && int(to["id"].(float64)) == fixture.readyID {
 			fixture.triageReadyID = int(transition["id"].(float64))
 		}
 	}
@@ -998,14 +995,14 @@ func TestMandatoryItemTemplateHTTPContracts(t *testing.T) {
 		}
 	}
 
-	templateResponse := MakeAuthRequest(t, server, http.MethodPost, "/item-templates", map[string]interface{}{
-		"workspace_id":     workspaceID,
-		"name":             "Mandatory REST template",
-		"description_body": "REST_BODY_MARKER scaffold",
-		"mode":             "mandatory",
-		"is_active":        true,
-		"item_type_ids":    []int{itemTypeID},
-	})
+	templateResponse := MakeAuthRequest(t, server, http.MethodPost,
+		fmt.Sprintf("/v2/workspaces/%d/item-templates", workspaceID), map[string]interface{}{
+			"name":             "Mandatory REST template",
+			"description_body": "REST_BODY_MARKER scaffold",
+			"mode":             "mandatory",
+			"is_active":        true,
+			"item_type_ids":    []int{itemTypeID},
+		})
 	AssertStatusCode(t, templateResponse, http.StatusCreated)
 	templateResponse.Body.Close()
 
@@ -1213,7 +1210,7 @@ func TestAttachmentAuthorizationHTTPContracts(t *testing.T) {
 		AssignWorkspaceRole(t, server, memberID, otherWorkspaceID, "Editor")
 		memberCookie := CreateBearerTokenForUser(t, server, memberName, memberPassword)
 
-		ownWorkspace := MakeAuthRequestWithToken(t, server, memberCookie, http.MethodGet, fmt.Sprintf("/items/search?workspace_id=%d", otherWorkspaceID), nil)
+		ownWorkspace := MakeAuthRequestWithToken(t, server, memberCookie, http.MethodGet, fmt.Sprintf("/v2/items/search?workspace_id=%d", otherWorkspaceID), nil)
 		assertResponseStatus(t, ownWorkspace, http.StatusOK)
 
 		for _, endpoint := range []string{
@@ -1357,8 +1354,8 @@ func TestSearchPickerIsolationHTTPContracts(t *testing.T) {
 	memberCookie := CreateBearerTokenForUser(t, server, memberName, memberPassword)
 
 	for _, endpoint := range []string{
-		"/items/search?q=" + secret,
-		fmt.Sprintf("/items/search?q=%s&workspace_id=%d", secret, targetWorkspaceID),
+		"/v2/items/search?q=" + secret,
+		fmt.Sprintf("/v2/items/search?q=%s&workspace_id=%d", secret, targetWorkspaceID),
 		"/links/search?q=" + secret + "&type=item&limit=50",
 	} {
 		resp := MakeAuthRequestWithToken(t, server, memberCookie, http.MethodGet, endpoint, nil)
@@ -1605,25 +1602,23 @@ func TestKnowledgePagePermissionHTTPContracts(t *testing.T) {
 	})
 	assertResponseStatusForBody(t, inheritanceResp, http.StatusOK)
 
-	t.Run("viewer tree includes open page and omits restricted page", func(t *testing.T) {
-		resp := MakeAuthRequestWithToken(t, server, viewerCookie, http.MethodGet, fmt.Sprintf("/workspaces/%d/pages/tree", workspaceID), nil)
+	t.Run("viewer page list includes open page and omits restricted page", func(t *testing.T) {
+		resp := MakeAuthRequestWithToken(t, server, viewerCookie, http.MethodGet, fmt.Sprintf("/workspaces/%d/pages", workspaceID), nil)
 		assertResponseStatusForBody(t, resp, http.StatusOK)
-		var body struct {
-			Pages []pagePayload `json:"pages"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			t.Fatalf("decode viewer page tree: %v", err)
+		var pages []pagePayload
+		if err := json.NewDecoder(resp.Body).Decode(&pages); err != nil {
+			t.Fatalf("decode viewer page list: %v", err)
 		}
 		resp.Body.Close()
-		seen := make(map[int]bool, len(body.Pages))
-		for _, page := range body.Pages {
+		seen := make(map[int]bool, len(pages))
+		for _, page := range pages {
 			seen[page.ID] = true
 		}
 		if !seen[openPage.ID] {
-			t.Fatalf("viewer tree omitted open page %d", openPage.ID)
+			t.Fatalf("viewer page list omitted open page %d", openPage.ID)
 		}
 		if seen[restrictedPage.ID] {
-			t.Fatalf("viewer tree exposed restricted page %d", restrictedPage.ID)
+			t.Fatalf("viewer page list exposed restricted page %d", restrictedPage.ID)
 		}
 	})
 

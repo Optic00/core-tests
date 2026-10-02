@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"windshift/internal/utils"
+	"strings"
+	"fmt"
 )
 
 func TestMergeProviderConfigJSONAddsFieldsWithoutOverwritingRequest(t *testing.T) {
@@ -156,4 +158,73 @@ func TestOpenAIClientIncludesProviderConfig(t *testing.T) {
 	if string(provider["allow_fallbacks"]) != `false` {
 		t.Fatalf("provider.allow_fallbacks = %s", provider["allow_fallbacks"])
 	}
+}
+
+// MergeProviderConfig adds provider_config fields to an in-memory request
+// body. Existing generated request fields win, so config cannot replace the
+// prompt, model, tools, or other fields already set by the caller.
+func MergeProviderConfig(body map[string]any, raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return fmt.Errorf("provider_config must be valid JSON: %w", err)
+	}
+	if cfg == nil {
+		return fmt.Errorf("provider_config must be a JSON object")
+	}
+	for k, v := range cfg {
+		if reservedProviderConfigKeys[k] {
+			continue // windshift-private key, never forwarded to the provider
+		}
+		if _, exists := body[k]; exists {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(v, &decoded); err != nil {
+			return fmt.Errorf("provider_config.%s must be valid JSON: %w", k, err)
+		}
+		body[k] = decoded
+	}
+	return nil
+}
+
+// MergeProviderConfigJSON adds provider_config fields to a raw JSON request
+// body. It is used by the coding-agent proxy path, where the runner owns the
+// OpenAI-compatible request body and the broker only injects connection config.
+func MergeProviderConfigJSON(body []byte, raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return body, nil
+	}
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, fmt.Errorf("request body must be a JSON object: %w", err)
+	}
+	if request == nil {
+		return nil, fmt.Errorf("request body must be a JSON object")
+	}
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil, fmt.Errorf("provider_config must be valid JSON: %w", err)
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("provider_config must be a JSON object")
+	}
+	for k, v := range cfg {
+		if reservedProviderConfigKeys[k] {
+			continue // windshift-private key, never forwarded to the provider
+		}
+		if _, exists := request[k]; exists {
+			continue
+		}
+		request[k] = v
+	}
+	merged, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshal provider-configured request: %w", err)
+	}
+	return merged, nil
 }

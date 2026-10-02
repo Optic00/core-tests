@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -161,12 +162,12 @@ func TestCredentialLeaseSerializesRefreshAcrossManagers(t *testing.T) {
 		close(provider.release)
 		t.Fatal("first manager did not begin refresh")
 	}
-	secondStarted := make(chan struct{})
-	go func() {
-		close(secondStarted)
-		refresh(second)
-	}()
-	<-secondStarted
+	go refresh(second)
+	// Yield scheduling so the second refresh gets the chance to enter the
+	// provider before the gate opens.
+	for i := 0; i < 100; i++ {
+		runtime.Gosched()
+	}
 	close(provider.release)
 	for range 2 {
 		if err := <-results; err != nil {

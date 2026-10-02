@@ -53,7 +53,6 @@ export class WorkspaceSettingsPage {
    */
   async goto(workspaceId: string) {
     await this.page.goto(`/workspaces/${workspaceId}/settings`);
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -90,14 +89,13 @@ export class WorkspaceSettingsPage {
       await this.page.fill(this.descriptionInput, data.description);
     }
 
-    const saveRequest = this.page
-      .waitForResponse(
-        (res) => res.request().method() === 'PATCH' && res.url().includes('/workspaces/'),
-        { timeout: 10000 }
-      )
-      .catch(() => null);
+    const saveRequest = this.page.waitForResponse(
+      (res) => res.request().method() === 'PATCH' && res.url().includes('/workspaces/'),
+      { timeout: 10000 }
+    );
     await this.page.click(this.saveButton);
-    await saveRequest;
+    const response = await saveRequest;
+    expect(response.ok(), `workspace PATCH failed: ${response.status()}`).toBeTruthy();
   }
 
   /**
@@ -109,10 +107,7 @@ export class WorkspaceSettingsPage {
    */
   async addMember(userId: number, username: string, roleId: number) {
     await this.clickTab('Members');
-    await this.page
-      .getByRole('button', { name: /add member/i })
-      .first()
-      .click();
+    await this.page.getByRole('button', { name: /add member/i }).first().click();
     const dialog = this.page.locator('div[role="dialog"]');
     await dialog.waitFor({ state: 'visible', timeout: 5000 });
 
@@ -149,12 +144,12 @@ export class WorkspaceSettingsPage {
    * Remove a member's role assignment via the row action menu. Removing the
    * user's only role drops them from the list entirely.
    */
-  async removeMember(username: string, roleName = 'Editor') {
+  async removeMember(username: string) {
     await this.clickTab('Members');
     const memberRow = this.memberRowFor(username);
     await memberRow.locator('.dropdown-trigger button').click();
     await this.page
-      .locator(`button[data-menu-item]:has-text("Remove ${roleName}")`)
+      .locator('[data-testid^="workspace-member-remove-role-user-"]')
       .first()
       .click();
     await this.page.getByTestId('dialog-confirm').click();
@@ -202,7 +197,7 @@ export class WorkspaceSettingsPage {
     const deleteResponse = this.page.waitForResponse(
       (response) =>
         response.request().method() === 'DELETE' &&
-        new URL(response.url()).pathname.endsWith(`/api/workspaces/${workspaceId}`)
+        new URL(response.url()).pathname.endsWith(`/api/v2/workspaces/${workspaceId}`)
     );
     const [, response] = await Promise.all([
       this.page.waitForURL((url) => !url.pathname.endsWith('/settings'), { timeout: 10000 }),

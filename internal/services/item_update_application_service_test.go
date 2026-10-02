@@ -100,6 +100,17 @@ func TestItemUpdateApplicationService_UpdateJSONFieldsRejectsStatusMutation(t *t
 	}
 }
 
+func TestItemUpdateApplicationService_UpdateJSONFieldsRejectsNullTaskFlag(t *testing.T) {
+	service := &ItemUpdateApplicationService{}
+	_, err := service.UpdateJSONFields(1, "actor", 2, map[string]json.RawMessage{
+		"is_task": []byte("null"),
+	})
+	var validationErr *validation.ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Field != "is_task" {
+		t.Fatalf("error = %#v, want is_task validation error", err)
+	}
+}
+
 type recordingItemUpdatedEmitter struct {
 	calls         int
 	original      *models.Item

@@ -1,3 +1,4 @@
+import { expect, test } from '../fixtures/context-path';
 import {
   createCollectionViaAPI,
   createItemViaAPI,
@@ -5,15 +6,14 @@ import {
   createWorkspaceViaAPI,
   updateItemViaAPI,
 } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/context-path';
 import {
   generateCollection,
   generateItem,
   generateMilestone,
   generateWorkspace,
 } from '../fixtures/test-data';
-import { ItemPage } from '../pages/item.page';
 import { MilestonePage } from '../pages/milestone.page';
+import { ItemPage } from '../pages/item.page';
 
 /**
  * Milestone management e2e coverage — mirrors the iterations spec:
@@ -65,9 +65,7 @@ test.describe('Milestone Management', () => {
     await milestonePage.verifyStatus(ms.name, 'Planning');
   });
 
-  test('changes workspace milestone status from planning to in-progress via edit modal', async ({
-    request,
-  }) => {
+  test('changes workspace milestone status from planning to in-progress via edit modal', async ({ request }) => {
     const ms = generateMilestone('status');
     await createMilestoneViaAPI(request, {
       ...ms,
@@ -92,14 +90,18 @@ test.describe('Milestone Management', () => {
     await milestonePage.deleteMilestone(ms.name);
   });
 
-  test('assigns a milestone to a work item via the item-detail sidebar', async ({
-    page,
-    request,
-  }) => {
+  test('assigns a milestone to a work item via the item-detail sidebar', async ({ page, request }) => {
     const ms = generateMilestone('assign');
     const milestone = await createMilestoneViaAPI(request, {
       ...ms,
       workspace_id: workspaceId,
+    });
+    // Items are assignable to both scopes, so the picker must offer a global
+    // milestone alongside the workspace's own.
+    const globalMs = generateMilestone('assign-global');
+    const globalMilestone = await createMilestoneViaAPI(request, {
+      ...globalMs,
+      workspace_id: null,
     });
     const itemData = generateItem(0, 'ms-assign');
     await createItemViaAPI(request, workspaceId, { title: itemData.title });
@@ -109,16 +111,17 @@ test.describe('Milestone Management', () => {
 
     const dialog = page.locator('[role="dialog"]');
     await dialog.locator('[data-testid="milestone-field"]').click();
+    await expect(page.locator(`[role="option"][data-option-id="${milestone.id}"]`)).toBeVisible();
+    await expect(
+      page.locator(`[role="option"][data-option-id="${globalMilestone.id}"]`)
+    ).toBeVisible();
     await page.locator(`[role="option"][data-option-id="${milestone.id}"]`).click();
     await expect(dialog.locator('[data-testid="milestone-field"]')).toContainText(ms.name, {
       timeout: 5000,
     });
   });
 
-  test('filters items by milestone via a collection using a raw CQL query', async ({
-    page,
-    request,
-  }) => {
+  test('filters items by milestone via a collection using a raw CQL query', async ({ page, request }) => {
     const ms = generateMilestone('filter');
     const milestone = await createMilestoneViaAPI(request, {
       ...ms,
@@ -145,9 +148,10 @@ test.describe('Milestone Management', () => {
     // Use the collection-scoped backlog route so the backend applies the
     // stored ql_query server-side.
     await page.goto(`/workspaces/${workspaceId}/collections/${collection.id}/backlog`);
-    await page.waitForLoadState('networkidle');
+
 
     await expect(page.getByText(includedItem.title).first()).toBeVisible({ timeout: 10000 });
     await expect(page.getByText(excludedItem.title)).toHaveCount(0);
   });
 });
+

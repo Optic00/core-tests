@@ -1,13 +1,13 @@
+import { test, expect } from '../fixtures/errors';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import {
   createActionViaAPI,
   getActionViaAPI,
-  nodeConfigByType,
   openActionEditor,
-  saveAction,
   selectNodeByType,
+  saveAction,
+  nodeConfigByType,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
 
 function aiAgentAction(stamp: number, overrides: Record<string, unknown> = {}) {
   return {

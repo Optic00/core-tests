@@ -18,7 +18,7 @@ func TestQuickRankingTest(t *testing.T) {
 		"key":  shortKey("QUICK"),
 	}
 
-	resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+	resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 	var workspace map[string]interface{}
 	DecodeJSON(t, resp, &workspace)
 	resp.Body.Close()
@@ -31,8 +31,6 @@ func TestQuickRankingTest(t *testing.T) {
 		itemData := map[string]interface{}{
 			"workspace_id": workspaceID,
 			"title":        fmt.Sprintf("Item %d", i+1),
-			"status":       "open",
-			"priority":     "medium",
 		}
 
 		resp := MakeAuthRequest(t, server, http.MethodPost, "/items", itemData)
@@ -96,14 +94,14 @@ func TestQuickRankingTest(t *testing.T) {
 		// Perform rerank
 		rerankData := map[string]interface{}{}
 		if prevItemID != nil {
-			rerankData["prev_item_id"] = *prevItemID
+			rerankData["previous_item_id"] = *prevItemID
 		}
 		if nextItemID != nil {
 			rerankData["next_item_id"] = *nextItemID
 		}
 
-		rerankResp := MakeAuthRequest(t, server, http.MethodPut,
-			fmt.Sprintf("/items/%d/frac-index", itemID), rerankData)
+		rerankResp := MakeAuthRequest(t, server, http.MethodPatch,
+			fmt.Sprintf("/v2/items/%d/rank", itemID), rerankData)
 
 		if rerankResp.StatusCode == http.StatusOK {
 			successCount++

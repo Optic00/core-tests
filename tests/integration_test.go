@@ -20,7 +20,7 @@ func TestWorkspaceOperations(t *testing.T) {
 			"description": "A workspace for testing API functionality",
 		}
 
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)
@@ -71,7 +71,7 @@ func TestWorkspaceOperations(t *testing.T) {
 			"description": "Updated description for testing",
 		}
 
-		resp := MakeAuthRequest(t, server, http.MethodPut, fmt.Sprintf("/workspaces/%d", workspaceID), updateData)
+		resp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/workspaces/%d", workspaceID), updateData)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -88,7 +88,7 @@ func TestWorkspaceOperations(t *testing.T) {
 	})
 
 	t.Run("DeleteWorkspace", func(t *testing.T) {
-		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/workspaces/%d", workspaceID), nil)
+		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/v2/workspaces/%d", workspaceID), nil)
 		defer resp.Body.Close()
 
 		// DELETE returns 204 No Content
@@ -161,7 +161,7 @@ func TestCustomFieldOperations(t *testing.T) {
 	t.Run("GetAllCustomFields", func(t *testing.T) {
 		// /custom-fields wraps results in {"data": [...], "index_counts": ...};
 		// decode the envelope rather than a plain array.
-		resp := MakeAuthRequest(t, server, http.MethodGet, "/custom-fields", nil)
+		resp := MakeAuthRequest(t, server, http.MethodGet, "/v2/custom-fields", nil)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusOK)
@@ -323,8 +323,6 @@ func TestWorkItemHierarchy(t *testing.T) {
 			"workspace_id": workspaceID,
 			"title":        "Epic: User Authentication System",
 			"description":  "Main epic for implementing user authentication",
-			"status":       "open",
-			"priority":     "high",
 		}
 
 		resp := MakeAuthRequest(t, server, http.MethodPost, "/items", epicData)
@@ -351,8 +349,6 @@ func TestWorkItemHierarchy(t *testing.T) {
 			"parent_id":    epicID,
 			"title":        "Story: User Registration Form",
 			"description":  "Create user registration form with validation",
-			"status":       "open",
-			"priority":     "medium",
 		}
 
 		resp := MakeAuthRequest(t, server, http.MethodPost, "/items", storyData)
@@ -380,8 +376,6 @@ func TestWorkItemHierarchy(t *testing.T) {
 			"parent_id":    storyID,
 			"title":        "Task: Implement email validation",
 			"description":  "Add email format validation to registration form",
-			"status":       "open",
-			"priority":     "low",
 		}
 
 		resp := MakeAuthRequest(t, server, http.MethodPost, "/items", taskData)
@@ -435,29 +429,11 @@ func TestWorkItemHierarchy(t *testing.T) {
 		}
 	})
 
-	t.Run("GetTree", func(t *testing.T) {
+	t.Run("GetTreeIsNotAvailable", func(t *testing.T) {
 		resp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/items/%d/tree", epicID), nil)
 		defer resp.Body.Close()
 
-		AssertStatusCode(t, resp, http.StatusOK)
-
-		var tree map[string]interface{}
-		DecodeJSON(t, resp, &tree)
-
-		// Verify tree structure
-		treeID := int(tree["id"].(float64))
-		if treeID != epicID {
-			t.Errorf("Tree root should be epic. Expected %d, got %d", epicID, treeID)
-		}
-
-		children, ok := tree["children"].([]interface{})
-		if !ok {
-			t.Fatal("Tree should have children array")
-		}
-
-		if len(children) == 0 {
-			t.Error("Tree should have children")
-		}
+		AssertStatusCode(t, resp, http.StatusNotFound)
 	})
 }
 
@@ -472,7 +448,7 @@ func TestErrorHandling(t *testing.T) {
 			"description": "Invalid workspace",
 		}
 
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", invalidData)
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", invalidData)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusBadRequest)
@@ -492,7 +468,7 @@ func TestErrorHandling(t *testing.T) {
 			"key":  shortKey("ERR"),
 		}
 
-		wsResp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+		wsResp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer wsResp.Body.Close()
 
 		var workspace map[string]interface{}
@@ -528,7 +504,7 @@ func TestBearerTokenAuth(t *testing.T) {
 			"description": "Testing bearer token auth on POST",
 		}
 
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)

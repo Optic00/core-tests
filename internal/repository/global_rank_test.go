@@ -110,3 +110,14 @@ func TestGlobalRankOrderingUsesBucketPrefix(t *testing.T) {
 		t.Fatalf("WithGlobalRankBucket() = %q, want %q", moved, "1|a2")
 	}
 }
+
+// WithGlobalRankBucket changes only the generation prefix while preserving
+// the fractional payload and therefore the item's position within a migrated
+// bucket. It is used by the online rebalance worker.
+func WithGlobalRankBucket(value string, bucket GlobalRankBucket) (string, error) {
+	rank, err := ParseGlobalRank(value)
+	if err != nil {
+		return "", err
+	}
+	return EncodeGlobalRank(bucket, rank.Fraction)
+}

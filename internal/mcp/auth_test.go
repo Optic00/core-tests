@@ -118,3 +118,10 @@ func newMCPTestEnv(t *testing.T) (*auth.TokenManager, database.Database, int) {
 	tm := auth.NewTokenManager(db, nil)
 	return tm, db, int(uid64)
 }
+
+// bearerAuthMiddleware retains the original unit-test and PAT-facing helper.
+//
+//nolint:unused // exercised by the private test overlay and kept for PAT-mode coverage
+func bearerAuthMiddleware(tokenManager *auth.TokenManager, next http.Handler) http.Handler {
+	return bearerAuthMiddlewareWithConfig(tokenManager, AuthConfig{}, next)
+}

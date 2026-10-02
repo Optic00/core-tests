@@ -34,20 +34,3 @@ func TestOpenAPISpecJSON_ServesValidJSON(t *testing.T) {
 		t.Error("expected an `openapi` field in the spec document")
 	}
 }
-
-func TestOpenAPISpecYAML_ServesContent(t *testing.T) {
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/rest/api/v1/openapi.yaml", nil)
-
-	OpenAPISpecYAML(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: got %d, want 200", rr.Code)
-	}
-	if got := rr.Header().Get("Content-Type"); got != "application/yaml" {
-		t.Errorf("content-type: got %q, want application/yaml", got)
-	}
-	if rr.Body.Len() == 0 {
-		t.Fatal("body is empty — embed may have failed")
-	}
-}

@@ -126,14 +126,12 @@ func TestWSCLI_StatusListUsesWorkspaceWorkflows(t *testing.T) {
 	itemOut, stderr, code := runWS(t, ts, "task", "get", strconv.Itoa(target.ID), "-o", "json")
 	requireZero(t, code, stderr)
 	var moved struct {
-		Status struct {
-			ID int `json:"id"`
-		} `json:"status"`
+		StatusID *int `json:"status_id"`
 	}
 	if err := json.Unmarshal(itemOut, &moved); err != nil {
 		t.Fatalf("decode moved item: %v\nraw=%s", err, string(itemOut))
 	}
-	if moved.Status.ID != reviewID {
-		t.Fatalf("item status = %d, want listed Review status %d", moved.Status.ID, reviewID)
+	if moved.StatusID == nil || *moved.StatusID != reviewID {
+		t.Fatalf("item status = %v, want listed Review status %d", moved.StatusID, reviewID)
 	}
 }

@@ -27,12 +27,10 @@ export class MilestonePage {
 
   async gotoGlobal() {
     await this.page.goto('/milestones');
-    await this.page.waitForLoadState('networkidle');
   }
 
   async gotoWorkspace(workspaceId: string | number) {
     await this.page.goto(`/workspaces/${workspaceId}/milestones`);
-    await this.page.waitForLoadState('networkidle');
   }
 
   async clickCreate() {
@@ -118,10 +116,7 @@ export class MilestonePage {
   private async openRowDropdown(name: string) {
     const row = this.findRowByName(name);
     await row.locator('button').last().click();
-    await this.page
-      .locator('button[role="menuitem"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.locator('button[role="menuitem"]').first().waitFor({ state: 'visible', timeout: 5000 });
   }
 
   private async clickMenuItem(text: RegExp | string) {
@@ -154,12 +149,18 @@ export class MilestonePage {
     await this.verifyMilestoneDoesNotExist(name);
   }
 
-  private statusLabel(status: 'planning' | 'in-progress' | 'completed' | 'cancelled'): string {
+  private statusLabel(
+    status: 'planning' | 'in-progress' | 'completed' | 'cancelled'
+  ): string {
     return {
       planning: 'Planning',
       'in-progress': 'In Progress',
       completed: 'Completed',
       cancelled: 'Cancelled',
     }[status];
+  }
+
+  private escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

@@ -325,9 +325,10 @@ func TestBindingService_CreateRejectsMalformedSlug(t *testing.T) {
 	ctx := context.Background()
 	st := newBindingTestStack(t, false)
 	scmConn := 1 // not seeded; rejection happens before insert
+	// "acme/widget/extra" is a legal nested namespace since GitLab support
+	// (6d107854) relaxed the slug grammar to two-or-more segments.
 	cases := []string{
 		"not-owner-repo",
-		"acme/widget/extra",
 		"../etc/passwd",
 		"/acme/widget",
 		"https://github.com/acme/widget",

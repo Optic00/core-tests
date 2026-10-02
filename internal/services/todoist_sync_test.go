@@ -95,7 +95,7 @@ func (s *fakeStore) CreateTask(_, _ int, st taskState) (int, error) {
 	return s.nextID, nil
 }
 
-func (s *fakeStore) UpdateTask(itemID int, st taskState, fields []string) error {
+func (s *fakeStore) UpdateTask(itemID, _ int, st taskState, fields []string) error {
 	cur := s.tasks[itemID]
 	for _, f := range fields {
 		switch f {

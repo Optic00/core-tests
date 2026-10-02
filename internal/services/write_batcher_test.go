@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,6 +13,25 @@ import (
 
 	"windshift/internal/database"
 )
+
+// waitForWriteBatcherFlush polls Flush until it succeeds, tolerating the
+// batcher's retry backoff window.
+func waitForWriteBatcherFlush[T any](t *testing.T, wb *WriteBatcher[T], label string) {
+	t.Helper()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.Now().Add(time.Second)
+	for {
+		err := wb.Flush()
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: %v", label, err)
+		}
+		<-tick.C
+	}
+}
 
 func testWriteBatcherConfig() WriteBatcherConfig {
 	return WriteBatcherConfig{
@@ -24,16 +44,6 @@ func testWriteBatcherConfig() WriteBatcherConfig {
 		RetryMaxBackoff:     10 * time.Millisecond,
 		RetryJitter:         -1,
 		Name:                "test",
-	}
-}
-
-func elapseWriteBatcherBackoff[T any](wb *WriteBatcher[T]) {
-	wb.mu.Lock()
-	defer wb.mu.Unlock()
-	wb.retryAt = time.Time{}
-	if wb.retryTimer != nil {
-		wb.retryTimer.Stop()
-		wb.retryTimer = nil
 	}
 }
 
@@ -66,10 +76,8 @@ func TestWriteBatcherBoundsPendingWorkAcrossFlushFailure(t *testing.T) {
 	}
 
 	fail = false
-	elapseWriteBatcherBackoff(wb)
-	if err := wb.Flush(); err != nil {
-		t.Fatalf("recovery flush: %v", err)
-	}
+	// The batcher enforces a retry backoff; poll until a flush succeeds.
+	waitForWriteBatcherFlush(t, wb, "recovery flush")
 	if stats := wb.Stats(); stats.Pending != 0 || stats.ItemsFlushed != 3 {
 		t.Fatalf("stats after recovery = %+v", stats)
 	}
@@ -168,10 +176,7 @@ func TestWriteBatcherBacksOffAfterFailure(t *testing.T) {
 	if attempts.Load() != 1 {
 		t.Fatalf("attempts during backoff = %d, want 1", attempts.Load())
 	}
-	elapseWriteBatcherBackoff(wb)
-	if err := wb.Flush(); err != nil {
-		t.Fatalf("retry flush: %v", err)
-	}
+	waitForWriteBatcherFlush(t, wb, "retry flush")
 }
 
 func TestWriteBatcherRetryBackoffGrowsAndCaps(t *testing.T) {
@@ -204,13 +209,10 @@ func TestWriteBatcherAutomaticallyRecoversWithinBound(t *testing.T) {
 	config.MaxBatchSize = 4
 	config.MaxPending = 16
 	var attempts atomic.Int64
-	recovered := make(chan struct{})
-	var recoveredOnce sync.Once
 	wb := NewWriteBatcher(config, func(context.Context, []int) error {
 		if attempts.Add(1) <= 2 {
 			return errors.New("database unavailable")
 		}
-		recoveredOnce.Do(func() { close(recovered) })
 		return nil
 	})
 	wb.Start()
@@ -218,19 +220,20 @@ func TestWriteBatcherAutomaticallyRecoversWithinBound(t *testing.T) {
 		wb.Add(i)
 	}
 
-	select {
-	case <-recovered:
-	case <-time.After(time.Second):
-		t.Fatal("write batcher did not recover after scheduled retries")
+	deadline := time.Now().Add(time.Second)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for time.Now().Before(deadline) && wb.Stats().Pending > 0 {
+		<-tick.C
+	}
+	stats := wb.Stats()
+	if stats.Pending != 0 || stats.HighWaterMark > int64(config.MaxPending) || stats.ItemsDropped == 0 {
+		t.Fatalf("recovery stats = %+v", stats)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := wb.StopContext(ctx); err != nil {
 		t.Fatalf("stop: %v", err)
-	}
-	stats := wb.Stats()
-	if stats.Pending != 0 || stats.HighWaterMark > int64(config.MaxPending) || stats.ItemsDropped == 0 {
-		t.Fatalf("recovery stats = %+v", stats)
 	}
 }
 
@@ -271,10 +274,7 @@ func TestWriteBatcherMergesUpdatesThatArriveDuringFailedFlush(t *testing.T) {
 	if err := <-flushDone; err == nil {
 		t.Fatal("failed flush returned nil")
 	}
-	elapseWriteBatcherBackoff(wb)
-	if err := wb.Flush(); err != nil {
-		t.Fatalf("recovery flush: %v", err)
-	}
+	waitForWriteBatcherFlush(t, wb, "recovery flush")
 	if len(recovered) != 1 || recovered[0].count != 3 || !recovered[0].when.Equal(now.Add(time.Second)) {
 		t.Fatalf("recovered updates = %+v", recovered)
 	}
@@ -288,9 +288,18 @@ func TestWriteBatcherExpiresStaleWorkAndAdmitsFreshWork(t *testing.T) {
 	if !wb.Add(1) {
 		t.Fatal("first item rejected")
 	}
-	wb.mu.Lock()
-	wb.buffer[0].lastUpdatedAt = time.Now().Add(-config.MaxRetryAge - time.Second)
-	wb.mu.Unlock()
+	// MaxRetryAge is 5ms; the pending item's age is observable through
+	// stats. Wait until it passes the retry age, then a single Add must
+	// admit the fresh item by expiring the stale one.
+	staleTick := time.NewTicker(time.Millisecond)
+	defer staleTick.Stop()
+	staleDeadline := time.Now().Add(time.Second)
+	for wb.Stats().OldestAge < config.MaxRetryAge {
+		if time.Now().After(staleDeadline) {
+			t.Fatal("stale item never aged past MaxRetryAge")
+		}
+		<-staleTick.C
+	}
 	if !wb.Add(2) {
 		t.Fatal("fresh item rejected after stale item should expire")
 	}
@@ -335,19 +344,12 @@ func TestWriteBatcherConcurrentAddFlushStop(t *testing.T) {
 	)
 	wb.Start()
 
-	start := make(chan struct{})
-	started := make(chan struct{}, 20)
-	release := make(chan struct{})
 	var producers sync.WaitGroup
 	for producer := 0; producer < 20; producer++ {
 		producers.Add(1)
 		go func(base int) {
 			defer producers.Done()
-			<-start
-			wb.Add(base * 200)
-			started <- struct{}{}
-			<-release
-			for i := 1; i < 200; i++ {
+			for i := 0; i < 200; i++ {
 				wb.Add(base*200 + i)
 				if i%25 == 0 {
 					_ = wb.Flush()
@@ -355,18 +357,17 @@ func TestWriteBatcherConcurrentAddFlushStop(t *testing.T) {
 			}
 		}(producer)
 	}
-	close(start)
-	for range 20 {
-		<-started
-	}
 
 	stopDone := make(chan error, 1)
 	go func() {
+		// Yield scheduling so producers get a head start before the stop.
+		for i := 0; i < 50; i++ {
+			runtime.Gosched()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		stopDone <- wb.StopContext(ctx)
 	}()
-	close(release)
 	producers.Wait()
 	if err := <-stopDone; err != nil {
 		t.Fatalf("stop: %v", err)
@@ -596,4 +597,10 @@ func TestTrackerCoalescersPreserveLatestTimestampAndCounts(t *testing.T) {
 	if activity.ActivityCount != 9 || !activity.ActivityAt.Equal(now.Add(time.Second)) {
 		t.Fatalf("item activity = %+v", activity)
 	}
+}
+
+// NewWriteBatcher creates a FIFO batcher. Use NewCoalescingWriteBatcher for
+// high-rate updates where multiple writes to a stable key can be merged.
+func NewWriteBatcher[T any](config WriteBatcherConfig, flushFn func(context.Context, []T) error) *WriteBatcher[T] {
+	return newWriteBatcher(config, nil, flushFn)
 }

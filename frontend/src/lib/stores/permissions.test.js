@@ -117,12 +117,7 @@ describe('canAccessCustomers', () => {
     authStore.set({ currentUser: { id: 1, is_system_admin: false } });
     permissionStore.setHasActivePortals(true);
     api.permissions.getUserPermissions.mockResolvedValueOnce({
-      global_permissions: [
-        {
-          permission_id: 7,
-          permission: { permission_key: 'customers.manage' },
-        },
-      ],
+      global_permissions: ['customers.manage'],
     });
     await permissionStore.loadUserPermissions(1);
     expect(get(permissionStore).canAccessCustomers).toBe(true);
@@ -191,7 +186,7 @@ describe('canManageAssets', () => {
     expect(get(permissionStore).canManageAssets).toBe(false);
 
     api.permissions.getUserPermissions.mockResolvedValueOnce({
-      global_permissions: [{ permission_id: 9, permission: { permission_key: 'asset.manage' } }],
+      global_permissions: ['asset.manage'],
     });
     await permissionStore.loadUserPermissions(1);
     expect(get(permissionStore).canManageAssets).toBe(true);
@@ -231,15 +226,14 @@ describe('hasPermission / hasPermissionKey', () => {
     expect(permissionStore.hasPermissionKey('any.permission')).toBe(true);
   });
 
-  test('hasPermission checks the loaded set for non-admins', async () => {
+  test('key checks drive access; the ID set stays empty (compact profile, WI-1444)', async () => {
     authStore.set({ currentUser: { id: 1, is_system_admin: false } });
     api.permissions.getUserPermissions.mockResolvedValueOnce({
-      global_permissions: [{ permission_id: 42, permission: { permission_key: 'workspace.edit' } }],
+      global_permissions: ['workspace.edit'],
     });
     await permissionStore.loadUserPermissions(1);
 
-    expect(permissionStore.hasPermission(42)).toBe(true);
-    expect(permissionStore.hasPermission(43)).toBe(false);
+    expect(permissionStore.hasPermission(42)).toBe(false);
     expect(permissionStore.hasPermissionKey('workspace.edit')).toBe(true);
     expect(permissionStore.hasPermissionKey('workspace.delete')).toBe(false);
   });
@@ -250,7 +244,7 @@ describe('loadUserPermissions', () => {
     // Pre-seed something so we can confirm it's cleared.
     authStore.set({ currentUser: { id: 1, is_system_admin: false } });
     api.permissions.getUserPermissions.mockResolvedValueOnce({
-      global_permissions: [{ permission_id: 1, permission: { permission_key: 'foo.bar' } }],
+      global_permissions: ['foo.bar'],
     });
     await permissionStore.loadUserPermissions(1);
     expect(permissionStore.hasPermissionKey('foo.bar')).toBe(true);
@@ -275,19 +269,15 @@ describe('loadUserPermissions', () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  test('skips permission entries without a permission_key', async () => {
+  test('folds duplicate keys into the set once', async () => {
     authStore.set({ currentUser: { id: 1, is_system_admin: false } });
     api.permissions.getUserPermissions.mockResolvedValueOnce({
-      global_permissions: [
-        { permission_id: 1, permission: { permission_key: 'a.b' } },
-        { permission_id: 2, permission: null },
-        { permission_id: 3 }, // no permission object at all
-      ],
+      global_permissions: ['a.b', 'a.b'],
     });
     await permissionStore.loadUserPermissions(1);
 
     expect(get(permissionStore).userPermissionKeys).toEqual(new Set(['a.b']));
-    expect(get(permissionStore).userPermissions).toEqual(new Set([1, 2, 3]));
+    expect(get(permissionStore).userPermissions).toEqual(new Set());
   });
 });
 

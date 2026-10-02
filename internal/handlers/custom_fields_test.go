@@ -10,7 +10,10 @@ import (
 
 	"windshift/internal/database"
 	"windshift/internal/models"
+	"windshift/internal/services"
 	"windshift/internal/testutils"
+	"errors"
+	"windshift/internal/repository"
 )
 
 // materializeDeferredIndexes runs the same deferred-index build that fires
@@ -497,11 +500,12 @@ func TestCustomFieldHandler_DeleteLinkingFieldGuardsMirrorValues(t *testing.T) {
 	if err := tdb.QueryRow(`INSERT INTO workspaces (name, key) VALUES ('Mirror guard', 'MGD') RETURNING id`).Scan(&workspaceID); err != nil {
 		t.Fatalf("insert workspace: %v", err)
 	}
-	if _, err := tdb.ExecWrite(`
-		INSERT INTO items (workspace_id, workspace_item_number, title, description, frac_index, custom_field_values)
-		VALUES (?, 1, 'Mirror value', '', 'a', ?)
-	`, workspaceID, fmt.Sprintf(`{"%d":"linked"}`, mirrorID)); err != nil {
-		t.Fatalf("insert item with mirror value: %v", err)
+	if _, err := services.CreateItem(tdb.GetDatabase(), services.ItemCreationParams{
+		WorkspaceID:           workspaceID,
+		Title:                 "Mirror value",
+		CustomFieldValuesJSON: fmt.Sprintf(`{"%d":"linked"}`, mirrorID),
+	}); err != nil {
+		t.Fatalf("create item with mirror value: %v", err)
 	}
 
 	deleteReq := testutils.CreateJSONRequest(t, "DELETE", "/api/custom-fields/1", nil)
@@ -1134,4 +1138,100 @@ func TestCustomFieldHandler_UpdateSettings_InvalidValue(t *testing.T) {
 			rr.AssertStatusCode(http.StatusBadRequest)
 		})
 	}
+}
+
+// Test-only response surface for the GetAll/Get handler methods moved from
+// core (commit 6685c27db): production code no longer serves these shapes.
+type assetTypeUsage struct {
+	AssetTypeName string `json:"asset_type_name"`
+	SetName       string `json:"set_name"`
+}
+
+type customFieldWithUsage struct {
+	models.CustomFieldDefinition
+	AssetTypeUsages []assetTypeUsage             `json:"asset_type_usages"`
+	Indexed         *models.CustomFieldIndexInfo `json:"indexed,omitempty"`
+}
+
+type indexCountInfo struct {
+	Current int `json:"current"`
+	Max     int `json:"max"`
+}
+
+type customFieldsResponse struct {
+	Data        []customFieldWithUsage    `json:"data"`
+	IndexCounts map[string]indexCountInfo `json:"index_counts"`
+}
+
+func (h *CustomFieldHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+	fields, err := repository.NewCustomFieldRepository(h.db).List()
+	if err != nil {
+		h.logAndRespondDatabaseError(w, r, err)
+		return
+	}
+	usages, err := repository.NewCustomFieldRepository(h.db).ListAssetTypeUsages()
+	if err != nil {
+		h.logAndRespondDatabaseError(w, r, err)
+		return
+	}
+	usageByField := make(map[int][]assetTypeUsage)
+	for _, usage := range usages {
+		usageByField[usage.CustomFieldID] = append(usageByField[usage.CustomFieldID], assetTypeUsage{
+			AssetTypeName: usage.AssetTypeName, SetName: usage.SetName,
+		})
+	}
+	indexes, err := repository.NewCustomFieldRepository(h.db).ListIndexes()
+	if err != nil {
+		h.logAndRespondDatabaseError(w, r, err)
+		return
+	}
+	indexByField := make(map[int]*models.CustomFieldIndexInfo)
+	counts := map[string]int{"items": 0, "assets": 0}
+	for _, index := range indexes {
+		if indexByField[index.CustomFieldID] == nil {
+			indexByField[index.CustomFieldID] = &models.CustomFieldIndexInfo{}
+		}
+		switch index.TargetTable {
+		case "items":
+			indexByField[index.CustomFieldID].Items = true
+			counts["items"]++
+		case "assets":
+			indexByField[index.CustomFieldID].Assets = true
+			counts["assets"]++
+		}
+	}
+	result := make([]customFieldWithUsage, len(fields))
+	for i, field := range fields {
+		fieldUsages := usageByField[field.ID]
+		if fieldUsages == nil {
+			fieldUsages = []assetTypeUsage{}
+		}
+		result[i] = customFieldWithUsage{CustomFieldDefinition: field, AssetTypeUsages: fieldUsages}
+		if indexed, ok := indexByField[field.ID]; ok {
+			result[i].Indexed = indexed
+		} else if services.IsIndexableCustomFieldType(field.FieldType) {
+			result[i].Indexed = &models.CustomFieldIndexInfo{}
+		}
+	}
+	limit := h.provisioning.MaxIndexesPerTable()
+	respondJSONOK(w, customFieldsResponse{Data: result, IndexCounts: map[string]indexCountInfo{
+		"items": {Current: counts["items"], Max: limit}, "assets": {Current: counts["assets"], Max: limit},
+	}})
+}
+
+func (h *CustomFieldHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	field, err := repository.NewCustomFieldRepository(h.db).FindByID(id)
+	if errors.Is(err, repository.ErrNotFound) {
+		respondNotFound(w, r, "custom_field")
+		return
+	}
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+	respondJSONOK(w, field)
 }

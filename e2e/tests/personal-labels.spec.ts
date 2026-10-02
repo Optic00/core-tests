@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures/context-path';
+import { waitForAnimations } from '../helpers/screenshot';
 
 /**
  * The browser contract for the Labels tab lives here. The personal-label CRUD,
@@ -7,7 +8,9 @@ import { expect, test } from '../fixtures/context-path';
  */
 
 test.describe('Personal labels — Profile tab UI smoke', () => {
-  test('Labels tab loads the manager and shows the new-label affordance', async ({ page }) => {
+  test('Labels tab loads the manager and shows the new-label affordance', async ({
+    page,
+  }) => {
     // The /profile page bootstraps several effects on mount (auth, agents,
     // attachment status, regional settings). On a cold first server start
     // the JS bundle parse + first paint can lag behind Playwright's
@@ -17,11 +20,11 @@ test.describe('Personal labels — Profile tab UI smoke', () => {
     // then for full network idle so any deferred Svelte effects have
     // settled. This mirrors a real user's interaction timing.
     const agentsResponse = page.waitForResponse(
-      (res) => res.url().endsWith('/api/me/agents') && res.ok()
+      (res) => res.url().endsWith('/api/me/agents') && res.ok(),
     );
     await page.goto('/profile');
     await agentsResponse;
-    await page.waitForLoadState('networkidle');
+
 
     const labelsTab = page.getByTestId('profile-tab-labels');
     await expect(labelsTab).toBeVisible();
@@ -30,5 +33,11 @@ test.describe('Personal labels — Profile tab UI smoke', () => {
     // The manager always renders this button at the top of the panel
     // regardless of whether the labels list has finished loading.
     await expect(page.getByTestId('personal-label-new')).toBeVisible();
+
+    // Settle the Tabs `transition-all` highlight before the auto end-of-test
+    // screenshot fires — otherwise the snap catches the indicator
+    // mid-interpolation and looks like the wrong tab is selected. No-op
+    // when E2E_SCREENSHOTS is unset.
+    await waitForAnimations(page);
   });
 });

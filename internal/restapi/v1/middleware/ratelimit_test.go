@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -106,4 +107,25 @@ func TestRateLimiterEvictIdleConcurrentSafe(t *testing.T) {
 	}
 	stop.Store(true)
 	<-done
+}
+
+// stopLocks makes Stop idempotent per limiter. Core dropped its stopOnce
+// field in the dead-code sweep, so the test surface owns the guard.
+var stopLocks sync.Map // *RateLimiter -> *sync.Once
+
+// Stop halts the sweep goroutine. Safe to call multiple times; not currently
+// wired into server shutdown since the limiter lives for the process lifetime,
+// but exposed so future shutdown paths and tests can release it cleanly.
+//
+// deadcode-keep: called by core-tests/internal/restapi/v1/middleware/ratelimit_test.go
+func (rl *RateLimiter) Stop() {
+	once, _ := stopLocks.LoadOrStore(rl, &sync.Once{})
+	once.(*sync.Once).Do(func() {
+		if rl.sweepTicker != nil {
+			rl.sweepTicker.Stop()
+		}
+		if rl.stopChan != nil {
+			close(rl.stopChan)
+		}
+	})
 }

@@ -22,35 +22,44 @@ vi.mock('../stores/portalAuth.svelte.js', async () => {
 });
 
 vi.mock('../stores/portal.svelte.js', () => ({
-  portalStore: {
+  portalCustomizationStore: {
     hasBackgroundImage: false,
     hasGradient: false,
     headerBackgroundStyle: '',
-    openRequestCount: 0,
-    pendingApprovalCount: 0,
     showProfileMenu: false,
     showMainMenu: false,
+    canManage: false,
     currentSlug: 'support',
     isDarkMode: false,
     portalData: { title: 'Support' },
+    knowledgeBasePageSources: [],
     toggleTheme: vi.fn(),
-    setShowMyRequests: vi.fn(),
-    setShowMyApprovals: vi.fn(),
-    setShowMyDrafts: vi.fn(),
-    toggleMyRequests: vi.fn(),
-    toggleMyApprovals: vi.fn(),
-    toggleMyDrafts: vi.fn(),
   },
+}));
+
+vi.mock('../stores/portalActivity.svelte.js', () => ({
+  portalRequestsStore: { openCount: 0, visible: false, setVisible: vi.fn(), toggle: vi.fn() },
+  portalDraftsStore: { visible: false, setVisible: vi.fn(), toggle: vi.fn() },
+  portalApprovalsStore: { pendingCount: 0, visible: false, setVisible: vi.fn(), toggle: vi.fn() },
 }));
 
 vi.mock('../stores/i18n.svelte.js', () => ({
   t: (key) => key,
 }));
 
-vi.mock('../router.js', () => ({ navigate: vi.fn() }));
+vi.mock('../router.js', () => {
+  const currentRoute = {
+    subscribe: (fn) => {
+      fn({ path: '/portal/support', params: { slug: 'support' } });
+      return () => {};
+    },
+  };
+  return { navigate: vi.fn(), currentRoute };
+});
 
 import { authStore } from '../stores';
 import { portalAuthStore } from '../stores/portalAuth.svelte.js';
+import { portalCustomizationStore } from '../stores/portal.svelte.js';
 import PortalHeader from './PortalHeader.svelte';
 
 describe('PortalHeader', () => {
@@ -62,6 +71,8 @@ describe('PortalHeader', () => {
       customer: null,
       user: null,
     });
+    portalCustomizationStore.showMainMenu = false;
+    portalCustomizationStore.canManage = false;
   });
 
   it('uses the current internal user avatar when the portal snapshot is stale', () => {
@@ -150,6 +161,29 @@ describe('PortalHeader', () => {
 
     expect(screen.queryByTestId('portal-user-avatar')).not.toBeInTheDocument();
     expect(screen.getByTestId('portal-user-avatar-fallback')).toHaveTextContent('JC');
+  });
+
+  it('hides portal customization from an internal non-manager', () => {
+    authStore.set({ isAuthenticated: true, currentUser: { id: 7, username: 'member' } });
+    portalCustomizationStore.canManage = false;
+    portalCustomizationStore.showMainMenu = true;
+
+    render(PortalHeader);
+
+    expect(screen.getByTestId('portal-settings-button')).toBeInTheDocument();
+    expect(screen.queryByTestId('portal-customize-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('portal-theme-toggle')).not.toBeInTheDocument();
+  });
+
+  it('shows portal customization to a channel manager', () => {
+    authStore.set({ isAuthenticated: true, currentUser: { id: 7, username: 'manager' } });
+    portalCustomizationStore.canManage = true;
+    portalCustomizationStore.showMainMenu = true;
+
+    render(PortalHeader);
+
+    expect(screen.getByTestId('portal-customize-button')).toBeInTheDocument();
+    expect(screen.getByTestId('portal-theme-toggle')).toBeInTheDocument();
   });
 
   it('keeps the fallback visible when the avatar image cannot load', async () => {

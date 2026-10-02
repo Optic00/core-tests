@@ -105,7 +105,7 @@ describe('ItemAgentLog', () => {
       expect(transcript.textContent).toContain('bash failed');
       expect(transcript.textContent).toContain('fatal: work item update forbidden');
       expect(transcript.textContent).toContain(
-        '→ read_file frontend/src/lib/features/items/ItemAgentLog.svelte'
+        '→ read_file frontend/src/lib/features/items/ItemAgentLog.svelte',
       );
       expect(transcript.textContent).toContain('Work-item comment failed');
       expect(transcript.textContent).toContain('server returned 403 Forbidden');

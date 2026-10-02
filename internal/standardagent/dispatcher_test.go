@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"windshift/internal/database"
 	"windshift/internal/llm"
 	"windshift/internal/models"
 	"windshift/internal/repository"
@@ -82,9 +83,19 @@ func (*readThenAnswerClient) Health(context.Context) error { return nil }
 func (*readThenAnswerClient) Available() bool              { return true }
 
 func newStandardRuntime(t *testing.T, resolver LLMResolver) (*Dispatcher, *repository.AgentRunRepository, int, int, int) {
+	return newStandardRuntimeWithDB(t, resolver, nil)
+}
+
+// newStandardRuntimeWithDB builds the dispatcher with an optional wrapper
+// around the database so tests can observe the queries it issues.
+func newStandardRuntimeWithDB(t *testing.T, resolver LLMResolver, wrapDB func(database.Database) database.Database) (*Dispatcher, *repository.AgentRunRepository, int, int, int) {
 	t.Helper()
 	tdb := testutils.CreateTestDB(t, true)
-	db := tdb.GetDatabase()
+	rawDB := tdb.GetDatabase()
+	db := rawDB
+	if wrapDB != nil {
+		db = wrapDB(rawDB)
+	}
 	if _, err := db.Exec(`INSERT INTO workspaces(id, name, key, active) VALUES (1, 'Runtime', 'RUN', TRUE)`); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +270,7 @@ func TestDispatcherRunPrivateTestUsesOnlyReadToolsAndPersistsNoRunOrComment(t *t
 }
 
 func TestDispatcherExecuteFailureStoresSafeErrorAndPostsNoFinalComment(t *testing.T) {
-	const providerSecret = "sk-test-secret-value"
+	const providerSecret = "sk-live-secret-value"
 	dispatcher, runs, humanID, agentID, itemID := newStandardRuntime(t,
 		fixedResolver{err: errors.New("provider rejected " + providerSecret)})
 	run := insertRunningStandard(t, dispatcher, runs, humanID, agentID, itemID, false)

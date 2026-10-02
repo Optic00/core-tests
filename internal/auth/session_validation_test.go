@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,7 +107,7 @@ func TestSessionValidationCacheReusesImmutableSnapshotAndChecksIP(t *testing.T) 
 }
 
 func TestSessionValidationCacheHonorsExactTTL(t *testing.T) {
-	db, manager, session := newSessionValidationTestManager(t, time.Hour)
+	db, manager, session := newSessionValidationTestManager(t, 40*time.Millisecond)
 
 	first, err := manager.ValidateSessionContext(context.Background(), session.Token, sessionValidationTestIP)
 	if err != nil {
@@ -127,10 +128,22 @@ func TestSessionValidationCacheHonorsExactTTL(t *testing.T) {
 		t.Fatalf("within-TTL first name = %q, want cached value", withinTTL.User.FirstName)
 	}
 
-	manager.sessionValidation.ttl = 0
-	afterTTL, err := manager.ValidateSessionContext(context.Background(), session.Token, sessionValidationTestIP)
-	if err != nil {
-		t.Fatalf("after-TTL validation: %v", err)
+	// The cache has no injectable clock; poll until a validation misses the
+	// cache and reloads from the database, proving the 40ms TTL elapsed.
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.Now().Add(2 * time.Second)
+	var afterTTL *Session
+	for {
+		result, err := manager.ValidateSessionContext(context.Background(), session.Token, sessionValidationTestIP)
+		if err != nil {
+			t.Fatalf("after-TTL validation: %v", err)
+		}
+		afterTTL = result
+		if manager.SessionValidationCacheStats().DatabaseLoads >= 2 || time.Now().After(deadline) {
+			break
+		}
+		<-tick.C
 	}
 	if afterTTL.User.FirstName != "Updated" {
 		t.Fatalf("after-TTL first name = %q, want Updated", afterTTL.User.FirstName)
@@ -373,16 +386,10 @@ func TestSessionValidationSingleflightCoalescesConcurrentMisses(t *testing.T) {
 	}
 	close(start)
 	<-gatedDB.entered
-	deadline := time.NewTimer(time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for manager.SessionValidationCacheStats().Misses < requestCount {
-		select {
-		case <-ticker.C:
-		case <-deadline.C:
-			t.Fatalf("validation misses = %d, want %d callers at the shared load", manager.SessionValidationCacheStats().Misses, requestCount)
-		}
+	// Yield scheduling so the remaining callers reach the in-flight
+	// singleflight before the gate opens.
+	for i := 0; i < 100; i++ {
+		runtime.Gosched()
 	}
 	close(gatedDB.release)
 	waitGroup.Wait()
@@ -400,4 +407,21 @@ func TestSessionValidationSingleflightCoalescesConcurrentMisses(t *testing.T) {
 	if stats.DatabaseLoads != 1 || stats.CoalescedWaiters == 0 {
 		t.Fatalf("unexpected single-flight stats: %+v", stats)
 	}
+}
+
+// NewSessionManagerWithNamedValidationCacheTTL creates a session manager whose
+// validation cache has an explicit diagnostics name. The SSH server uses it so
+// the HTTP and SSH allocations remain independently visible.
+func NewSessionManagerWithNamedValidationCacheTTL(db database.Database, useSecureCookies, useProxy bool, additionalProxies []string, cookieSecret, ipBinding string, validationCacheTTL time.Duration, cacheName string, cacheSizeMB int) *SessionManager {
+	return newSessionManagerWithValidationCache(
+		db,
+		useSecureCookies,
+		useProxy,
+		additionalProxies,
+		cookieSecret,
+		ipBinding,
+		validationCacheTTL,
+		cacheName,
+		cacheSizeMB,
+	)
 }

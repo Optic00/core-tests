@@ -1,5 +1,5 @@
-import type { APIRequestContext } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/mail';
+import { type APIRequestContext } from '../fixtures/context-path';
+import { test, expect } from '../fixtures/mail';
 import {
   attachRequestTypesToSection,
   createPortalChannel,
@@ -86,10 +86,10 @@ test.describe('Portal draft + magic link + schema change', () => {
     //    the UI login flow is already covered by portal-happy-path.
     await page.context().clearCookies();
     const since = new Date();
-    const linkResp = await page.request.post(`/api/portal/${slug}/auth/request`, {
-      headers: SEC_FETCH,
-      data: { email: customerEmail },
-    });
+    const linkResp = await page.request.post(
+      `/api/portal/${slug}/auth/request`,
+      { headers: SEC_FETCH, data: { email: customerEmail } }
+    );
     expect(linkResp.ok(), `magic-link request: ${linkResp.status()}`).toBeTruthy();
 
     const msg = await mail.waitForLast({
@@ -99,11 +99,9 @@ test.describe('Portal draft + magic link + schema change', () => {
       timeoutMs: 5000,
     });
     const tokenMatch = msg.Text.match(/[?#&]token=([A-Za-z0-9_=-]+)/);
-    if (!tokenMatch) {
-      throw new Error('magic-link token not found');
-    }
+    expect(tokenMatch, 'magic-link token').toBeTruthy();
     const verifyResp = await page.request.get(
-      `/api/portal/${slug}/auth/verify?token=${encodeURIComponent(tokenMatch[1])}`,
+      `/api/portal/${slug}/auth/verify?token=${encodeURIComponent(tokenMatch![1])}`,
       { headers: SEC_FETCH }
     );
     expect(verifyResp.ok(), `verify: ${verifyResp.status()}`).toBeTruthy();
@@ -162,9 +160,9 @@ test.describe('Portal draft + magic link + schema change', () => {
 
     // Resume banner appears because a draft row still exists for this
     // (channel, request_type, customer) tuple, even after the schema change.
-    await expect(page.locator('[data-testid="request-form-draft-resume-banner"]')).toBeVisible({
-      timeout: 5000,
-    });
+    await expect(
+      page.locator('[data-testid="request-form-draft-resume-banner"]')
+    ).toBeVisible({ timeout: 5000 });
 
     // The surviving field carries the draft value (title from step 1).
     await expect(page.locator('#request-title')).toBeVisible({ timeout: 5000 });
@@ -179,7 +177,8 @@ test.describe('Portal draft + magic link + schema change', () => {
     //    already satisfied. Backend should accept and return an item id.
     const submitPromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes(`/api/portal/${slug}/submit`) && resp.request().method() === 'POST'
+        resp.url().includes(`/api/portal/${slug}/submit`) &&
+        resp.request().method() === 'POST'
     );
     await page.locator('[data-testid="request-form-submit"]').click();
     const submitResp = await submitPromise;
@@ -188,15 +187,16 @@ test.describe('Portal draft + magic link + schema change', () => {
       `submit: ${submitResp.status()} ${await submitResp.text()}`
     ).toBeTruthy();
     const submitBody = await submitResp.json();
-    const itemId: number = submitBody.id ?? submitBody.item_id ?? submitBody.item?.id;
+    const itemId: number =
+      submitBody.id ?? submitBody.item_id ?? submitBody.item?.id;
     expect(itemId, 'submit response missing item id').toBeGreaterThan(0);
 
     // 7. Final invariant — admin sees the new item carrying our title.
-    const itemResp = await request.get(`/api/items/${itemId}`, {
+    const itemResp = await request.get(`/api/v2/items/${itemId}`, {
       headers: SEC_FETCH,
     });
     expect(itemResp.ok(), `get item ${itemId}: ${itemResp.status()}`).toBeTruthy();
-    const item = await itemResp.json();
+    const item = (await itemResp.json()).data;
     expect(item.title).toBe(draftTitle);
   });
 });

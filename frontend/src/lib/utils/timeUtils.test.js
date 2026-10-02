@@ -1,11 +1,42 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   addMinutesToTime,
   createDurationSync,
   durationToString,
+  listIanaTimezones,
   minutesBetweenTimes,
   parseDuration,
 } from './timeUtils.js';
+
+describe('listIanaTimezones', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('includes South American zones so Brazilian users can pick their region', () => {
+    const zones = listIanaTimezones();
+    expect(zones).toContain('America/Sao_Paulo');
+    expect(zones.length).toBeGreaterThan(20);
+  });
+
+  test('falls back to a curated set containing America/Sao_Paulo when unsupported', () => {
+    vi.stubGlobal('Intl', { ...Intl, supportedValuesOf: undefined });
+
+    const zones = listIanaTimezones();
+    expect(zones).toContain('America/Sao_Paulo');
+  });
+
+  test('falls back when supportedValuesOf throws', () => {
+    vi.stubGlobal('Intl', {
+      ...Intl,
+      supportedValuesOf: () => {
+        throw new Error('unsupported');
+      },
+    });
+
+    expect(listIanaTimezones()).toContain('UTC');
+  });
+});
 
 describe('parseDuration', () => {
   test('returns 0 for empty or null input', () => {
@@ -108,14 +139,12 @@ describe('minutesBetweenTimes', () => {
     expect(minutesBetweenTimes('09:15', '09:45')).toBe(30);
   });
 
-  test('returns 0 when end equals start', () => {
-    expect(minutesBetweenTimes('09:00', '09:00')).toBe(0);
-  });
-
-  test('returns 0 when end is before start (no wrap-around)', () => {
-    // Intentional: the helper guards against negative durations rather than
-    // implying overnight rollover.
-    expect(minutesBetweenTimes('10:00', '09:00')).toBe(0);
+  test('wraps an end at or before the start to the next day', () => {
+    // Overnight entries: 23:00-01:00 is a continuous two-hour interval, and
+    // equal clocks describe a full-day entry matching the server-side cap.
+    expect(minutesBetweenTimes('23:00', '01:00')).toBe(120);
+    expect(minutesBetweenTimes('23:59', '00:00')).toBe(1);
+    expect(minutesBetweenTimes('09:00', '09:00')).toBe(24 * 60);
   });
 });
 

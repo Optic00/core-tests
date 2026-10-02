@@ -1,21 +1,21 @@
+import { test, expect } from '../fixtures/errors';
+import type { APIRequestContext } from '../fixtures/context-path';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import {
-  chooseSelectOption,
   createActionViaAPI,
   getActionViaAPI,
-  nodeConfigByType,
   openActionEditor,
-  saveAction,
   selectNodeByType,
+  saveAction,
+  chooseSelectOption,
+  nodeConfigByType,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import type { APIRequestContext } from '../fixtures/context-path';
-import { expect, test } from '../fixtures/errors';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 const headers = { 'Sec-Fetch-Site': 'same-origin' };
 
 async function statusCategories(request: APIRequestContext) {
-  const resp = await request.get(`${BASE_URL}/api/status-categories`, { headers });
+  const resp = await request.get(`${BASE_URL}/api/v2/status-categories`, { headers });
   expect(resp.ok()).toBeTruthy();
   const body = await resp.json();
   return (body.data ?? body) as Array<{ id: number; name: string }>;

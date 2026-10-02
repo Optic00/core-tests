@@ -32,7 +32,7 @@ vi.mock('../composables/useConfirm.js', () => ({
 }));
 
 vi.mock('../utils/dateFormatter.js', () => ({
-  formatCustomFieldDate: (value) => (value === '2026-05-14' ? 'May 14, 2026' : value),
+  formatCustomFieldDate: (value) => value === '2026-05-14' ? 'May 14, 2026' : value,
 }));
 
 import ContactDetail from './ContactDetail.svelte';
@@ -85,9 +85,7 @@ describe('ContactDetail activity', () => {
     await fireEvent.click(await screen.findByTestId('customer-detail-actions'));
     await fireEvent.click(await screen.findByTestId('customer-detail-edit'));
 
-    expect(await screen.findByLabelText(/workspaces\.customers\.fields\.name/)).toHaveValue(
-      'Leandro Rivas'
-    );
+    expect(await screen.findByLabelText(/workspaces\.customers\.fields\.name/)).toHaveValue('Leandro Rivas');
   });
 
   it('confirms deletion and returns to the customer list after success', async () => {
@@ -98,12 +96,10 @@ describe('ContactDetail activity', () => {
     await fireEvent.click(await screen.findByTestId('customer-detail-delete'));
 
     await waitFor(() => {
-      expect(mocks.confirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'workspaces.customers.deleteCustomer',
-          variant: 'danger',
-        })
-      );
+      expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'workspaces.customers.deleteCustomer',
+        variant: 'danger',
+      }));
       expect(mocks.delete).toHaveBeenCalledWith(7);
       expect(onBack).toHaveBeenCalledOnce();
     });
@@ -166,23 +162,13 @@ describe('ContactDetail activity', () => {
       { id: 3, name: 'renewal_date', label: 'Renewal date', field_type: 'date' },
       { id: 4, name: 'confirmed', label: 'Confirmed', field_type: 'boolean' },
       { id: 5, name: 'owner', label: 'Owner', field_type: 'user' },
-      {
-        id: 6,
-        name: 'empty_services',
-        label: 'Empty services',
-        field_type: 'multiselect',
-        options,
-      },
+      { id: 6, name: 'empty_services', label: 'Empty services', field_type: 'multiselect', options },
     ];
 
     render(ContactDetail, { props: { contactId: 7, portalCustomerFields: fields } });
 
-    expect(await screen.findByTestId('customer-custom-field-1-value')).toHaveTextContent(
-      'Production'
-    );
-    expect(screen.getByTestId('customer-custom-field-2-value')).toHaveTextContent(
-      'Support, Consulting'
-    );
+    expect(await screen.findByTestId('customer-custom-field-1-value')).toHaveTextContent('Production');
+    expect(screen.getByTestId('customer-custom-field-2-value')).toHaveTextContent('Support, Consulting');
     expect(screen.getByTestId('customer-custom-field-3-value')).toHaveTextContent('May 14, 2026');
     expect(screen.getByTestId('customer-custom-field-4-value')).toHaveTextContent('common.yes');
     expect(screen.getByTestId('customer-custom-field-5-value')).toHaveTextContent('Ada Lovelace');

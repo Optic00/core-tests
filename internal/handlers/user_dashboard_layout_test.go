@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"windshift/internal/contextkeys"
@@ -182,5 +183,35 @@ func TestUpdateDashboardLayout_RejectsWidthOutOfBounds(t *testing.T) {
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("width %d: status = %d, want 400", width, rr.Code)
 		}
+	}
+}
+
+// Story points by assignee lives on the workspace dashboard (WI-1340), not
+// on the personal dashboard. The personal layout endpoint must reject the
+// type so the frontend registry and this allowlist cannot drift apart.
+func TestUpdateDashboardLayout_RejectsStoryPointsByAssigneeType(t *testing.T) {
+	handler, userID := newDashboardLayoutHandler(t)
+
+	layout := models.UserDashboardLayout{
+		Sections: []models.UserDashboardSection{{
+			ID:           "s-1",
+			Title:        "Work",
+			DisplayOrder: 0,
+			WidgetIDs:    []string{"w-1"},
+		}},
+		Widgets: []models.UserDashboardWidget{{
+			ID:        "w-1",
+			Type:      "story-points-by-assignee",
+			SectionID: "s-1",
+			Width:     6,
+		}},
+	}
+
+	rr := putLayout(t, handler, userID, layout)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "Invalid widget type: story-points-by-assignee") {
+		t.Fatalf("body = %s, want invalid-widget-type error naming the type", rr.Body.String())
 	}
 }

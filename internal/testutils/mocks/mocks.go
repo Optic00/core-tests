@@ -82,12 +82,6 @@ var createPermissionService func(db database.Database) (PermissionService, error
 // createActivityTracker is a variable that can be set by the services package for testing
 var createActivityTracker func(db database.Database) (ActivityTracker, error)
 
-// SetServiceFactories allows the services package to provide factory functions
-func SetServiceFactories(permFactory func(db database.Database) (PermissionService, error), actFactory func(db database.Database) (ActivityTracker, error)) {
-	createPermissionService = permFactory
-	createActivityTracker = actFactory
-}
-
 // MockSessionManager is a test double for auth.SessionManager
 type MockSessionManager struct {
 	CreateSessionFunc    func(userID int, clientIP, userAgent string, rememberMe bool) (*auth.Session, error)

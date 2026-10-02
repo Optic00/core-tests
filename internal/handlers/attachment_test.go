@@ -168,6 +168,7 @@ func TestAttachmentDelete_BrandingTypesRefused(t *testing.T) {
 		"portal_background",
 		"portal_logo",
 		"hub_logo",
+		"theme_logo",
 	}
 
 	for _, et := range brandingTypes {

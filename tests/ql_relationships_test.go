@@ -22,7 +22,7 @@ func TestQLChildrenOf(t *testing.T) {
 			"description": "Workspace for testing QL functions",
 		}
 
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)
@@ -269,7 +269,7 @@ func TestQLLinkedOf(t *testing.T) {
 			"description": "Workspace for testing QL link functions",
 		}
 
-		resp := MakeAuthRequest(t, server, http.MethodPost, "/workspaces", workspaceData)
+		resp := MakeAuthRequest(t, server, http.MethodPost, "/v2/workspaces", workspaceData)
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)

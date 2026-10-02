@@ -3,15 +3,66 @@
 package scheduler
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
+	"windshift/internal/events"
+	"windshift/internal/itemevents"
 	"windshift/internal/models"
 	"windshift/internal/repository"
 	"windshift/internal/services"
 	"windshift/internal/testutils"
+	"windshift/internal/validation"
 )
+
+func createSingleOccurrenceRule(t *testing.T, scheduler *RecurrenceScheduler, recurrenceRepo *repository.RecurrenceRepository, templateID, statusID, creatorID int) int {
+	t.Helper()
+	start := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	ruleID, err := recurrenceRepo.Create(&models.RecurrenceRule{
+		TemplateItemID: templateID,
+		WorkspaceID:    1,
+		RRule:          "FREQ=DAILY;COUNT=1",
+		DtStart:        start,
+		Timezone:       "UTC",
+		LeadTimeDays:   2,
+		StatusOnCreate: &statusID,
+		IsActive:       true,
+		CreatedBy:      &creatorID,
+	})
+	if err != nil {
+		t.Fatalf("create recurrence rule: %v", err)
+	}
+	return ruleID
+}
+
+func generatedItemEvent(t *testing.T, scheduler *RecurrenceScheduler, recurrenceRepo *repository.RecurrenceRepository, ruleID int) events.Event {
+	t.Helper()
+	instances, err := recurrenceRepo.GetInstancesByRuleID(ruleID, 10, 0)
+	if err != nil {
+		t.Fatalf("list recurrence instances: %v", err)
+	}
+	if len(instances) != 1 {
+		t.Fatalf("recurrence instances = %d, want 1", len(instances))
+	}
+	itemID := instances[0].InstanceItemID
+	var eventID int64
+	if err := scheduler.db.QueryRow(`
+		SELECT id FROM domain_events
+		WHERE event_type = ? AND aggregate_type = 'item' AND aggregate_id = ?
+	`, itemevents.Created, strconv.Itoa(itemID)).Scan(&eventID); err != nil {
+		t.Fatalf("load generated item event: %v", err)
+	}
+	event, err := events.NewStore(scheduler.db).Event(context.Background(), eventID)
+	if err != nil {
+		t.Fatalf("load event %d: %v", eventID, err)
+	}
+	return *event
+}
 
 func recurrenceSchedulerFixture(t *testing.T) (*RecurrenceScheduler, *repository.RecurrenceRepository, int, int, int) {
 	t.Helper()
@@ -48,6 +99,188 @@ func recurrenceSchedulerFixture(t *testing.T) (*RecurrenceScheduler, *repository
 		services.NewWorkflowService(tdb.GetDatabase()),
 	)
 	return scheduler, recurrenceRepo, templateID, statusID, data.UserID
+}
+
+func TestRecurrenceSchedulerRejectsInvalidTaskTemplateState(t *testing.T) {
+	scheduler, recurrenceRepo, templateID, statusID, creatorID := recurrenceSchedulerFixture(t)
+	if _, err := scheduler.db.Exec(`UPDATE items SET is_task = true WHERE id = ?`, templateID); err != nil {
+		t.Fatalf("install invalid legacy task template: %v", err)
+	}
+	start := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	ruleID, err := recurrenceRepo.Create(&models.RecurrenceRule{
+		TemplateItemID: templateID,
+		WorkspaceID:    1,
+		RRule:          "FREQ=DAILY;COUNT=1",
+		DtStart:        start,
+		Timezone:       "UTC",
+		LeadTimeDays:   2,
+		StatusOnCreate: &statusID,
+		IsActive:       true,
+		CreatedBy:      &creatorID,
+	})
+	if err != nil {
+		t.Fatalf("create recurrence rule: %v", err)
+	}
+
+	generated, err := scheduler.ForceGenerate(ruleID)
+	var validationErr *validation.ValidationError
+	if generated != 0 || !errors.As(err, &validationErr) || validationErr.Field != "is_task" {
+		t.Fatalf("generation = %d, %v; want zero and is_task ValidationError", generated, err)
+	}
+	instances, err := recurrenceRepo.GetInstancesByRuleID(ruleID, 10, 0)
+	if err != nil {
+		t.Fatalf("list generated instances: %v", err)
+	}
+	if len(instances) != 0 {
+		t.Fatalf("persisted recurrence instances = %d, want 0", len(instances))
+	}
+}
+
+func TestRecurrenceSchedulerRecordsOneCanonicalCreatedEvent(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		run  func(*RecurrenceScheduler, int) error
+	}{
+		{
+			name: "forced generation",
+			run: func(scheduler *RecurrenceScheduler, ruleID int) error {
+				generated, err := scheduler.ForceGenerate(ruleID)
+				if err == nil && generated != 1 {
+					return fmt.Errorf("generated count = %d, want 1", generated)
+				}
+				return err
+			},
+		},
+		{
+			name: "scheduled generation",
+			run: func(scheduler *RecurrenceScheduler, _ int) error {
+				scheduler.processRecurrenceRules()
+				return nil
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			scheduler, recurrenceRepo, templateID, statusID, creatorID := recurrenceSchedulerFixture(t)
+			ruleID := createSingleOccurrenceRule(t, scheduler, recurrenceRepo, templateID, statusID, creatorID)
+			if err := test.run(scheduler, ruleID); err != nil {
+				t.Fatalf("generate recurrence: %v", err)
+			}
+
+			event := generatedItemEvent(t, scheduler, recurrenceRepo, ruleID)
+			if event.Type != itemevents.Created || event.WorkspaceID == nil || *event.WorkspaceID != 1 || event.ActorKind != "user" || event.ActorRef != strconv.Itoa(creatorID) || event.SourceKind != "recurrence" {
+				t.Fatalf("created event metadata = type:%q workspace:%v actor:%s/%s source:%q", event.Type, event.WorkspaceID, event.ActorKind, event.ActorRef, event.SourceKind)
+			}
+			var payload itemevents.CreatedV1
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatalf("decode created event: %v", err)
+			}
+			if payload.Item.ID == 0 || payload.Item.WorkspaceID != 1 || payload.Item.CreatorID == nil || *payload.Item.CreatorID != creatorID {
+				t.Fatalf("created event item = %+v", payload.Item)
+			}
+			var count int
+			if err := scheduler.db.QueryRow(`
+				SELECT COUNT(*) FROM domain_events
+				WHERE event_type = ? AND aggregate_type = 'item' AND aggregate_id = ?
+			`, itemevents.Created, strconv.Itoa(payload.Item.ID)).Scan(&count); err != nil {
+				t.Fatalf("count created events: %v", err)
+			}
+			if count != 1 {
+				t.Fatalf("created event count = %d, want 1", count)
+			}
+		})
+	}
+}
+
+func TestRecurrenceSchedulerRollsBackItemAndInstanceWhenEventAppendFails(t *testing.T) {
+	scheduler, recurrenceRepo, templateID, statusID, creatorID := recurrenceSchedulerFixture(t)
+	ruleID := createSingleOccurrenceRule(t, scheduler, recurrenceRepo, templateID, statusID, creatorID)
+	var itemCountBefore int
+	if err := scheduler.db.QueryRow("SELECT COUNT(*) FROM items").Scan(&itemCountBefore); err != nil {
+		t.Fatalf("count items before generation: %v", err)
+	}
+	if err := installRecurrenceEventFailure(scheduler); err != nil {
+		t.Fatalf("install event failure: %v", err)
+	}
+
+	generated, err := scheduler.ForceGenerate(ruleID)
+	if err == nil || generated != 0 {
+		t.Fatalf("generation = %d, %v; want zero and event append failure", generated, err)
+	}
+	var itemCountAfter, eventCount int
+	if err := scheduler.db.QueryRow("SELECT COUNT(*) FROM items").Scan(&itemCountAfter); err != nil {
+		t.Fatalf("count items after generation: %v", err)
+	}
+	if err := scheduler.db.QueryRow("SELECT COUNT(*) FROM domain_events WHERE event_type = ?", itemevents.Created).Scan(&eventCount); err != nil {
+		t.Fatalf("count created events: %v", err)
+	}
+	instances, listErr := recurrenceRepo.GetInstancesByRuleID(ruleID, 10, 0)
+	if listErr != nil {
+		t.Fatalf("list recurrence instances: %v", listErr)
+	}
+	if itemCountAfter != itemCountBefore || eventCount != 0 || len(instances) != 0 {
+		t.Fatalf("rolled-back rows = items:%d->%d events:%d instances:%d", itemCountBefore, itemCountAfter, eventCount, len(instances))
+	}
+}
+
+func TestRecurrenceSchedulerCreatedEventReachesMatchingAutomation(t *testing.T) {
+	scheduler, recurrenceRepo, templateID, statusID, creatorID := recurrenceSchedulerFixture(t)
+	repo := repository.NewActionRepository(scheduler.db)
+	actionID, err := repo.Create(&models.Action{
+		WorkspaceID: 1,
+		Name:        "Recurring item created",
+		IsEnabled:   true,
+		TriggerType: models.ActionTriggerItemCreated,
+	})
+	if err != nil {
+		t.Fatalf("create action: %v", err)
+	}
+	actionService := services.NewActionService(scheduler.db, services.DefaultActionServiceConfig(), nil)
+	t.Cleanup(actionService.Stop)
+	actionService.InvalidateWorkspaceCache(1)
+	ruleID := createSingleOccurrenceRule(t, scheduler, recurrenceRepo, templateID, statusID, creatorID)
+	if generated, err := scheduler.ForceGenerate(ruleID); err != nil || generated != 1 {
+		t.Fatalf("generation = %d, %v; want 1", generated, err)
+	}
+	event := generatedItemEvent(t, scheduler, recurrenceRepo, ruleID)
+	if err := services.NewDurableActionConsumer(scheduler.db, actionService).Handle(context.Background(), event); err != nil {
+		t.Fatalf("consume generated item event: %v", err)
+	}
+	var loggedActionID int
+	if err := scheduler.db.QueryRow("SELECT action_id FROM action_execution_logs WHERE durable_event_key = ?", event.Key).Scan(&loggedActionID); err != nil {
+		t.Fatalf("load action execution: %v", err)
+	}
+	if loggedActionID != actionID {
+		t.Fatalf("executed action = %d, want %d", loggedActionID, actionID)
+	}
+}
+
+func installRecurrenceEventFailure(scheduler *RecurrenceScheduler) error {
+	if scheduler.db.GetDriverName() == "postgres" {
+		if _, err := scheduler.db.Exec(`
+			CREATE FUNCTION wi1261_fail_event() RETURNS trigger
+			LANGUAGE plpgsql AS $function$
+			BEGIN
+				RAISE EXCEPTION 'forced recurrence event failure';
+			END;
+			$function$
+		`); err != nil {
+			return err
+		}
+		_, err := scheduler.db.Exec(`
+			CREATE TRIGGER wi1261_fail_event
+			BEFORE INSERT ON domain_events
+			FOR EACH ROW EXECUTE FUNCTION wi1261_fail_event()
+		`)
+		return err
+	}
+	_, err := scheduler.db.Exec(`
+		CREATE TRIGGER wi1261_fail_event
+		BEFORE INSERT ON domain_events
+		BEGIN
+			SELECT RAISE(ABORT, 'forced recurrence event failure');
+		END
+	`)
+	return err
 }
 
 func TestRecurrenceSchedulerGenerationHonorsRuleEndConditions(t *testing.T) {

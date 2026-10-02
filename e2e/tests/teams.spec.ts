@@ -1,5 +1,5 @@
-import { createGroupViaAPI, createUserViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { createGroupViaAPI, createUserViaAPI } from '../fixtures/api-helpers';
 import { generateGroup, generateTeam, generateUser } from '../fixtures/test-data';
 import { TeamsPage } from '../pages/teams.page';
 
@@ -81,7 +81,7 @@ test.describe('Team Management', () => {
 
       await teamsPage.addMember(team.name, created.id, user.username);
       await expect(
-        teamsPage.page.locator(`[data-testid="member-row"][data-user-id="${created.id}"]`)
+        teamsPage.page.locator(`[data-testid="member-row"][data-user-id="${created.id}"]`),
       ).toBeVisible();
     });
   });
@@ -100,7 +100,7 @@ test.describe('Team Management', () => {
       // The attached row must be the group we picked — identified by its id and
       // showing its name — not merely "some row exists".
       const row = teamsPage.page.locator(
-        `[data-testid="group-row"][data-group-id="${created.id}"]`
+        `[data-testid="group-row"][data-group-id="${created.id}"]`,
       );
       await expect(row).toBeVisible();
       await expect(row).toContainText(group.name);
@@ -120,8 +120,13 @@ test.describe('Team Management', () => {
       await teamsPage.verifyTeamExists(t1.name);
       await teamsPage.verifyTeamExists(t2.name);
       await teamsPage.verifyTeamExists(t3.name);
-      const count = await teamsPage.getTeamCount();
-      expect(count).toBeGreaterThanOrEqual(3);
+
+      // Submitting each team re-fetches the list; wait (bounded) for the
+      // rows to render.
+      const countStart = Date.now();
+      await expect
+        .poll(async () => teamsPage.getTeamCount(), { timeout: 15000 })
+        .toBeGreaterThanOrEqual(3);
     });
   });
 });

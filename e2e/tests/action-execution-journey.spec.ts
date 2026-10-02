@@ -18,7 +18,7 @@ async function createManualAction(
   name: string,
   node: ActionNode
 ) {
-  const response = await request.post(`/api/workspaces/${workspaceID}/actions`, {
+  const response = await request.post(`/api/v2/workspaces/${workspaceID}/actions`, {
     headers: SEC_FETCH,
     data: {
       name,
@@ -46,7 +46,8 @@ async function createManualAction(
     },
   });
   expect(response.status(), `create action ${name}: ${await response.text()}`).toBe(201);
-  return response.json();
+  const body = await response.json();
+  return body.data;
 }
 
 async function executeActionFromUI(

@@ -25,7 +25,6 @@ export class UserPage {
    */
   async goto() {
     await this.page.goto('/admin/users');
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -159,10 +158,7 @@ export class UserPage {
   private async openRowDropdown(username: string) {
     const row = this.findUserByUsername(username);
     await row.locator('button').last().click();
-    await this.page
-      .locator('button[role="menuitem"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.locator('button[role="menuitem"]').first().waitFor({ state: 'visible', timeout: 5000 });
   }
 
   /**
@@ -221,9 +217,7 @@ export class UserPage {
 
     // Confirm in dialog
     const dialog = this.page.locator(this.userModal);
-    const confirmButton = dialog
-      .locator('button:has-text("Confirm"), button:has-text("Yes"), button:has-text("Deactivate")')
-      .last();
+    const confirmButton = dialog.locator('button:has-text("Confirm"), button:has-text("Yes"), button:has-text("Deactivate")').last();
     await confirmButton.click();
     await dialog.waitFor({ state: 'detached', timeout: 10000 });
   }
@@ -238,9 +232,7 @@ export class UserPage {
 
     // Confirm in dialog
     const dialog = this.page.locator(this.userModal);
-    const confirmButton = dialog
-      .locator('button:has-text("Confirm"), button:has-text("Yes"), button:has-text("Activate")')
-      .last();
+    const confirmButton = dialog.locator('button:has-text("Confirm"), button:has-text("Yes"), button:has-text("Activate")').last();
     await confirmButton.click();
     await dialog.waitFor({ state: 'detached', timeout: 10000 });
   }

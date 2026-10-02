@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -179,6 +180,40 @@ func TestAIChatUsesServerAuthoritativeHistoryAndPersistsExactBodies(t *testing.T
 	}
 }
 
+func TestAIChatFreshHistoryBoundaryExcludesEarlierTurns(t *testing.T) {
+	handler, user, db, upstream := newConversationHandler(t)
+	first := chatRequest(t, handler, user, `{"message":"old question","context":{"workspace_id":1}}`)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first chat status=%d body=%s", first.Code, first.Body.String())
+	}
+
+	var historyBoundary int
+	if err := db.QueryRow(`SELECT MAX(id) FROM agent_messages`).Scan(&historyBoundary); err != nil {
+		t.Fatal(err)
+	}
+	second := chatRequest(t, handler, user, fmt.Sprintf(
+		`{"message":"fresh question","history_after_message_id":%d,"context":{"workspace_id":1}}`,
+		historyBoundary,
+	))
+	if second.Code != http.StatusOK {
+		t.Fatalf("fresh chat status=%d body=%s", second.Code, second.Body.String())
+	}
+
+	upstream.mu.Lock()
+	requests := append([]llm.CompletionRequest(nil), upstream.requests...)
+	upstream.mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("upstream requests=%d", len(requests))
+	}
+	encoded, _ := json.Marshal(requests[1].Messages)
+	if strings.Contains(string(encoded), "old question") || strings.Contains(string(encoded), "answer 1") {
+		t.Fatalf("earlier turn reached fresh chat: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), "fresh question") {
+		t.Fatalf("fresh question missing from model request: %s", encoded)
+	}
+}
+
 func TestAuditAgentTranscriptResolvesCorrelationWithoutParticipantAccess(t *testing.T) {
 	handler, user, db, _ := newConversationHandler(t)
 	chat := chatRequest(t, handler, user, `{"message":"transcript body","context":{"workspace_id":1}}`)
@@ -289,5 +324,121 @@ func TestAIChatStandardSessionUsesProfileIdentityWorkspaceAndSafeTools(t *testin
 	}
 	if jobKind != models.JobKindStandardAgent || actingUserID != agentID || workspaceID != 1 {
 		t.Fatalf("Standard run kind=%q actor=%d workspace=%d", jobKind, actingUserID, workspaceID)
+	}
+}
+
+func TestAgentSessionEndpointsHideStandardSessionAfterWorkspaceRevocation(t *testing.T) {
+	handler, user, db, _ := newConversationHandler(t)
+	var agentID int
+	if err := db.QueryRow(`
+		INSERT INTO users(email, username, first_name, last_name, is_agent, is_active)
+		VALUES ('revoked-agent@example.test', 'revoked-agent', 'Revoked', 'Agent', true, true)
+		RETURNING id
+	`).Scan(&agentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO user_workspace_roles(user_id, workspace_id, role_id, granted_by, granted_at)
+		VALUES (?, 1, (SELECT id FROM workspace_roles WHERE name = 'Viewer'), ?, CURRENT_TIMESTAMP)
+	`, agentID, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	var profileID int
+	if err := db.QueryRow(`
+		INSERT INTO workspace_agent_bindings(
+			workspace_id, acting_user_id, acting_user_kind, profile_type,
+			lifecycle, profile_version, identity_class, purpose,
+			capability_groups_json, instructions, created_by_user_id
+		) VALUES (
+			1, ?, 'agent', 'standard', 'ready', 1, 'workspace_managed',
+			'Revocation test', '[]', 'Test revocation.', ?
+		) RETURNING id
+	`, agentID, user.ID).Scan(&profileID); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := repository.NewWorkspaceAgentBindingRepository(db).Get(t.Context(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := repository.NewAgentConversationRepository(db).CreateStandardSession(
+		t.Context(), user.ID, 1, profile, "Revocation test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := func(method, path string, endpoint http.HandlerFunc) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, nil)
+		req.SetPathValue("id", strconv.Itoa(session.ID))
+		req = req.WithContext(context.WithValue(req.Context(), contextkeys.User, user))
+		recorder := httptest.NewRecorder()
+		endpoint(recorder, req)
+		return recorder
+	}
+	if recorder := request(http.MethodGet, "/api/ai/agent-sessions", handler.ListAgentSessions); recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"id":`+strconv.Itoa(session.ID)) {
+		t.Fatalf("session list before revocation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if allowed, err := handler.permService.HasWorkspacePermission(user.ID, 1, models.PermissionItemView); err != nil || !allowed {
+		t.Fatalf("warm workspace permission allowed=%t err=%v", allowed, err)
+	}
+	if _, err := db.Exec(`DELETE FROM user_workspace_roles WHERE user_id = ? AND workspace_id = 1`, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.permService.InvalidateUserCache(user.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if recorder := request(http.MethodGet, "/api/ai/agent-sessions", handler.ListAgentSessions); recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), `"id":`+strconv.Itoa(session.ID)) {
+		t.Fatalf("session list after revocation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := request(http.MethodGet, "/api/ai/agent-sessions/1/messages", handler.ListAgentMessages); recorder.Code != http.StatusNotFound {
+		t.Fatalf("messages after revocation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := request(http.MethodDelete, "/api/ai/agent-sessions/1", handler.ArchiveAgentSession); recorder.Code != http.StatusNotFound {
+		t.Fatalf("archive after revocation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestDailyBriefingHidesSnapshotAfterSourceWorkspaceRevocation(t *testing.T) {
+	handler, user, db, _ := newConversationHandler(t)
+	var keeperID int
+	if err := db.QueryRow(`
+		INSERT INTO users(email, username, first_name, last_name, is_active)
+		VALUES ('briefing-keeper@example.test', 'briefing-keeper', 'Briefing', 'Keeper', true)
+		RETURNING id
+	`).Scan(&keeperID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO user_workspace_roles(user_id, workspace_id, role_id, granted_by, granted_at)
+		VALUES (?, 1, (SELECT id FROM workspace_roles WHERE name = 'Viewer'), ?, CURRENT_TIMESTAMP)
+	`, keeperID, keeperID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO daily_briefings(user_id, date, content, source_workspace_ids)
+		VALUES (?, '2026-09-01', 'Private workspace briefing', '[1]')
+	`, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	request := func() *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/ai/daily-briefing", nil)
+		req = req.WithContext(context.WithValue(req.Context(), contextkeys.User, user))
+		recorder := httptest.NewRecorder()
+		handler.GetDailyBriefing(recorder, req)
+		return recorder
+	}
+	if recorder := request(); recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Private workspace briefing") {
+		t.Fatalf("briefing before revocation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := db.Exec(`DELETE FROM user_workspace_roles WHERE user_id = ? AND workspace_id = 1`, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.permService.InvalidateUserCache(user.ID); err != nil {
+		t.Fatal(err)
+	}
+	if recorder := request(); recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "Private workspace briefing") {
+		t.Fatalf("briefing after revocation status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

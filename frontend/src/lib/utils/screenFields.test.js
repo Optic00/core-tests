@@ -3,6 +3,7 @@ import {
   buildDetailScreenFieldConfig,
   canSystemFieldBeRequiredOnCreate,
   dedupeScreenFields,
+  isAlwaysVisibleSystemField,
   isCreateSystemFieldAutoManaged,
   isCreateSystemFieldRenderable,
   isSystemFieldAvailableForItem,
@@ -146,6 +147,14 @@ describe('screenFields utilities', () => {
     expect(canSystemFieldBeRequiredOnCreate('story_points')).toBe(true);
     expect(canSystemFieldBeRequiredOnCreate('labels')).toBe(true);
     expect(canSystemFieldBeRequiredOnCreate('status')).toBe(false);
+  });
+
+  it('treats team as a manually-added system field, not a default one', () => {
+    expect(isCreateSystemFieldRenderable('team')).toBe(true);
+    expect(isCreateSystemFieldAutoManaged('team')).toBe(false);
+    expect(canSystemFieldBeRequiredOnCreate('team')).toBe(true);
+    // Team must be added to a screen explicitly; it is not pinned to every item.
+    expect(isAlwaysVisibleSystemField('team')).toBe(false);
   });
 
   it('keeps edit-screen fields visible and marks only edit fields editable in detail', () => {

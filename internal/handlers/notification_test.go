@@ -251,6 +251,155 @@ func TestNotificationHandler_GetNotifications_FiltersRevokedWorkspaceProvenance(
 	}
 }
 
+func TestNotificationHandler_GetNotifications_FiltersRevokedAssetProvenance(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	tdb.SeedTestData(t)
+	t.Cleanup(func() { _ = tdb.Close() })
+	db := tdb.GetDatabase()
+	insertID := func(label, query string, args ...any) int {
+		t.Helper()
+		var id int
+		if err := db.QueryRow(query, args...).Scan(&id); err != nil {
+			t.Fatalf("insert %s: %v", label, err)
+		}
+		return id
+	}
+	keeperID := insertID("keeper", `INSERT INTO users (email, username, first_name, last_name) VALUES ('asset-notification-keeper@example.com', 'asset-notification-keeper', 'Asset', 'Keeper') RETURNING id`)
+	setID := insertID("asset set", `INSERT INTO asset_management_sets (name, created_by) VALUES ('Tray notification assets', ?) RETURNING id`, keeperID)
+	typeID := insertID("asset type", `INSERT INTO asset_types (set_id, name) VALUES (?, 'Server') RETURNING id`, setID)
+	assetID := insertID("asset", `INSERT INTO assets (set_id, asset_type_id, title, created_by) VALUES (?, ?, 'Restricted tray server', ?) RETURNING id`, setID, typeID, keeperID)
+	viewerRoleID := insertID("viewer role", `SELECT id FROM asset_roles WHERE name = 'Viewer'`)
+	if _, err := db.Exec(`INSERT INTO user_asset_set_roles (user_id, set_id, role_id, granted_by) VALUES (1, ?, ?, ?)`, setID, viewerRoleID, keeperID); err != nil {
+		t.Fatalf("grant asset view: %v", err)
+	}
+
+	permissions, err := services.NewPermissionService(db, services.DefaultPermissionCacheConfig())
+	if err != nil {
+		t.Fatalf("create permission service: %v", err)
+	}
+	manager, err := NewNotificationManager(db, DefaultNotificationManagerConfig())
+	if err != nil {
+		t.Fatalf("create notification manager: %v", err)
+	}
+	t.Cleanup(manager.Stop)
+	if _, err := manager.AddNotifications([]models.Notification{
+		{UserID: 1, Title: "Restricted asset title", Message: "Restricted asset body", Type: "info", AuthorizationScope: models.NotificationScopeAsset, SourceType: "asset", SourceID: &assetID},
+		{UserID: 1, Title: "System notice", Message: "Still visible", Type: "info", AuthorizationScope: models.NotificationScopeSystem},
+	}); err != nil {
+		t.Fatalf("seed notifications: %v", err)
+	}
+	handler := NewNotificationHandler(manager, nil, permissions)
+	handler.SetNotificationAuthorizer(services.NewNotificationAuthorizer(
+		db,
+		permissions,
+		services.NewAssetPermissionService(repository.NewAssetRepository(db), permissions),
+	))
+	get := func() []models.Notification {
+		t.Helper()
+		req := testutils.CreateJSONRequest(t, http.MethodGet, "/api/notifications", nil)
+		rr := testutils.ExecuteAuthenticatedRequest(t, handler.GetNotifications, req, nil)
+		rr.AssertStatusCode(http.StatusOK)
+		var notifications []models.Notification
+		rr.AssertJSONResponse(&notifications)
+		return notifications
+	}
+	if before := get(); len(before) != 2 {
+		t.Fatalf("notifications before revocation = %+v, want asset and system rows", before)
+	}
+	if _, err := db.Exec(`DELETE FROM user_asset_set_roles WHERE user_id = 1 AND set_id = ?`, setID); err != nil {
+		t.Fatalf("revoke asset view: %v", err)
+	}
+	after := get()
+	if len(after) != 1 || after[0].Title != "System notice" {
+		t.Fatalf("notifications after revocation = %+v, want system row only", after)
+	}
+}
+
+func TestNotificationHandler_GetNotifications_FiltersRevokedReferencedWorkspace(t *testing.T) {
+	tdb := testutils.CreateTestDB(t, true)
+	tdb.SeedTestData(t)
+	t.Cleanup(func() { _ = tdb.Close() })
+	db := tdb.GetDatabase()
+	f := factory.NewTestFactory(db)
+	keeperID, err := f.CreateUser(nil)
+	if err != nil {
+		t.Fatalf("create keeper: %v", err)
+	}
+	primaryWorkspaceID, err := f.CreateWorkspace(factory.CreateWorkspaceOpts{Name: "Linked tray primary", Key: "LTP", CreatorID: keeperID})
+	if err != nil {
+		t.Fatalf("create primary workspace: %v", err)
+	}
+	secondaryWorkspaceID, err := f.CreateWorkspace(factory.CreateWorkspaceOpts{Name: "Linked tray secondary", Key: "LTS", CreatorID: keeperID})
+	if err != nil {
+		t.Fatalf("create secondary workspace: %v", err)
+	}
+	var viewerRoleID int
+	if err := db.QueryRow(`SELECT id FROM workspace_roles WHERE name = 'Viewer'`).Scan(&viewerRoleID); err != nil {
+		t.Fatalf("load viewer role: %v", err)
+	}
+	roles := repository.NewWorkspaceRoleRepository(db)
+	for _, workspaceID := range []int{primaryWorkspaceID, secondaryWorkspaceID} {
+		if err := roles.AssignToUser(1, workspaceID, viewerRoleID, keeperID); err != nil {
+			t.Fatalf("assign recipient workspace role: %v", err)
+		}
+		if err := roles.AssignToUser(keeperID, workspaceID, viewerRoleID, keeperID); err != nil {
+			t.Fatalf("assign keeper workspace role: %v", err)
+		}
+	}
+	targetID64, err := services.CreateItem(db, services.ItemCreationParams{WorkspaceID: secondaryWorkspaceID, Title: "Secret tray target"})
+	if err != nil {
+		t.Fatalf("create linked target: %v", err)
+	}
+	targetID := int(targetID64)
+	permissions, err := services.NewPermissionService(db, services.DefaultPermissionCacheConfig())
+	if err != nil {
+		t.Fatalf("create permission service: %v", err)
+	}
+	manager, err := NewNotificationManager(db, DefaultNotificationManagerConfig())
+	if err != nil {
+		t.Fatalf("create notification manager: %v", err)
+	}
+	t.Cleanup(manager.Stop)
+	if _, err := manager.AddNotifications([]models.Notification{
+		{
+			UserID: 1, Title: "Secret tray target", Message: "restricted linked body", Type: "info",
+			AuthorizationScope:            models.NotificationScopeWorkspace,
+			WorkspaceID:                   &primaryWorkspaceID,
+			SourceType:                    models.EventItemLinked,
+			ReferencedEntityType:          "item",
+			ReferencedEntityID:            &targetID,
+			ReferencedWorkspaceID:         &secondaryWorkspaceID,
+			ReferencedWorkspacePermission: models.PermissionItemView,
+		},
+		{UserID: 1, Title: "System notice", Message: "Still visible", Type: "info", AuthorizationScope: models.NotificationScopeSystem},
+	}); err != nil {
+		t.Fatalf("seed notifications: %v", err)
+	}
+	handler := NewNotificationHandler(manager, nil, permissions)
+	get := func() []models.Notification {
+		t.Helper()
+		req := testutils.CreateJSONRequest(t, http.MethodGet, "/api/notifications", nil)
+		rr := testutils.ExecuteAuthenticatedRequest(t, handler.GetNotifications, req, nil)
+		rr.AssertStatusCode(http.StatusOK)
+		var notifications []models.Notification
+		rr.AssertJSONResponse(&notifications)
+		return notifications
+	}
+	if before := get(); len(before) != 2 {
+		t.Fatalf("notifications before revocation = %+v, want linked and system rows", before)
+	}
+	if _, err := roles.RevokeFromUser(1, secondaryWorkspaceID, viewerRoleID); err != nil {
+		t.Fatalf("revoke secondary workspace: %v", err)
+	}
+	if err := permissions.InvalidateUserCache(1); err != nil {
+		t.Fatalf("invalidate permission cache: %v", err)
+	}
+	after := get()
+	if len(after) != 1 || after[0].Title != "System notice" {
+		t.Fatalf("notifications after revocation = %+v, want system row only", after)
+	}
+}
+
 // --- ClearNotifications ---
 
 func TestNotificationHandler_ClearNotifications_Unauthenticated(t *testing.T) {

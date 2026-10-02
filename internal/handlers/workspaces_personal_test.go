@@ -3,7 +3,9 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -13,43 +15,44 @@ import (
 
 // --- Pure key-generation helpers --------------------------------------------
 
-func TestSanitizePersonalWorkspaceKeyCandidate(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"Alice", "ALICE"},
-		{"  Alice  ", "ALICE"},
-		{"Alice Smith", "ALICE-SMIT"}, // 10-char cap drops the tail
-		{"Alice-Bob", "ALICE-BOB"},
-		{"Alice!!!", "ALICE"},
-		{"!!!", ""},
-		{"", ""},
-		{"abcdefghij-klmnop", "ABCDEFGHIJ"}, // truncated at 10
-	}
-	for _, c := range cases {
-		got := sanitizePersonalWorkspaceKeyCandidate(c.in)
-		if got != c.want {
-			t.Errorf("sanitizePersonalWorkspaceKeyCandidate(%q) = %q, want %q", c.in, got, c.want)
+// The personal key derives from the owner ID: P<id>, alphanumeric, within the
+// 2-10 key contract, collision-free by construction.
+func TestPersonalWorkspaceKeyCandidatesSatisfyContract(t *testing.T) {
+	var keyPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
+	for _, userID := range []int{1, 42, 999999} {
+		candidates := personalWorkspaceKeyCandidates(userID)
+		if candidates[0] != fmt.Sprintf("P%d", userID) {
+			t.Errorf("first candidate = %q, want P%d", candidates[0], userID)
+		}
+		for _, key := range candidates {
+			if len(key) < 2 || len(key) > 10 || !keyPattern.MatchString(key) {
+				t.Errorf("candidate %q (user %d) violates the 2-10 alphanumeric key contract", key, userID)
+			}
 		}
 	}
 }
 
-func TestGeneratePersonalWorkspaceKey_FallsBackThroughCandidates(t *testing.T) {
-	h := &WorkspaceHandler{}
-
-	// Display name available — used first.
-	if got := h.generatePersonalWorkspaceKey("Alice", "alice", 1); got != "ALICE" {
-		t.Errorf("expected ALICE, got %q", got)
-	}
-
-	// Empty display name + username populated — falls back to username.
-	if got := h.generatePersonalWorkspaceKey("", "bob123", 2); got != "BOB123" {
-		t.Errorf("expected BOB123, got %q", got)
-	}
-
-	// Both blank — ultimate fallback uses the user ID.
-	if got := h.generatePersonalWorkspaceKey("", "", 42); got != "USER-42" {
-		t.Errorf("expected USER-42, got %q", got)
+// WI-1421: fallback candidates must live in a namespace disjoint from every
+// user's base key, so one user's fallback can never equal another user's base
+// and collisions cannot cascade across users. Letter-terminated fallbacks give
+// exactly that: bases are P + decimal digits, so a trailing letter excludes the
+// base shape, and the trailing letter plus digit run pin the owner uniquely.
+func TestPersonalWorkspaceKeyFallbacksNeverCollideAcrossUsers(t *testing.T) {
+	seen := make(map[string]int) // candidate -> owner that claimed it first
+	for userID := 1; userID <= 5000; userID++ {
+		for i, key := range personalWorkspaceKeyCandidates(userID) {
+			if i == 0 {
+				continue // bases are unique per user by construction (P + decimal ID)
+			}
+			last := key[len(key)-1]
+			if last < 'A' || last > 'Z' {
+				t.Fatalf("fallback %q (user %d) must end in a letter to stay out of the P<digits> base namespace", key, userID)
+			}
+			if owner, taken := seen[key]; taken {
+				t.Fatalf("candidate %q generated for both user %d and user %d", key, owner, userID)
+			}
+			seen[key] = userID
+		}
 	}
 }
 
@@ -133,12 +136,10 @@ func TestWorkspaceHandler_GetOrCreatePersonalWorkspace_HandlesKeyCollision(t *te
 	tdb.SeedTestData(t)
 	handler := newWorkspaceHandlerForSettings(t, tdb)
 
-	// SeedTestData already seeds a workspace with key 'TEST'. The sanitized
-	// candidate for first_name='Test' is also 'TEST', so the handler will fall
-	// through to 'TEST-1'. Pre-create that row too so the counter has to
-	// advance to 'TEST-2'.
+	// The personal key is P1 for user 1. A regular workspace already owning
+	// that key forces the backstop candidates.
 	_, err := tdb.Exec(`
-		INSERT INTO workspaces (name, key, description, active) VALUES ('Squatter', 'TEST-1', 'x', TRUE)
+		INSERT INTO workspaces (name, key, description, active) VALUES ('Squatter', 'P1', 'x', TRUE)
 	`)
 	if err != nil {
 		t.Fatalf("pre-create squatter workspace: %v", err)
@@ -151,11 +152,20 @@ func TestWorkspaceHandler_GetOrCreatePersonalWorkspace_HandlesKeyCollision(t *te
 
 	var ws models.Workspace
 	rr.AssertJSONResponse(&ws)
-	if ws.Key == "TEST" || ws.Key == "TEST-1" {
-		t.Errorf("Expected collision-resolved key, got %q", ws.Key)
+	if ws.Key == "P1" {
+		t.Errorf("Expected collision-resolved key, got the squatted %q", ws.Key)
 	}
-	if !strings.HasPrefix(ws.Key, "TEST") {
-		t.Errorf("Expected resolved key to start with TEST, got %q", ws.Key)
+	var keyPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
+	if len(ws.Key) < 2 || len(ws.Key) > 10 || !keyPattern.MatchString(ws.Key) {
+		t.Errorf("resolved key %q violates the 2-10 alphanumeric key contract", ws.Key)
+	}
+	// The personal workspace must still exist exactly once for the owner.
+	var count int
+	if err := tdb.QueryRow(`SELECT COUNT(*) FROM workspaces WHERE is_personal = TRUE AND owner_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count personal ws: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected exactly 1 personal workspace row, got %d", count)
 	}
 }
 

@@ -30,12 +30,11 @@ func TestV1SearchCQL(t *testing.T) {
 
 	// Workspace-scoped milestone the CQL filter will target.
 	milestoneData := map[string]interface{}{
-		"name":         "0.8.2",
-		"description":  "Search CQL milestone",
-		"status":       "in-progress",
-		"workspace_id": workspaceID,
+		"name":        "0.8.2",
+		"description": "Search CQL milestone",
+		"status":      "in-progress",
 	}
-	msResp := MakeAuthRequest(t, server, http.MethodPost, "/milestones", milestoneData)
+	msResp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), milestoneData)
 	AssertStatusCode(t, msResp, http.StatusCreated)
 	var msResult map[string]interface{}
 	DecodeJSON(t, msResp, &msResult)

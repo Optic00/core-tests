@@ -53,7 +53,7 @@ describe('workItemFormStore screen-field validation', () => {
     expect(workItemFormStore.validate()).toBe(true);
   });
 
-  it('validates required labels and exposes them for post-create assignment', () => {
+  it('validates required labels and includes them in the initial create payload', () => {
     workItemFormStore.screenFields = [
       { field_type: 'system', field_identifier: 'labels', is_required: true },
     ];
@@ -65,6 +65,23 @@ describe('workItemFormStore screen-field validation', () => {
 
     expect(workItemFormStore.validate()).toBe(true);
     expect(workItemFormStore.getFormData().label_ids).toEqual([5]);
+  });
+
+  it('treats an empty multiselect array as missing for a required field', () => {
+    workItemFormStore.allCustomFields = [
+      { id: 42, name: 'Regions', field_type: 'multiselect' },
+    ];
+    workItemFormStore.screenFields = [
+      { field_type: 'custom', field_identifier: '42', is_required: true },
+    ];
+    workItemFormStore.customFieldValues = { 42: [] };
+
+    expect(workItemFormStore.validate()).toBe(false);
+    expect(workItemFormStore.validationErrors).toEqual(['Regions is required']);
+
+    workItemFormStore.customFieldValues = { 42: [7] };
+
+    expect(workItemFormStore.validate()).toBe(true);
   });
 
   it('submits newly renderable system fields in the create payload', () => {

@@ -1,5 +1,5 @@
-import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { expect, test } from '../fixtures/context-path';
+import { createItemViaAPI, createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import { generateItem, generateWorkspace } from '../fixtures/test-data';
 
 /**
@@ -36,9 +36,7 @@ test.describe('Command palette: recently viewed', () => {
     }).toPass({ timeout: 10000 });
   }
 
-  test('launcher is the default first entry and opens the recent-items sub-palette', async ({
-    page,
-  }) => {
+  test('launcher is the default first entry and opens the recent-items sub-palette', async ({ page }) => {
     // Open the item's detail once so it is recorded as recently viewed.
     await page.goto(`/workspaces/${workspaceNumericId}/items/${itemId}`);
     await expect(page.getByTestId('item-title-edit')).toContainText(itemTitle);

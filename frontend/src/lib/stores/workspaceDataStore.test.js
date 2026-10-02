@@ -132,6 +132,9 @@ describe('WorkspaceDataStore workspace switching', () => {
     await workspaceDataStore.initialize(2);
     mocks.getBootstrap.mockClear();
     visibilityState = 'hidden';
+    // Browsers always deliver this event when a tab is hidden; the recovery
+    // refresh depends on observing the suspension.
+    document.dispatchEvent(new Event('visibilitychange'));
 
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
     expect(mocks.getBootstrap).not.toHaveBeenCalled();

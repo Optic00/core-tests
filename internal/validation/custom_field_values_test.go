@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"windshift/internal/testutils"
+	"windshift/internal/database"
+	"fmt"
 )
 
 func TestValidateAndNormalizeCustomFieldValues_NumberAndDate(t *testing.T) {
@@ -199,4 +201,26 @@ func TestSanitizeCustomFieldTextValues(t *testing.T) {
 	if cfv[selectKey] != float64(12345) {
 		t.Errorf("select value must pass through the sanitize-only pass, got %v", cfv[selectKey])
 	}
+}
+
+// SanitizeCustomFieldTextValues sanitizes text fields for prevalidated writes.
+func SanitizeCustomFieldTextValues(db database.Database, cfv map[string]any) error {
+	if len(cfv) == 0 {
+		return nil
+	}
+	fields, err := loadFieldsForCFV(db, cfv)
+	if err != nil {
+		return fmt.Errorf("load custom fields for sanitization: %w", err)
+	}
+	for fieldKey, raw := range cfv {
+		def, ok := fields[fieldKey]
+		if !ok {
+			continue
+		}
+		switch def.FieldType {
+		case "text", "textarea":
+			cfv[fieldKey] = sanitizeTextValue(def.FieldType, raw)
+		}
+	}
+	return nil
 }

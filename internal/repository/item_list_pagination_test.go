@@ -153,12 +153,16 @@ func TestFindAllWithDetailsPageContextCursorSurvivesLowToHighCompletion(t *testi
 	}
 
 	worker := NewGlobalRankMigrationWorker(db, "cursor-low-high", 4, time.Minute)
-	result, err := worker.Run(context.Background())
+	// A full final batch needs one more (empty) batch to observe the drained
+	// queue, so drive the migration to completion instead of assuming a single
+	// batch finishes it.
+	runGlobalRankWorkerToCompletion(t, worker)
+	finalState, err := LoadGlobalRankState(db)
 	if err != nil {
-		t.Fatalf("complete low-to-high migration: %v", err)
+		t.Fatalf("load final state: %v", err)
 	}
-	if !result.Completed || result.State.ActiveBucket != GlobalRankBucket0 {
-		t.Fatalf("migration result = %+v, want stable bucket zero", result)
+	if finalState.Phase != GlobalRankPhaseStable || finalState.ActiveBucket != GlobalRankBucket0 {
+		t.Fatalf("final migration state = %+v, want stable bucket zero", finalState)
 	}
 
 	params.Pagination.Cursor = first.NextCursor
@@ -360,7 +364,6 @@ func TestFindAllWithDetailsRefreshesWorkspaceTotalAfterPostCommitInvalidation(t 
 	`, workspaceID); err != nil {
 		t.Fatalf("insert existing item: %v", err)
 	}
-	InvalidateItemListCountCache(db, workspaceID)
 
 	repo := NewItemRepository(db)
 	workspaceFilter := &workspaceID

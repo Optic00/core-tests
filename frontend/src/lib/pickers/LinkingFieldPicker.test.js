@@ -141,3 +141,91 @@ describe('LinkingFieldPicker item links', () => {
     expect(onChanged).toHaveBeenCalledWith({ itemIds: [303, 404] });
   });
 });
+
+// clearTimeout cannot cancel a request that already fired, so a slow response
+// for an older query can land after the fresh one. The stale response must be
+// dropped instead of overwriting searchResults.
+describe('LinkingFieldPicker search', () => {
+  it('drops a stale search response that lands after a newer query', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveFirst;
+      api.links.search
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve;
+            })
+        )
+        .mockResolvedValueOnce([{ id: 505, title: 'Fresh result', type: 'item' }]);
+
+      render(LinkingFieldPicker, {
+        props: {
+          fieldId: 8,
+          itemId: 101,
+          fieldOptions: JSON.stringify({ link_type_id: 5, allowed_entity_types: ['item'] }),
+          links: [],
+          onChanged: vi.fn(),
+        },
+      });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      const input = screen.getByPlaceholderText('Search items...');
+
+      await fireEvent.input(input, { target: { value: 'first query' } });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(api.links.search).toHaveBeenCalledTimes(1);
+
+      await fireEvent.input(input, { target: { value: 'second query' } });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(api.links.search).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: 'Fresh result' })).toBeInTheDocument();
+
+      resolveFirst([{ id: 404, title: 'Stale result', type: 'item' }]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(screen.queryByRole('button', { name: 'Stale result' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Fresh result' })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      vi.clearAllMocks();
+    }
+  });
+
+  it('clears results immediately when the query is emptied', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveFirst;
+      api.links.search.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          })
+      );
+
+      render(LinkingFieldPicker, {
+        props: {
+          fieldId: 8,
+          itemId: 101,
+          fieldOptions: JSON.stringify({ link_type_id: 5, allowed_entity_types: ['item'] }),
+          links: [],
+          onChanged: vi.fn(),
+        },
+      });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      const input = screen.getByPlaceholderText('Search items...');
+      await fireEvent.input(input, { target: { value: 'first query' } });
+      await vi.advanceTimersByTimeAsync(300);
+
+      await fireEvent.input(input, { target: { value: '' } });
+      resolveFirst([{ id: 404, title: 'Late result', type: 'item' }]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(screen.queryByRole('button', { name: 'Late result' })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      vi.clearAllMocks();
+    }
+  });
+});

@@ -3,7 +3,6 @@
 package services
 
 import (
-	"database/sql"
 	"fmt"
 	"sync"
 	"testing"
@@ -25,18 +24,6 @@ func (c *NotificationEventCollector) EmitEvent(event *NotificationEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Events = append(c.Events, event)
-}
-
-// ForceRefreshCache implements the notification service interface (no-op for testing)
-func (c *NotificationEventCollector) ForceRefreshCache() error {
-	return nil
-}
-
-// Reset clears all recorded events
-func (c *NotificationEventCollector) Reset() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.Events = nil
 }
 
 // FindEvent returns the first event of the given type, or nil if not found
@@ -1266,13 +1253,4 @@ func TestNotificationEmission_AllEventTypesCoverage(t *testing.T) {
 			t.Errorf("event %q: expected ItemID %d, got %d", et.eventType, env.itemID, event.ItemID)
 		}
 	}
-}
-
-// Helper to check for sql.NullInt64 conversion
-func intPtrFromNullInt64(n sql.NullInt64) *int {
-	if !n.Valid {
-		return nil
-	}
-	val := int(n.Int64)
-	return &val
 }

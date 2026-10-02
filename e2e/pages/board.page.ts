@@ -21,7 +21,6 @@ export class BoardPage {
    */
   async goto(workspaceKey: string) {
     await this.page.goto(`/workspaces/${workspaceKey}/board`);
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -44,10 +43,7 @@ export class BoardPage {
    * Get column names
    */
   async getColumnNames(): Promise<string[]> {
-    await this.page
-      .locator(this.columnHeader)
-      .first()
-      .waitFor({ state: 'visible', timeout: 10000 });
+    await this.page.locator(this.columnHeader).first().waitFor({ state: 'visible', timeout: 10000 });
     const headers = this.page.locator(this.columnHeader);
     const count = await headers.count();
     const names: string[] = [];
@@ -62,9 +58,7 @@ export class BoardPage {
    * Get card count in a column
    */
   async getCardCountInColumn(columnName: string): Promise<number> {
-    const column = this.page.locator(
-      `${this.column}:has(${this.columnHeader}:has-text("${columnName}"))`
-    );
+    const column = this.page.locator(`${this.column}:has(${this.columnHeader}:has-text("${columnName}"))`);
     return column.locator(this.card).count();
   }
 
@@ -82,7 +76,6 @@ export class BoardPage {
   async clickCard(title: string) {
     const cardTitle = this.page.locator(`${this.cardTitle}:has-text("${title}")`).first();
     await cardTitle.click();
-    await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -97,9 +90,7 @@ export class BoardPage {
    * Verify card is in specific column
    */
   async verifyCardInColumn(title: string, columnName: string) {
-    const column = this.page.locator(
-      `${this.column}:has(${this.columnHeader}:has-text("${columnName}"))`
-    );
+    const column = this.page.locator(`${this.column}:has(${this.columnHeader}:has-text("${columnName}"))`);
     const card = column.locator(`${this.card}:has-text("${title}")`);
     await expect(card).toBeVisible({ timeout: 10000 });
   }

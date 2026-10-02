@@ -80,7 +80,8 @@ test.describe('Portal happy-path submission', () => {
     const normalisedLink = linkMatch[1].replace(/^https?:\/\/[^/]+/, BASE_ORIGIN);
     const verifyPromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes(`/api/portal/${slug}/auth/verify`) && resp.request().method() === 'GET'
+        resp.url().includes(`/api/portal/${slug}/auth/verify`) &&
+        resp.request().method() === 'GET'
     );
     await page.goto(normalisedLink);
     const verifyResp = await verifyPromise;
@@ -93,6 +94,7 @@ test.describe('Portal happy-path submission', () => {
       timeout: 10000,
     });
     await expect(page.getByTestId('portal-verify-link')).toBeHidden();
+    await expect(page.getByTestId('portal-page')).toHaveAttribute('data-ready', 'true');
     const requestTypeCard = page.getByTestId('portal-request-type-card');
     await expect(requestTypeCard).toBeVisible({ timeout: 10000 });
     await expect(requestTypeCard).toContainText(rt.name);

@@ -1,11 +1,14 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"windshift/internal/database"
+	"windshift/internal/testutils"
 )
 
 type burndownHistoryFixture struct {
@@ -20,7 +23,7 @@ type burndownHistoryFixture struct {
 
 func newBurndownHistoryFixture(t *testing.T) *burndownHistoryFixture {
 	t.Helper()
-	db := newPlanningScopeTestDB(t)
+	db := testutils.CreateTestDB(t, false)
 	workspaceID := planningScopeInsertID(t, db, `
 		INSERT INTO workspaces (name, key, description, active, is_personal)
 		VALUES ('Burndown history', 'BDH', '', true, false)
@@ -179,5 +182,68 @@ func TestIterationBurndownRetainsHistoryWhenNoItemsRemainAssigned(t *testing.T) 
 		if point.Remaining != 1 || point.Completed != 0 {
 			t.Fatalf("point %s = %+v, want one remaining historical item", point.Date, point)
 		}
+	}
+}
+
+func TestIterationBurndownReconstructsStoryPoints(t *testing.T) {
+	f := newBurndownHistoryFixture(t)
+	item := f.addItem(t, "Reestimated", "2026-06-30 09:00:00+00:00", f.iterationID, f.doneStatus)
+	// Historical database fixture reproduces estimates and status changes on fixed dates.
+	if _, err := f.db.ExecWrite("UPDATE items SET story_points = ? WHERE id = ?", 8, item); err != nil {
+		t.Fatal(err)
+	}
+	f.history(t, item, "2026-07-03 09:00:00+00:00", "story_points", "2.5", "8")
+	f.history(t, item, "2026-07-04 09:00:00+00:00", "status_id", fmt.Sprint(f.openStatus), fmt.Sprint(f.doneStatus))
+	f.addItem(t, "Unestimated", "2026-06-30 09:00:00+00:00", f.iterationID, f.openStatus)
+	result, err := f.service.GetIterationBurndown(f.iterationID, []int{f.workspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(result.DataPoints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var points []map[string]any
+	if err := json.Unmarshal(data, &points); err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 5 {
+		t.Fatalf("got %d days, want 5", len(points))
+	}
+	want := [][3]float64{{2.5, 0, 2.5}, {2.5, 0, 1.875}, {8, 0, 1.25}, {0, 8, 0.625}, {0, 8, 0}}
+	for i, point := range points {
+		got := []any{point["remaining_points"], point["completed_points"], point["ideal_points"]}
+		expected := []any{want[i][0], want[i][1], want[i][2]}
+		if !reflect.DeepEqual(got, expected) {
+			t.Fatalf("day %d points = %v, want %v", i, got, expected)
+		}
+	}
+}
+
+func TestIterationBurndownStoryPointsRespectHistoricalMembershipAndWorkspace(t *testing.T) {
+	f := newBurndownHistoryFixture(t)
+	item := f.addItem(t, "Removed estimate", "2026-06-30 09:00:00+00:00", nil, f.openStatus)
+	// Reproduce removed membership and a cleared estimate after the iteration ended.
+	f.history(t, item, "2026-07-04 09:00:00+00:00", "iteration_id", fmt.Sprint(f.iterationID), "")
+	f.history(t, item, "2026-07-06 09:00:00+00:00", "story_points", "3.5", "")
+	result, err := f.service.GetIterationBurndown(f.iterationID, []int{f.workspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []float64{3.5, 3.5, 3.5, 0, 0}
+	if len(result.DataPoints) != len(want) {
+		t.Fatalf("got %d days, want %d", len(result.DataPoints), len(want))
+	}
+	for i, point := range result.DataPoints {
+		if point.RemainingPoints != want[i] || point.CompletedPoints != 0 {
+			t.Fatalf("day %d = %+v, want %v remaining points and zero completed", i, point, want[i])
+		}
+	}
+	hidden, err := f.service.GetIterationBurndown(f.iterationID, []int{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hidden.TotalItems != 0 || len(hidden.DataPoints) != 0 {
+		t.Fatalf("inaccessible workspace leaked burndown: %+v", hidden)
 	}
 }

@@ -16,7 +16,10 @@ const defaultHeaders = { 'Sec-Fetch-Site': 'same-origin' };
  * The fix awaits the confirmation. This spec pins that behavior.
  */
 
-async function createAgent(request: APIRequestContext, suffix: string) {
+async function createAgent(
+  request: APIRequestContext,
+  suffix: string,
+) {
   const res = await request.post(`${BASE_URL}/api/me/agents`, {
     headers: defaultHeaders,
     data: {
@@ -29,7 +32,11 @@ async function createAgent(request: APIRequestContext, suffix: string) {
   return res.json();
 }
 
-async function mintToken(request: APIRequestContext, agentId: number, name: string) {
+async function mintToken(
+  request: APIRequestContext,
+  agentId: number,
+  name: string,
+) {
   const res = await request.post(`${BASE_URL}/api/api-tokens`, {
     headers: defaultHeaders,
     data: { name, user_id: agentId, permissions: [] },
@@ -70,10 +77,10 @@ test.describe('Agent token revoke confirmation — WI-11', () => {
     // controls whether the avatar tab exists, so wait for both before
     // interacting with the tab strip and avoid a late layout shift.
     const agentsResponse = page.waitForResponse(
-      (res) => res.url().endsWith('/api/me/agents') && res.ok()
+      (res) => res.url().endsWith('/api/me/agents') && res.ok(),
     );
     const shellBootstrapResponse = page.waitForResponse(
-      (res) => res.url().endsWith('/api/shell-bootstrap') && res.ok()
+      (res) => res.url().endsWith('/api/shell-bootstrap') && res.ok(),
     );
     await page.goto('/profile');
     await Promise.all([agentsResponse, shellBootstrapResponse]);
@@ -94,7 +101,8 @@ test.describe('Agent token revoke confirmation — WI-11', () => {
     // Wait for the tokens XHR that "Manage tokens" triggers before asserting
     // on the row — otherwise we can race the list render.
     const tokensResponse = page.waitForResponse(
-      (res) => res.url().includes(`/api/api-tokens?user_id=${agentId}`) && res.ok()
+      (res) =>
+        res.url().includes(`/api/api-tokens?user_id=${agentId}`) && res.ok(),
     );
     await page.getByTestId(`agent-actions-${agentId}`).click();
     await page.getByTestId(`agent-manage-tokens-${agentId}`).click();

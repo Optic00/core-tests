@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +19,255 @@ import (
 	"windshift/internal/models"
 	"windshift/internal/repository"
 )
+
+type failingPermissionQueryDatabase struct {
+	database.Database
+	fragment string
+}
+
+type blockingItemLookupDatabase struct {
+	database.Database
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (db *blockingItemLookupDatabase) QueryRow(query string, args ...interface{}) *sql.Row {
+	if strings.Contains(query, "SELECT workspace_id FROM items WHERE id") {
+		db.once.Do(func() { close(db.started) })
+		<-db.release
+	}
+	return db.Database.QueryRow(query, args...)
+}
+
+func (db *failingPermissionQueryDatabase) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	if strings.Contains(query, db.fragment) {
+		return nil, errors.New("injected permission query failure")
+	}
+	return db.Database.Query(query, args...)
+}
+
+func TestPermissionSnapshotFailsClosedWhenExplicitAssignmentsCannotLoad(t *testing.T) {
+	baseDB, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "permission-fail-closed.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteDB: %v", err)
+	}
+	t.Cleanup(func() { _ = baseDB.Close() })
+	if err := baseDB.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	result, err := baseDB.ExecWrite(`
+		INSERT INTO users (email, username, first_name, last_name, is_active)
+		VALUES ('fail-closed@example.test', 'fail-closed', 'Fail', 'Closed', true)
+	`)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("LastInsertId: %v", err)
+	}
+
+	wrapped := &failingPermissionQueryDatabase{
+		Database: baseDB,
+		fragment: "SELECT DISTINCT workspace_id, role_id FROM user_workspace_roles",
+	}
+	service, err := NewPermissionService(wrapped, PermissionCacheConfig{
+		TTL: time.Minute, MaxCacheSize: 16, BatchSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("NewPermissionService: %v", err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+
+	if _, err := service.GetUserEffectivePermissions(int(userID)); err == nil {
+		t.Fatal("permission snapshot succeeded with incomplete explicit assignments")
+	}
+	if _, err := service.getUserPermissionCache(int(userID)); err == nil {
+		t.Fatal("incomplete permission snapshot was cached")
+	}
+}
+
+func TestBatchWorkspacePermissionsAreIndependentOfCacheWarmth(t *testing.T) {
+	db, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "permission-warmth.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteDB: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	userResult, err := db.ExecWrite(`
+		INSERT INTO users (email, username, first_name, last_name, is_active)
+		VALUES ('warmth@example.test', 'warmth', 'Cache', 'Warmth', true)
+	`)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, err := userResult.LastInsertId()
+	if err != nil {
+		t.Fatalf("user LastInsertId: %v", err)
+	}
+	workspaceResult, err := db.ExecWrite(`
+		INSERT INTO workspaces (name, key, description, active, is_personal)
+		VALUES ('Warmth', 'WARM', '', true, false)
+	`)
+	if err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+	workspaceID, err := workspaceResult.LastInsertId()
+	if err != nil {
+		t.Fatalf("workspace LastInsertId: %v", err)
+	}
+	if _, err := db.ExecWrite(`
+		INSERT INTO user_workspace_roles (user_id, workspace_id, role_id)
+		SELECT ?, ?, id FROM workspace_roles WHERE builtin_key = ?
+	`, userID, workspaceID, models.RoleBuiltinTester); err != nil {
+		t.Fatalf("assign Tester role: %v", err)
+	}
+
+	service, err := NewPermissionService(db, PermissionCacheConfig{
+		TTL: time.Minute, MaxCacheSize: 16, BatchSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("NewPermissionService: %v", err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	permissions := []string{models.PermissionItemView, models.PermissionItemEdit, models.PermissionTestExecute}
+
+	cold, err := service.HasWorkspacePermissions(int(userID), int(workspaceID), permissions)
+	if err != nil {
+		t.Fatalf("cold HasWorkspacePermissions: %v", err)
+	}
+	warm, err := service.HasWorkspacePermissions(int(userID), int(workspaceID), permissions)
+	if err != nil {
+		t.Fatalf("warm HasWorkspacePermissions: %v", err)
+	}
+	for _, permission := range permissions {
+		if cold[permission] != warm[permission] {
+			t.Fatalf("permission %q changed with cache warmth: cold=%v warm=%v", permission, cold, warm)
+		}
+	}
+	if !cold[models.PermissionItemEdit] {
+		t.Fatalf("implicit Editor permission missing from union: %v", cold)
+	}
+}
+
+func TestBuiltInRoleRenameDoesNotChangeEveryoneAuthorization(t *testing.T) {
+	db, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "permission-role-rename.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteDB: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	userResult, err := db.ExecWrite(`
+		INSERT INTO users (email, username, first_name, last_name, is_active)
+		VALUES ('role-rename@example.test', 'role-rename', 'Role', 'Rename', true)
+	`)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, _ := userResult.LastInsertId()
+	workspaceResult, err := db.ExecWrite(`
+		INSERT INTO workspaces (name, key, description, active, is_personal)
+		VALUES ('Role Rename', 'RENAME', '', true, false)
+	`)
+	if err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+	workspaceID, _ := workspaceResult.LastInsertId()
+	service, err := NewPermissionService(db, PermissionCacheConfig{TTL: time.Minute, MaxCacheSize: 16, BatchSize: 10})
+	if err != nil {
+		t.Fatalf("NewPermissionService: %v", err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+
+	before, err := service.HasWorkspacePermission(int(userID), int(workspaceID), models.PermissionItemView)
+	if err != nil {
+		t.Fatalf("permission before rename: %v", err)
+	}
+	if !before {
+		t.Fatal("open Viewer role did not grant item.view before rename")
+	}
+	if _, err := db.ExecWrite(`UPDATE workspace_roles SET name = 'Renamed Viewer' WHERE builtin_key = ?`, models.RoleBuiltinViewer); err != nil {
+		t.Fatalf("rename Viewer: %v", err)
+	}
+	if err := service.InvalidateUserCache(int(userID)); err != nil {
+		t.Fatalf("invalidate permission cache: %v", err)
+	}
+	after, err := service.HasWorkspacePermission(int(userID), int(workspaceID), models.PermissionItemView)
+	if err != nil {
+		t.Fatalf("permission after rename: %v", err)
+	}
+	if after != before {
+		t.Fatalf("item.view changed after built-in role rename: before=%v after=%v", before, after)
+	}
+}
+
+func TestItemWorkspaceLookupCannotRestoreInvalidatedPermissionSnapshot(t *testing.T) {
+	baseDB, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "item-lookup-generation.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteDB: %v", err)
+	}
+	t.Cleanup(func() { _ = baseDB.Close() })
+	if err := baseDB.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	workspaceResult, err := baseDB.ExecWrite(`INSERT INTO workspaces (name, key, active) VALUES ('Item Lookup', 'LOOKUP', true)`)
+	if err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+	workspaceID, _ := workspaceResult.LastInsertId()
+	itemID, err := CreateItem(baseDB, ItemCreationParams{
+		WorkspaceID: int(workspaceID),
+		Title:       "Lookup Item",
+	})
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	wrapped := &blockingItemLookupDatabase{
+		Database: baseDB,
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	service, err := NewPermissionService(wrapped, PermissionCacheConfig{TTL: time.Minute, MaxCacheSize: 16, BatchSize: 10})
+	if err != nil {
+		t.Fatalf("NewPermissionService: %v", err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	const userID = 99
+	now := time.Now()
+	if err := service.storeUserPermissionCache(userID, &models.UserPermissionCache{
+		UserID: userID,
+		WorkspacePermissions: map[int]map[string]bool{
+			int(workspaceID): {models.PermissionWorkspaceAdmin: true},
+		},
+		WorkspaceEveryone: map[int]map[string]bool{},
+		CachedAt:          now,
+		ExpiresAt:         now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("store stale snapshot: %v", err)
+	}
+
+	lookupDone := make(chan error, 1)
+	go func() {
+		_, lookupErr := service.GetItemWorkspaceID(userID, int(itemID))
+		lookupDone <- lookupErr
+	}()
+	<-wrapped.started
+	if err := service.InvalidateUserCache(userID); err != nil {
+		t.Fatalf("InvalidateUserCache: %v", err)
+	}
+	close(wrapped.release)
+	if err := <-lookupDone; err != nil {
+		t.Fatalf("GetItemWorkspaceID: %v", err)
+	}
+	if _, err := service.getUserPermissionCache(userID); err == nil {
+		t.Fatal("item lookup restored the invalidated permission snapshot")
+	}
+}
 
 func TestWorkspacePermissionFromSnapshot(t *testing.T) {
 	snapshot := &models.UserPermissionCache{
@@ -391,9 +642,18 @@ func newSyntheticWorkspaceAccessService(tb testing.TB, workspaceCount int) *Perm
 }
 
 func TestAccessibleWorkspaceIDsDecodeCountDoesNotScale(t *testing.T) {
-	for _, workspaceCount := range []int{10, 100, 1000} {
+	baseDB, err := database.NewSQLiteDB(filepath.Join(t.TempDir(), "permission-query-growth.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteDB: %v", err)
+	}
+	t.Cleanup(func() { _ = baseDB.Close() })
+	countingDB := &countingPermissionDatabase{Database: baseDB}
+
+	for _, workspaceCount := range []int{10, 1000} {
 		t.Run(fmt.Sprintf("%d_workspaces", workspaceCount), func(t *testing.T) {
 			service := newSyntheticWorkspaceAccessService(t, workspaceCount)
+			service.db = countingDB
+			countingDB.calls.Store(0)
 			before := service.GetWorkspaceAccessStats().PermissionSnapshotDecodes
 			ids, err := service.AccessibleWorkspaceIDs(1)
 			if err != nil {
@@ -405,6 +665,9 @@ func TestAccessibleWorkspaceIDsDecodeCountDoesNotScale(t *testing.T) {
 			decodes := service.GetWorkspaceAccessStats().PermissionSnapshotDecodes - before
 			if decodes != 1 {
 				t.Fatalf("permission snapshot decodes = %d, want 1", decodes)
+			}
+			if calls := countingDB.calls.Load(); calls != 0 {
+				t.Fatalf("warm permission-store queries = %d, want 0", calls)
 			}
 		})
 	}

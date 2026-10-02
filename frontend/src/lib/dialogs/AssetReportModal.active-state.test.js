@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   update: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock('../api.js', () => ({
     assetSets: { getAll: mocks.getAssetSets },
     itemTypes: { getAll: mocks.getItemTypes },
     workspaces: { getAll: mocks.getWorkspaces },
+    requestTypes: { getForChannel: vi.fn().mockResolvedValue([]), getFields: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -22,19 +23,6 @@ vi.mock('../stores/i18n.svelte.js', () => ({
 }));
 
 import AssetReportModal from './AssetReportModal.svelte';
-
-beforeAll(() => {
-  if (!Element.prototype.animate) {
-    Element.prototype.animate = () => ({
-      finished: Promise.resolve(),
-      cancel: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      play: () => {},
-      pause: () => {},
-    });
-  }
-});
 
 beforeEach(() => {
   mocks.update.mockReset().mockResolvedValue({});
@@ -75,5 +63,38 @@ describe('AssetReportModal active state', () => {
 
     await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
     expect(mocks.update).toHaveBeenCalledWith(1, 5, expect.objectContaining({ is_active: false }));
+  });
+
+  test('reactivates an inactive report when the active checkbox is checked', async () => {
+    render(AssetReportModal, {
+      props: {
+        isOpen: true,
+        mode: 'edit',
+        channelId: 1,
+        assetReport: {
+          id: 5,
+          name: 'Inventory lookup',
+          description: '',
+          icon: 'Table2',
+          color: '#6b7280',
+          asset_set_id: 2,
+          cql_query: 'name != null',
+          run_mode: 'direct',
+          is_active: false,
+          column_config: ['title'],
+          display_order: 1,
+        },
+        onclose: vi.fn(),
+      },
+    });
+
+    const active = screen.getByTestId('asset-report-active');
+    expect(active.querySelector('input[type="checkbox"]')).not.toBeChecked();
+
+    await fireEvent.click(screen.getByRole('checkbox'));
+    await fireEvent.click(screen.getByTestId('dialog-confirm'));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    expect(mocks.update).toHaveBeenCalledWith(1, 5, expect.objectContaining({ is_active: true }));
   });
 });

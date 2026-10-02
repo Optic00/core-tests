@@ -24,12 +24,10 @@ export class IterationPage {
   // --- Navigation ---
   async gotoGlobal() {
     await this.page.goto('/iterations');
-    await this.page.waitForLoadState('networkidle');
   }
 
   async gotoWorkspace(workspaceId: string | number) {
     await this.page.goto(`/workspaces/${workspaceId}/iterations`);
-    await this.page.waitForLoadState('networkidle');
   }
 
   // --- Modal helpers ---
@@ -129,10 +127,7 @@ export class IterationPage {
   private async openRowDropdown(name: string) {
     const row = this.findRowByName(name);
     await row.locator('button').last().click();
-    await this.page
-      .locator('button[role="menuitem"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 });
+    await this.page.locator('button[role="menuitem"]').first().waitFor({ state: 'visible', timeout: 5000 });
   }
 
   private async clickMenuItem(text: RegExp | string) {
@@ -197,9 +192,7 @@ export class IterationPage {
 
   private statusLabel(status: 'planned' | 'active' | 'completed' | 'cancelled'): string {
     // Matches the English translations in sprints.status* keys.
-    return { planned: 'Planned', active: 'Active', completed: 'Completed', cancelled: 'Cancelled' }[
-      status
-    ];
+    return { planned: 'Planned', active: 'Active', completed: 'Completed', cancelled: 'Cancelled' }[status];
   }
 
   private escapeRegex(s: string): string {

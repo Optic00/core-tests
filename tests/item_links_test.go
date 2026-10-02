@@ -456,6 +456,7 @@ func TestLinkTypesCRUD(t *testing.T) {
 	})
 
 	var customLinkTypeID int
+	var customLinkID int
 
 	t.Run("CreateCustomLinkType", func(t *testing.T) {
 		data := map[string]interface{}{
@@ -531,9 +532,16 @@ func TestLinkTypesCRUD(t *testing.T) {
 		defer resp.Body.Close()
 
 		AssertStatusCode(t, resp, http.StatusCreated)
+		var link map[string]interface{}
+		DecodeJSON(t, resp, &link)
+		customLinkID = ExtractIDFromResponse(t, link)
 	})
 
 	t.Run("DeleteCustomLinkType", func(t *testing.T) {
+		deleteLink := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/links/%d", customLinkID), nil)
+		AssertStatusCode(t, deleteLink, http.StatusNoContent)
+		deleteLink.Body.Close()
+
 		resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/admin/link-types/%d", customLinkTypeID), nil)
 		defer resp.Body.Close()
 
@@ -768,7 +776,6 @@ func TestItemLinkWithTestCase(t *testing.T) {
 	// Create a test case
 	tcData := map[string]interface{}{
 		"title":  "Test Case for Feature",
-		"name":   "TC-LINK-001",
 		"status": "active",
 	}
 	tcResp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/workspaces/%d/test-cases", wsID), tcData)

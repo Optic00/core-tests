@@ -52,11 +52,9 @@ func TestHomepageFiltersActivityAfterWorkspaceAccessRevocation(t *testing.T) {
 
 	workspaceID, _ := CreateTestWorkspace(t, server, "Homepage Permission Feed", shortKey("HPF"))
 	LockDownWorkspace(t, server, workspaceID)
-	milestoneResp := MakeAuthRequest(t, server, http.MethodPost, "/milestones", map[string]interface{}{
-		"name":         "Revoked homepage milestone",
-		"status":       "in-progress",
-		"is_global":    false,
-		"workspace_id": workspaceID,
+	milestoneResp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/v2/workspaces/%d/milestones", workspaceID), map[string]interface{}{
+		"name":   "Revoked homepage milestone",
+		"status": "in-progress",
 	})
 	AssertStatusCode(t, milestoneResp, http.StatusCreated)
 	var milestoneResult map[string]interface{}
@@ -90,7 +88,7 @@ func TestHomepageFiltersActivityAfterWorkspaceAccessRevocation(t *testing.T) {
 	AssertStatusCode(t, commentResp, http.StatusCreated)
 	commentResp.Body.Close()
 
-	watchResp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPost, fmt.Sprintf("/items/%d/watch", itemID), map[string]interface{}{})
+	watchResp := MakeAuthRequestWithToken(t, server, userToken, http.MethodPut, fmt.Sprintf("/v2/items/%d/watch", itemID), map[string]interface{}{})
 	AssertStatusCode(t, watchResp, http.StatusOK)
 	watchResp.Body.Close()
 
@@ -106,10 +104,8 @@ func TestHomepageFiltersActivityAfterWorkspaceAccessRevocation(t *testing.T) {
 	RevokeWorkspaceRole(t, server, userID, workspaceID, roles["Editor"])
 
 	renamedWorkspace := "Homepage Permission Feed Renamed"
-	renamedKey := shortKey("HPFR")
-	updateResp := MakeAuthRequest(t, server, http.MethodPut, fmt.Sprintf("/workspaces/%d", workspaceID), map[string]interface{}{
+	updateResp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/workspaces/%d", workspaceID), map[string]interface{}{
 		"name":  renamedWorkspace,
-		"key":   renamedKey,
 		"icon":  "lock",
 		"color": "#123456",
 	})
@@ -122,7 +118,7 @@ func TestHomepageFiltersActivityAfterWorkspaceAccessRevocation(t *testing.T) {
 
 	after := getHomepageActivity(t, server, userToken)
 	assertHomepageFeedsOmitItem(t, after, itemID, milestoneID)
-	assertHomepageOmitsWorkspace(t, after, workspaceID, renamedWorkspace, renamedKey)
+	assertHomepageOmitsWorkspace(t, after, workspaceID, renamedWorkspace, "")
 	if after.TotalWorkspaceCount != before.TotalWorkspaceCount-1 {
 		t.Errorf("total_workspace_count after revocation = %d, want %d", after.TotalWorkspaceCount, before.TotalWorkspaceCount-1)
 	}
@@ -150,7 +146,7 @@ func TestHomepageAndWorkspaceListsFilterGroupDerivedRevocation(t *testing.T) {
 	userID, username, password := CreateTestUserWithCredentials(t, server, "homepage_group_revoked_user", "homepage-group-revoked@test.com")
 	userToken, userBearerToken := CreateAuthCredentialsForUser(t, server, username, password)
 
-	groupResp := MakeAuthRequest(t, server, http.MethodPost, "/groups", map[string]interface{}{
+	groupResp := MakeAuthRequest(t, server, http.MethodPost, "/v2/admin/groups", map[string]interface{}{
 		"name":        "Homepage group revocation",
 		"description": "Revocation contract group",
 	})
@@ -160,8 +156,8 @@ func TestHomepageAndWorkspaceListsFilterGroupDerivedRevocation(t *testing.T) {
 	groupResp.Body.Close()
 	groupID := ExtractIDFromResponse(t, groupResult)
 
-	memberResp := MakeAuthRequest(t, server, http.MethodPost, fmt.Sprintf("/groups/%d/members", groupID), map[string]interface{}{
-		"user_ids": []int{userID},
+	memberResp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/admin/groups/%d", groupID), map[string]interface{}{
+		"member_ids": []int{userID},
 	})
 	AssertStatusCode(t, memberResp, http.StatusOK)
 	memberResp.Body.Close()
@@ -182,13 +178,13 @@ func TestHomepageAndWorkspaceListsFilterGroupDerivedRevocation(t *testing.T) {
 	beforeV1 := getV1Workspaces(t, server, userBearerToken)
 	assertV1WorkspacePresence(t, beforeV1, workspaceID, true)
 
-	removeResp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/groups/%d/members", groupID), map[string]interface{}{
-		"user_ids": []int{userID},
+	removeResp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/admin/groups/%d", groupID), map[string]interface{}{
+		"member_ids": []int{},
 	})
 	AssertStatusCode(t, removeResp, http.StatusOK)
 	removeResp.Body.Close()
 	renamedWorkspace := "Group Revocation Workspace Renamed"
-	updateResp := MakeAuthRequest(t, server, http.MethodPut, fmt.Sprintf("/workspaces/%d", workspaceID), map[string]interface{}{
+	updateResp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/workspaces/%d", workspaceID), map[string]interface{}{
 		"name": renamedWorkspace,
 	})
 	AssertStatusCode(t, updateResp, http.StatusOK)
@@ -206,6 +202,227 @@ func TestHomepageAndWorkspaceListsFilterGroupDerivedRevocation(t *testing.T) {
 	if afterV1.Pagination.Total != beforeV1.Pagination.Total-1 {
 		t.Errorf("v1 workspace total after group revocation = %d, want %d", afterV1.Pagination.Total, beforeV1.Pagination.Total-1)
 	}
+}
+
+func TestWorkspaceVisibilityLifecycleMatrix(t *testing.T) {
+	testCases := []struct {
+		name       string
+		transition string
+	}{
+		{name: "group role revocation", transition: "group-role-revocation"},
+		{name: "group deactivation", transition: "group-deactivation"},
+		{name: "group deletion", transition: "group-deletion"},
+		{name: "REST v1 group deletion", transition: "rest-group-deletion"},
+		{name: "active to inactive", transition: "workspace-deactivation"},
+		{name: "REST v1 active to inactive", transition: "rest-workspace-deactivation"},
+		{name: "open to gated", transition: "open-to-gated"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server, cleanup := StartTestServer(t, GetDBType())
+			defer cleanup()
+
+			CreateBearerToken(t, server)
+			workspaceID, _ := CreateTestWorkspace(t, server, "Lifecycle "+testCase.name, shortKey("LCM"))
+			itemID := CreateTestItem(t, server, workspaceID, "Lifecycle restricted item")
+			actorID, actorUsername, actorPassword := CreateTestUserWithCredentials(
+				t, server, "lifecycle_actor", "lifecycle-actor@example.test",
+			)
+			actorToken, actorBearerToken := CreateAuthCredentialsForUser(t, server, actorUsername, actorPassword)
+			keeperID, keeperUsername, keeperPassword := CreateTestUserWithCredentials(
+				t, server, "lifecycle_keeper", "lifecycle-keeper@example.test",
+			)
+			keeperToken, _ := CreateAuthCredentialsForUser(t, server, keeperUsername, keeperPassword)
+			roles := GetWorkspaceRoles(t, server)
+			groupID := 0
+
+			switch testCase.transition {
+			case "group-role-revocation", "group-deactivation", "group-deletion", "rest-group-deletion":
+				LockDownWorkspace(t, server, workspaceID)
+				AssignWorkspaceRole(t, server, keeperID, workspaceID, "Viewer")
+				groupResp := MakeAuthRequest(t, server, http.MethodPost, "/v2/admin/groups", map[string]interface{}{
+					"name":        "Lifecycle group " + testCase.name,
+					"description": "Workspace visibility lifecycle matrix",
+				})
+				AssertStatusCode(t, groupResp, http.StatusCreated)
+				var groupResult map[string]interface{}
+				DecodeJSON(t, groupResp, &groupResult)
+				groupResp.Body.Close()
+				groupID = ExtractIDFromResponse(t, groupResult)
+
+				memberResp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/admin/groups/%d", groupID), map[string]interface{}{
+					"member_ids": []int{actorID},
+				})
+				AssertStatusCode(t, memberResp, http.StatusOK)
+				memberResp.Body.Close()
+				roleResp := MakeAuthRequest(t, server, http.MethodPost, "/workspace-roles/assign-group", map[string]interface{}{
+					"group_id":     groupID,
+					"workspace_id": workspaceID,
+					"role_id":      roles["Viewer"],
+				})
+				AssertStatusCode(t, roleResp, http.StatusCreated)
+				roleResp.Body.Close()
+			case "workspace-deactivation", "rest-workspace-deactivation":
+				LockDownWorkspace(t, server, workspaceID)
+				AssignWorkspaceRole(t, server, actorID, workspaceID, "Viewer")
+				AssignWorkspaceRole(t, server, keeperID, workspaceID, "Administrator")
+			case "open-to-gated":
+				// The actor initially relies on implicit Everyone access. Assigning the
+				// keeper later is the production transition that gates the workspace.
+			default:
+				t.Fatalf("unknown lifecycle transition %q", testCase.transition)
+			}
+
+			visitResp := MakeAuthRequestWithToken(t, server, actorToken, http.MethodGet, fmt.Sprintf("/workspaces/%d", workspaceID), nil)
+			AssertStatusCode(t, visitResp, http.StatusOK)
+			visitResp.Body.Close()
+			itemResp := MakeAuthRequestWithToken(t, server, actorToken, http.MethodGet, fmt.Sprintf("/items/%d", itemID), nil)
+			AssertStatusCode(t, itemResp, http.StatusOK)
+			itemResp.Body.Close()
+
+			before := getHomepageActivity(t, server, actorToken)
+			assertHomepageContainsWorkspace(t, before, workspaceID)
+			beforeV1 := getV1Workspaces(t, server, actorBearerToken)
+			assertV1WorkspacePresence(t, beforeV1, workspaceID, true)
+			assertWorkspaceIDPresence(t, "cookie workspace list", getCookieWorkspaceIDs(t, server, actorToken), workspaceID, true)
+			assertWorkspaceIDPresence(t, "MCP workspace list", getMCPWorkspaceIDs(t, server, actorBearerToken), workspaceID, true)
+
+			renamedWorkspace := "Lifecycle restricted renamed " + testCase.name
+			switch testCase.transition {
+			case "group-role-revocation":
+				resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf(
+					"/groups/%d/workspaces/%d/roles/%d", groupID, workspaceID, roles["Viewer"],
+				), nil)
+				AssertStatusCode(t, resp, http.StatusNoContent)
+				resp.Body.Close()
+			case "group-deactivation":
+				resp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/admin/groups/%d", groupID), map[string]interface{}{
+					"name":        "Lifecycle group " + testCase.name,
+					"description": "Workspace visibility lifecycle matrix",
+					"is_active":   false,
+				})
+				AssertStatusCode(t, resp, http.StatusOK)
+				resp.Body.Close()
+			case "group-deletion":
+				resp := MakeAuthRequest(t, server, http.MethodDelete, fmt.Sprintf("/v2/admin/groups/%d", groupID), nil)
+				AssertStatusCode(t, resp, http.StatusNoContent)
+				resp.Body.Close()
+			case "rest-group-deletion":
+				resp := MakeBearerRequestWithToken(t, server, server.BearerToken, http.MethodDelete,
+					fmt.Sprintf("/rest/api/v1/admin/groups/%d", groupID), nil)
+				AssertStatusCode(t, resp, http.StatusNoContent)
+				resp.Body.Close()
+			case "workspace-deactivation":
+				resp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/workspaces/%d", workspaceID), map[string]interface{}{
+					"active": false,
+				})
+				AssertStatusCode(t, resp, http.StatusOK)
+				resp.Body.Close()
+			case "rest-workspace-deactivation":
+				resp := MakeBearerRequestWithToken(t, server, server.BearerToken, http.MethodPut,
+					fmt.Sprintf("/rest/api/v1/workspaces/%d", workspaceID), map[string]interface{}{
+						"active": false,
+					})
+				AssertStatusCode(t, resp, http.StatusOK)
+				resp.Body.Close()
+			case "open-to-gated":
+				AssignWorkspaceRole(t, server, keeperID, workspaceID, "Viewer")
+			}
+
+			// The authorization mutation itself must invalidate the warm snapshot.
+			// Assert before any later workspace mutation can invalidate caches too.
+			immediateResp := MakeAuthRequestWithToken(t, server, actorToken, http.MethodGet, fmt.Sprintf("/items/%d", itemID), nil)
+			AssertStatusCode(t, immediateResp, http.StatusNotFound)
+			immediateResp.Body.Close()
+
+			renameResp := MakeAuthRequest(t, server, http.MethodPatch, fmt.Sprintf("/v2/workspaces/%d", workspaceID), map[string]interface{}{
+				"name": renamedWorkspace,
+			})
+			AssertStatusCode(t, renameResp, http.StatusOK)
+			renameResp.Body.Close()
+			mutateResp := MakeAuthRequest(t, server, http.MethodPut, fmt.Sprintf("/items/%d", itemID), map[string]interface{}{
+				"title": "Lifecycle restricted item mutated after transition",
+			})
+			AssertStatusCode(t, mutateResp, http.StatusOK)
+			mutateResp.Body.Close()
+
+			for _, path := range []string{
+				fmt.Sprintf("/workspaces/%d", workspaceID),
+				fmt.Sprintf("/items/%d", itemID),
+			} {
+				resp := MakeAuthRequestWithToken(t, server, actorToken, http.MethodGet, path, nil)
+				AssertStatusCode(t, resp, http.StatusNotFound)
+				resp.Body.Close()
+			}
+
+			after := getHomepageActivity(t, server, actorToken)
+			assertHomepageOmitsWorkspace(t, after, workspaceID, renamedWorkspace, "")
+			if after.TotalWorkspaceCount != before.TotalWorkspaceCount-1 {
+				t.Errorf("total_workspace_count after %s = %d, want %d", testCase.transition, after.TotalWorkspaceCount, before.TotalWorkspaceCount-1)
+			}
+			if after.TotalItemCount != before.TotalItemCount-1 {
+				t.Errorf("total_item_count after %s = %d, want %d", testCase.transition, after.TotalItemCount, before.TotalItemCount-1)
+			}
+
+			afterV1 := getV1Workspaces(t, server, actorBearerToken)
+			assertV1WorkspacePresence(t, afterV1, workspaceID, false)
+			assertWorkspaceIDPresence(t, "cookie workspace list", getCookieWorkspaceIDs(t, server, actorToken), workspaceID, false)
+			assertWorkspaceIDPresence(t, "MCP workspace list", getMCPWorkspaceIDs(t, server, actorBearerToken), workspaceID, false)
+			if afterV1.Pagination.Total != beforeV1.Pagination.Total-1 {
+				t.Errorf("v1 workspace total after %s = %d, want %d", testCase.transition, afterV1.Pagination.Total, beforeV1.Pagination.Total-1)
+			}
+
+			keeperResp := MakeAuthRequestWithToken(t, server, keeperToken, http.MethodGet, fmt.Sprintf("/items/%d", itemID), nil)
+			AssertStatusCode(t, keeperResp, http.StatusOK)
+			keeperResp.Body.Close()
+			adminResp := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/items/%d", itemID), nil)
+			AssertStatusCode(t, adminResp, http.StatusOK)
+			adminResp.Body.Close()
+		})
+	}
+}
+
+func TestWorkspaceVisibilityPersonalOwnerControl(t *testing.T) {
+	server, cleanup := StartTestServer(t, GetDBType())
+	defer cleanup()
+
+	adminToken := CreateBearerToken(t, server)
+	server.BearerToken = adminToken
+	_, ownerUsername, ownerPassword := CreateTestUserWithCredentials(
+		t, server, "personal_owner", "personal-owner@example.test",
+	)
+	ownerToken, ownerBearerToken := CreateAuthCredentialsForUser(t, server, ownerUsername, ownerPassword)
+	_, outsiderUsername, outsiderPassword := CreateTestUserWithCredentials(
+		t, server, "personal_outsider", "personal-outsider@example.test",
+	)
+	outsiderToken, outsiderBearerToken := CreateAuthCredentialsForUser(t, server, outsiderUsername, outsiderPassword)
+
+	personalResp := MakeAuthRequestWithToken(t, server, ownerToken, http.MethodGet, "/workspaces/personal", nil)
+	AssertStatusCode(t, personalResp, http.StatusCreated)
+	var personalWorkspace struct {
+		ID int `json:"id"`
+	}
+	DecodeJSON(t, personalResp, &personalWorkspace)
+	personalResp.Body.Close()
+
+	ownerDirect := MakeAuthRequestWithToken(t, server, ownerToken, http.MethodGet, fmt.Sprintf("/workspaces/%d", personalWorkspace.ID), nil)
+	AssertStatusCode(t, ownerDirect, http.StatusOK)
+	ownerDirect.Body.Close()
+	assertWorkspaceIDPresence(t, "owner cookie workspace list", getCookieWorkspaceIDs(t, server, ownerToken), personalWorkspace.ID, true)
+	assertV1WorkspacePresence(t, getV1Workspaces(t, server, ownerBearerToken), personalWorkspace.ID, true)
+	assertWorkspaceIDPresence(t, "owner MCP workspace list", getMCPWorkspaceIDs(t, server, ownerBearerToken), personalWorkspace.ID, true)
+
+	outsiderDirect := MakeAuthRequestWithToken(t, server, outsiderToken, http.MethodGet, fmt.Sprintf("/workspaces/%d", personalWorkspace.ID), nil)
+	AssertStatusCode(t, outsiderDirect, http.StatusNotFound)
+	outsiderDirect.Body.Close()
+	assertWorkspaceIDPresence(t, "outsider cookie workspace list", getCookieWorkspaceIDs(t, server, outsiderToken), personalWorkspace.ID, false)
+	assertV1WorkspacePresence(t, getV1Workspaces(t, server, outsiderBearerToken), personalWorkspace.ID, false)
+	assertWorkspaceIDPresence(t, "outsider MCP workspace list", getMCPWorkspaceIDs(t, server, outsiderBearerToken), personalWorkspace.ID, false)
+
+	adminDirect := MakeAuthRequest(t, server, http.MethodGet, fmt.Sprintf("/workspaces/%d", personalWorkspace.ID), nil)
+	AssertStatusCode(t, adminDirect, http.StatusOK)
+	adminDirect.Body.Close()
 }
 
 func getV1Workspaces(t *testing.T, server *TestServer, token string) workspaceListResponse {

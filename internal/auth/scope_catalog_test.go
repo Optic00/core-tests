@@ -58,9 +58,13 @@ func TestScopeCatalogIncludesTimeAndActionScopes(t *testing.T) {
 	for _, want := range []string{
 		auth.ScopeTimeRead, auth.ScopeTimeWrite, auth.ScopeTimeDelete,
 		auth.ScopeActionsRead, auth.ScopeActionsWrite,
+		auth.ScopeLinksRead, auth.ScopeLinksWrite,
 		auth.ScopeTestsRead, auth.ScopeTestsWrite,
 		auth.ScopeAssetsRead, auth.ScopeAssetsWrite, auth.ScopeAssetsDelete,
-		auth.ScopeAgentSkillsRead,
+		auth.ScopeAgentSkillsRead, auth.ScopeAgentSkillsWrite,
+		auth.ScopeApprovalsRead, auth.ScopeApprovalsWrite,
+		auth.ScopeStatusesWrite, auth.ScopeWorkflowsWrite,
+		auth.ScopeItemTypesWrite, auth.ScopePrioritiesWrite,
 		auth.ScopeUserPreferencesRead, auth.ScopeUserPreferencesWrite,
 	} {
 		if !slices.ContainsFunc(auth.ScopeCatalog(), func(i auth.ScopeInfo) bool { return i.Scope == want }) {
@@ -73,6 +77,7 @@ func TestDefaultAgentScopesContainsTimeAndActions(t *testing.T) {
 	for _, want := range []string{
 		auth.ScopeTimeRead, auth.ScopeTimeWrite,
 		auth.ScopeActionsRead, auth.ScopeActionsWrite,
+		auth.ScopeLinksRead, auth.ScopeLinksWrite,
 		auth.ScopeMCPAccess,
 	} {
 		if !slices.Contains(auth.DefaultAgentScopes, want) {
@@ -87,7 +92,6 @@ func TestDefaultAgentScopesExcludesDestructiveScopes(t *testing.T) {
 	for _, unwanted := range []string{
 		auth.ScopeItemsDelete, auth.ScopeWorkspacesDelete, auth.ScopeTimeDelete,
 		auth.ScopeAssetsDelete, auth.ScopeMilestonesDelete, auth.ScopeIterationsDelete,
-		auth.ScopeProjectsDelete,
 	} {
 		if slices.Contains(auth.DefaultAgentScopes, unwanted) {
 			t.Errorf("DefaultAgentScopes must not grant %q by default", unwanted)

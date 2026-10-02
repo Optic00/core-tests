@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { currentRoute, initRouter, navigate } from './router.js';
+import { currentRoute, initRouter, navigate, setNavigationInterceptor } from './router.js';
 
 beforeAll(() => {
   initRouter();
@@ -67,6 +67,57 @@ describe('router link interception', () => {
     expect(wasPrevented).toBe(true);
     expect(window.location.pathname).toBe('/api-docs');
     expect(window.location.hash).toBe('#operation-list');
+  });
+});
+
+describe('navigation interceptor (mobile editor back guard)', () => {
+  it('vetoes a cross-route popstate and restores the current entry', () => {
+    navigate('/m/items/5/edit');
+    const editorPath = window.location.pathname;
+
+    // The Android back gesture lands on the previous entry before the
+    // router's popstate handler runs; the editor's interceptor vetoes it.
+    window.history.pushState({}, '', '/m/items/5');
+    let checks = 0;
+    setNavigationInterceptor(() => {
+      checks += 1;
+      return true;
+    });
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(checks).toBe(1);
+    expect(window.location.pathname).toBe(editorPath);
+    expect(get(currentRoute).path).toBe(editorPath);
+
+    setNavigationInterceptor(null);
+  });
+
+  it('lets the popstate proceed when the interceptor allows it', () => {
+    navigate('/m/items/5/edit');
+    window.history.pushState({}, '', '/m/items/5');
+    setNavigationInterceptor(() => false);
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(window.location.pathname).toBe('/m/items/5');
+    expect(get(currentRoute).path).toBe('/m/items/5');
+
+    setNavigationInterceptor(null);
+  });
+
+  it('ignores same-document pops such as history sentinels', () => {
+    navigate('/m/items/5');
+    // A sheet's sentinel entry shares the URL — only the state differs.
+    window.history.pushState({ mobileSheet: 1 }, '', '/m/items/5');
+    setNavigationInterceptor(() => {
+      throw new Error('interceptor must not be consulted for same-document pops');
+    });
+
+    expect(() => window.dispatchEvent(new PopStateEvent('popstate'))).not.toThrow();
+    expect(get(currentRoute).path).toBe('/m/items/5');
+
+    setNavigationInterceptor(null);
   });
 });
 
@@ -165,6 +216,24 @@ describe('public form routes', () => {
     expect(get(currentRoute)).toMatchObject({
       path: '/login',
       view: 'homepage',
+    });
+  });
+});
+
+describe('portal request routes', () => {
+  it('resolves a request-type URL with its route parameter and prefill query', () => {
+    navigate('/portal/support/request/12?prefill.device=431');
+
+    expect(get(currentRoute)).toMatchObject({
+      path: '/portal/support/request/12',
+      view: 'portal',
+      params: {
+        slug: 'support',
+        requestTypeId: '12',
+      },
+      query: {
+        'prefill.device': '431',
+      },
     });
   });
 });

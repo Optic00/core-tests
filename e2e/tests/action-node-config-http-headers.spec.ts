@@ -1,13 +1,13 @@
+import { test, expect } from '../fixtures/errors';
+import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
 import {
   createActionViaAPI,
   getActionViaAPI,
-  nodeConfigByType,
   openActionEditor,
-  saveAction,
   selectNodeByType,
+  saveAction,
+  nodeConfigByType,
 } from '../fixtures/action-editor-helpers';
-import { createWorkspaceViaAPI } from '../fixtures/api-helpers';
-import { expect, test } from '../fixtures/errors';
 
 // http_request nodes expose a key/value headers editor; rows serialize into the
 // `headers` map and hydrate back when the editor is reopened.

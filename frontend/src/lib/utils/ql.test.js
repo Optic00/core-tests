@@ -76,6 +76,30 @@ describe('QLBuilder.tryParseToBuilder', () => {
     expect(r.dynamicFields[0].value).toBe('5');
   });
 
+  test('uses centralized completion metadata to recover a stable custom-field id', () => {
+    const field = {
+      id: 'cf_Approver groups',
+      customFieldId: 44,
+      type: 'multiselect',
+      name: 'Approver groups',
+      completion: {
+        name: 'cfid_44',
+        aliases: ['cf_Approver groups', 'custom.Approver groups'],
+      },
+    };
+
+    const result = QLBuilder.tryParseToBuilder('cfid_44 IN (1, 2)', {
+      customFields: [field],
+    });
+
+    expect(result.dynamicFields[0]).toMatchObject({
+      field,
+      operator: 'IN',
+      values: ['1', '2'],
+    });
+    expect(result.dropped).toBe(false);
+  });
+
   test('recovers IN list with quoted values', () => {
     const r = QLBuilder.tryParseToBuilder('`cf_stage` IN ("draft", "review")');
     expect(r.dynamicFields[0]).toMatchObject({
